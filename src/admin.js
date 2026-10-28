@@ -332,7 +332,7 @@ J.acts.testKey = async function () {
   try {
     var ok = await J.ai.test(), nm = J.ai.name(), hadList = !!$('sGModel');
     if (J.ai.provider() === 'gemini' && !hadList) J.refresh();
-    boxMsg('keyMsg', ok ? 'The key works. ' + nm + ' is ready.' + (J.ai.provider() === 'gemini' ? ' Using ' + J.settings.geminiModel + '.' : '') : nm + ' answered, but oddly. It should still work.', !ok);
+    boxMsg('keyMsg', ok ? 'The key works. ' + nm + ' is ready.' + (J.ai.provider() === 'gemini' ? ' Answered by ' + (J.ai.lastModel || J.settings.geminiModel) + '.' : '') : nm + ' answered, but oddly. It should still work.', !ok);
   }
   catch (e) { boxMsg('keyMsg', 'That did not work: ' + e.message, true); }
 };

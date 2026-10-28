@@ -47,7 +47,7 @@ function gemError(r, data) {
   if (/API key not valid|API_KEY_INVALID/i.test(m) || (r.status === 400 && /key/i.test(m))) err = 'Your Gemini key was not accepted. Copy it again from aistudio.google.com (Get API key) and paste it in Settings.';
   else if (r.status === 403 || st === 'PERMISSION_DENIED') err = 'Google says this key is not allowed to use Gemini. Make a new key at aistudio.google.com.';
   else if (r.status === 429 || st === 'RESOURCE_EXHAUSTED') err = 'You have used today\'s free Gemini requests. They reset overnight (about 3 AM Eastern). Try again tomorrow.';
-  else if (r.status >= 500) err = 'Gemini is busy right now. Try again in a minute.';
+  else if (r.status >= 500) err = 'Gemini is busy right now. Try again in a few minutes.';
   else if (r.status === 404) err = 'That Gemini model is not available any more. Click Test key in Settings and the app will pick a new one.';
   else if (r.status === 0) err = 'Could not reach Google. Check your internet connection.';
   else err = 'Gemini problem (' + r.status + '): ' + (m || 'unknown error');
@@ -81,29 +81,42 @@ AI.geminiPickModels = async function () {
   if (J.saveSettings) await J.saveSettings();
   return s.geminiModel;
 };
-async function geminiCall(o, tries) {
-  tries = tries || {};
+function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+/* Try the chosen model first; if Google says it is busy or out of free requests, quietly try the others. */
+async function geminiCall(o) {
   var s = J.settings;
   if (!s.geminiModel) await AI.geminiPickModels();
-  var model = tries.lite ? s.geminiLite : s.geminiModel;
+  var order = [s.geminiModel, s.geminiLite].concat((s.geminiList || []).map(function (m) { return m.id; }));
+  var seen = {}, models = order.filter(function (m) { if (!m || seen[m]) return false; seen[m] = 1; return true; }).slice(0, 5);
+  var lastErr = null, busyRetried = false, repicked = false, plain = false;
+  for (var i = 0; i < models.length; i++) {
+    try { return await geminiOnce(o, models[i], plain); }
+    catch (e) {
+      lastErr = e;
+      if (e.status === 400 && e.gmsg && /mime|response_?mime|json/i.test(e.gmsg) && !plain) { plain = true; i--; continue; }
+      if (e.status === 404 && !repicked) { repicked = true; s.geminiModel = ''; await AI.geminiPickModels(); return geminiCall(o); }
+      if (e.status >= 500 && !busyRetried) { busyRetried = true; await sleep(2500); i--; continue; }
+      if (e.status >= 500 || e.status === 429 || e.status === 404 || e.gstatus === 'RESOURCE_EXHAUSTED') continue;
+      throw e;
+    }
+  }
+  if (lastErr && lastErr.status >= 500 && lastErr.gmsg) lastErr.message += ' (Google said: ' + lastErr.gmsg.slice(0, 160) + ')';
+  throw lastErr || new Error('Gemini did not answer. Try again in a minute.');
+}
+async function geminiOnce(o, model, plain) {
   var parts = []; (o.images || []).forEach(function (im) { parts.push({ inline_data: { mime_type: im.type || 'image/jpeg', data: im.data } }); });
   parts.push({ text: o.user });
   var gen = { maxOutputTokens: Math.max(8192, (o.maxTokens || 4000) * 2), temperature: 1 };
-  if (o.json) gen.responseMimeType = 'application/json';
+  if (o.json && !plain) gen.responseMimeType = 'application/json';
   var body = { systemInstruction: { parts: [{ text: o.system }] }, contents: [{ role: 'user', parts: parts }], generationConfig: gen };
   var r = await J.http(GEM + 'models/' + encodeURIComponent(model) + ':generateContent', { method: 'POST', headers: gemHeaders(), body: JSON.stringify(body) });
   var data = null; try { data = JSON.parse(r.text); } catch (e) {}
-  if (r.status !== 200) {
-    var err = gemError(r, data);
-    if (r.status === 404 && !tries.repick) { s.geminiModel = ''; await AI.geminiPickModels(); return geminiCall(o, { repick: true }); }
-    if ((r.status === 429 || err.gstatus === 'RESOURCE_EXHAUSTED') && !tries.lite && s.geminiLite && s.geminiLite !== s.geminiModel) return geminiCall(o, Object.assign({}, tries, { lite: true }));
-    if (r.status === 400 && gen.responseMimeType && /mime|response/i.test((data && data.error && data.error.message) || '') && !tries.plain) return geminiCall(Object.assign({}, o, { json: false }), Object.assign({}, tries, { plain: true }));
-    throw err;
-  }
+  if (r.status !== 200) { var err = gemError(r, data); err.gmsg = (data && data.error && data.error.message) || String(r.text || '').slice(0, 200); err.model = model; throw err; }
   var c = (data.candidates || [])[0];
   if (!c) { var br = data.promptFeedback && data.promptFeedback.blockReason; throw new Error(br ? 'Gemini refused this one (' + br + '). Try rewording the headline or notes.' : 'Gemini sent back nothing. Try again.'); }
   var text = ((c.content && c.content.parts) || []).filter(function (p) { return !p.thought && p.text; }).map(function (p) { return p.text; }).join('');
   if (!text) throw new Error(c.finishReason === 'SAFETY' ? 'Gemini\'s safety filter blocked this one. Try rewording it.' : c.finishReason === 'MAX_TOKENS' ? 'Gemini ran out of room before finishing. Try again.' : 'Gemini sent back an empty answer. Try again.');
+  AI.lastModel = model;
   return text;
 }
 
