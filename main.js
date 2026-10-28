@@ -11,8 +11,8 @@ const LEAGUES = () => path.join(DATA(), 'leagues');
 const MEDIA = () => path.join(DATA(), 'media');
 const STATE = () => path.join(DATA(), 'state.json');
 const SETTINGS = () => path.join(DATA(), 'settings.json');
-const SECRET_KEYS = ['apiKey', 'ghToken'];
-const ALLOWED_HOSTS = ['api.anthropic.com', 'api.github.com'];
+const SECRET_KEYS = ['apiKey', 'geminiKey', 'ghToken'];
+const ALLOWED_HOSTS = ['api.anthropic.com', 'api.github.com', 'generativelanguage.googleapis.com'];
 
 function ensureDirs() { [LEAGUES(), MEDIA()].forEach((d) => fs.mkdirSync(d, { recursive: true })); }
 function safeName(s) { return String(s).replace(/[^a-zA-Z0-9_:-]/g, '').replace(/:/g, '__'); }

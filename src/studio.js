@@ -59,7 +59,7 @@ function itemsHtml() {
   if (!st.items.length) return '';
   return '<div class="thumbs">' + st.items.map(function (it) {
     var src = it.type === 'video' ? it.posterPreview : it.preview;
-    var note = it.loading ? 'Reading...' : it.error ? it.error : it.type === 'video' ? (it.noFrames ? 'Could not read frames' : it.ai.length + ' frames for Claude') + (it.size > VIDEO_PUBLISH_MAX ? ', too big for the site' : '') : Math.round(it.size / 1024) + ' KB';
+    var note = it.loading ? 'Reading...' : it.error ? it.error : it.type === 'video' ? (it.noFrames ? 'Could not read frames' : it.ai.length + ' frames for the AI') + (it.size > VIDEO_PUBLISH_MAX ? ', too big for the site' : '') : Math.round(it.size / 1024) + ' KB';
     return '<figure>' + (src ? '<img src="' + esc(src) + '" alt="">' : '<div class="nomedia" style="width:110px;height:76px">' + (it.type === 'video' ? 'Video' : 'Photo') + '</div>') + '<button data-act="stRemove" data-id="' + esc(it.id) + '" aria-label="Remove">&#10005;</button><small title="' + esc(it.name) + '">' + esc(it.name) + '</small><small class="' + (it.error ? 'dnf' : '') + '">' + esc(note) + '</small>'
       + (it.type === 'video' && it.size > VIDEO_PUBLISH_MAX ? '<input class="vlink" data-id="' + esc(it.id) + '" placeholder="YouTube link (optional)" value="' + esc(it.link) + '">' : '') + '</figure>';
   }).join('') + '</div>' + (st.items.some(function (it) { return it.type === 'video' && it.size > VIDEO_PUBLISH_MAX; }) ? '<div class="warn">Videos over 40 MB are too big to put on the website. The site will show a still frame from it instead. If you upload the clip to YouTube, paste the link under it and the site will link to it.</div>' : '');
@@ -79,18 +79,18 @@ function draftHtml() {
 J.routes.studio = function (S) {
   var hasKey = J.ai && J.ai.hasKey(), races = S.races.slice().reverse();
   if (st.raceId === '' && races[0] && !st._touchedRace) st.raceId = races[0].id;
-  return J.phead('Story Studio', 'Add race photos or video, write a headline, and Claude writes the story in the outlet\'s voice.')
+  return J.phead('Story Studio', 'Add race photos or video, write a headline, and the AI writes the story in the outlet\'s voice.')
     + '<section class="panel"><div class="fgrid">'
     + '<div class="field"><label for="stOutlet">Outlet</label><select id="stOutlet">' + Object.keys(J.OUTLETS).map(function (k) { return '<option value="' + k + '"' + (st.outlet === k ? ' selected' : '') + ' title="' + esc(J.OUTLETS[k].tag) + '">' + esc(J.OUTLETS[k].name) + ': ' + esc(J.OUTLETS[k].tag.toLowerCase()) + '</option>'; }).join('') + '</select></div>'
     + '<div class="field"><label for="stRace">Race it is about</label><select id="stRace"><option value="">No specific race</option>' + races.map(function (r) { return '<option value="' + esc(r.id) + '"' + (r.id === st.raceId ? ' selected' : '') + '>' + esc(r.name) + (r.date ? ' (' + esc(J.fmtDate(r.date)) + ')' : '') + '</option>'; }).join('') + '</select></div>'
     + '<div class="field wide"><label for="stHead">Your headline</label><input id="stHead" value="' + esc(st.headline) + '" placeholder="Example: Blaney and Logano tangle in turn 3, Blaney furious"></div>'
     + '<div class="field wide"><label for="stNotes">What happened (optional, but the more you say the better the story)</label><textarea id="stNotes" placeholder="Lap 22, Logano got into the back of Blaney off turn 2. Blaney spun and lost 3 laps. Blaney waved at him under caution...">' + esc(st.notes) + '</textarea></div></div>'
-    + '<div class="drop" id="sDrop"><strong>Drop photos or video here</strong><p>Screenshots or replay clips from NR2003. Claude looks at them while writing. Videos: the app pulls a few frames out for Claude to look at.</p><div class="row" style="justify-content:center"><button class="btn ghost" data-act="stPick">Choose photos or video</button></div><input type="file" id="stFile" accept="image/*,video/*" multiple hidden></div>'
+    + '<div class="drop" id="sDrop"><strong>Drop photos or video here</strong><p>Screenshots or replay clips from NR2003. The AI looks at them while writing. Videos: the app pulls a few frames out for it to look at.</p><div class="row" style="justify-content:center"><button class="btn ghost" data-act="stPick">Choose photos or video</button></div><input type="file" id="stFile" accept="image/*,video/*" multiple hidden></div>'
     + '<div id="stItems">' + itemsHtml() + '</div>'
     + '<label class="check"><input type="checkbox" id="stHigh"' + (st.highlights ? ' checked' : '') + '> Also show these photos and videos on the Highlights page</label>'
     + '<label class="check"><input type="checkbox" id="stInts"' + (st.interviews ? ' checked' : '') + '> Include pit road interview quotes (these move driver reputations)</label>'
     + '<label class="check"><input type="checkbox" id="stReact"' + (st.react ? ' checked' : '') + '> Let the fans react in The Garage after it is published</label>'
-    + '<div class="row">' + (hasKey ? '<button class="btn" data-act="stGenerate"' + (st.busy ? ' disabled' : '') + '>' + (st.busy ? 'Claude is writing...' : 'Write the story') + '</button>' : '<span class="warn" style="margin:0">Add your Claude key in Settings to have stories written for you.</span>')
+    + '<div class="row">' + (hasKey ? '<button class="btn" data-act="stGenerate"' + (st.busy ? ' disabled' : '') + '>' + (st.busy ? J.ai.name() + ' is writing...' : 'Write the story') + '</button>' : '<span class="warn" style="margin:0">Add a free Gemini key in Settings to have stories written for you.</span>')
     + '<button class="btn ghost" data-act="stManual">Write it myself</button><button class="btn ghost" data-act="stHighOnly">Just add to Highlights</button></div>'
     + '<div id="stMsg" class="msg" hidden></div></section>'
     + '<div id="stDraftSlot">' + draftHtml() + '</div>';
@@ -129,14 +129,14 @@ function aiImages() {
 }
 J.acts.stGenerate = async function () {
   readForm(); var S = J.S;
-  if (!st.headline.trim()) { smsg('Write a headline first. It tells Claude what the story is about.', true); return; }
+  if (!st.headline.trim()) { smsg('Write a headline first. It tells the AI what the story is about.', true); return; }
   if (st.items.some(function (x) { return x.loading; })) { smsg('Still reading your files. Give it a second.', true); return; }
-  st.busy = true; J.refresh(); smsg('Claude is writing the story. This usually takes 20 to 40 seconds.');
+  st.busy = true; J.refresh(); smsg(J.ai.name() + ' is writing the story. This usually takes 20 to 40 seconds.');
   try {
     var race = S.races.find(function (r) { return r.id === st.raceId; }) || null;
     var notes = st.notes + (st.items.length ? '\n\nThe commissioner attached ' + st.items.length + ' photo/video item(s): ' + st.items.map(function (x) { return x.name + (x.duration ? ' (' + Math.round(x.duration) + 's clip)' : ''); }).join(', ') + '.' : '');
     var res = await J.ai.articleDraft(S, { outlet: st.outlet, race: race, headline: st.headline, notes: notes, images: aiImages(), interviews: st.interviews });
-    if (!res.article || !res.article.body) throw new Error('Claude returned an empty story. Try again.');
+    if (!res.article || !res.article.body) throw new Error(J.ai.name() + ' returned an empty story. Try again.');
     res.interviews = (res.interviews || []).filter(function (x) { return x && x.quote && J.findDriver(S, x.driver); });
     res.reputation = (res.reputation || []).filter(function (x) { return x && Number(x.delta) && J.findDriver(S, x.driver); });
     st.draft = res; st.busy = false; J.refresh(); smsg('');

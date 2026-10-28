@@ -130,7 +130,7 @@ var STEP_LABELS = { recap: 'Race recap article (Checkered Wire)', fans: 'Fan rea
 
 function coverageHtml() {
   var c = J.coverageRun; if (!c) return '';
-  return '<section class="panel" id="covPanel"><h3>Race coverage: ' + esc(c.raceName) + '</h3><p class="sub">' + (c.done ? (c.fails ? 'Finished with ' + J.plural(c.fails, 'problem') + '. You can try again from Races.' : 'All done. It is on the site now.') : 'Claude is writing. This takes about a minute. You can keep using the app.') + '</p><ul class="prog">'
+  return '<section class="panel" id="covPanel"><h3>Race coverage: ' + esc(c.raceName) + '</h3><p class="sub">' + (c.done ? (c.fails ? 'Finished with ' + J.plural(c.fails, 'problem') + '. You can try again from Races.' : 'All done. It is on the site now.') : J.ai.name() + ' is writing. This takes about a minute. You can keep using the app.') + '</p><ul class="prog">'
     + c.steps.map(function (s) { return '<li class="' + s.state + '"><i></i>' + esc(s.label) + (s.detail ? '<small>' + esc(s.detail) + '</small>' : '') + '</li>'; }).join('') + '</ul>'
     + (c.done ? '<div class="row"><a class="btn sm" href="#/news">See the news</a><a class="btn ghost sm" href="#/garage/feed">See The Garage</a><button class="btn ghost sm" data-act="covDismiss">Dismiss</button></div>' : '') + '</section>';
 }
@@ -164,7 +164,7 @@ J.routes['import'] = function (S) {
     + '<div id="pasteBox" hidden><div class="field" style="margin-top:12px"><label for="impPaste">Paste a table or one driver per line, winner first</label><textarea id="impPaste" placeholder="Position,Driver,Car&#10;1,Tyler Reddick,45&#10;2,Chris Buescher,17"></textarea></div><div class="row"><button class="btn sm" data-act="impParsePaste">Read pasted results</button></div></div>'
     + '<div id="impMsg" class="msg" hidden></div></section>'
     + '<div id="impForm"></div>'
-    + (!hasKey ? '<p class="fine">No Claude key saved yet, so imports get a plain automatic recap. Add your key in <a href="#/settings" style="color:var(--blue);font-weight:600">Settings</a> for full articles and fan chatter.</p>' : '');
+    + (!hasKey ? '<p class="fine">No AI key saved yet, so imports get a plain automatic recap. Add a free Gemini key in <a href="#/settings" style="color:var(--blue);font-weight:600">Settings</a> for full articles and fan chatter.</p>' : '');
   return out;
 };
 J.afters['import'] = function () {
@@ -218,7 +218,7 @@ function renderPreview() {
     + (imp.meta.pole || imp.meta.weather || imp.meta.cautions != null ? '<div class="chips" style="margin:6px 0 0;padding:10px 0;background:none;border:0">' + (imp.meta.pole ? '<span class="chip">Pole <b>' + esc(imp.meta.pole) + '</b></span>' : '') + (imp.meta.weather ? '<span class="chip">Weather <b>' + esc(imp.meta.weather) + '</b></span>' : '') + (imp.meta.cautions != null ? '<span class="chip">Cautions <b>' + imp.meta.cautions + '</b></span>' : '') + (imp.meta.leadChanges != null ? '<span class="chip">Lead changes <b>' + imp.meta.leadChanges + '</b></span>' : '') + '</div>' : '')
     + warns.map(function (w) { return '<div class="warn">' + esc(w) + '</div>'; }).join('')
     + '<div class="row"><button class="btn" data-act="impConfirm">Import ' + rows.length + ' drivers</button><button class="btn ghost" data-act="impCancel">Cancel</button>'
-    + (hasKey ? '<label class="check" style="margin:0 0 0 6px"><input type="checkbox" id="impCover"' + (J.settings.autoCoverage !== false ? ' checked' : '') + '> Have Claude write the recap and fan reactions</label>' : '') + '</div></section>'
+    + (hasKey ? '<label class="check" style="margin:0 0 0 6px"><input type="checkbox" id="impCover"' + (J.settings.autoCoverage !== false ? ' checked' : '') + '> Have ' + J.ai.name() + ' write the recap and fan reactions</label>' : '') + '</div></section>'
     + '<div class="card"><div class="tw"><table class="data"><thead><tr><th>Fin</th><th>Start</th><th>Car</th><th>Driver</th><th>Laps</th><th>Led</th><th>Status</th><th>Pts</th></tr></thead><tbody>'
     + rows.map(function (r) { return '<tr><td class="rank">' + r.position + '</td><td>' + (r.start || '-') + '</td><td><span class="car">' + esc(r.car || '-') + '</span></td><td><b>' + esc(r.driver) + '</b></td><td>' + (r.laps || '-') + '</td><td>' + (r.lapsLed || 0) + '</td><td class="' + (J.isDnf(r) ? 'dnf' : 'dim') + '">' + esc(r.status || '-') + '</td><td class="pts"><b>' + r.points + '</b></td></tr>'; }).join('')
     + '</tbody></table></div></div>';

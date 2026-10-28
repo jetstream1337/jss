@@ -1,4 +1,4 @@
-/* Jet's Sim Series - Claude layer (commissioner app only; never published) */
+/* Jet's Sim Series - AI layer: Gemini (free) or Claude (paid) (commissioner app only; never published) */
 (function () {
 'use strict';
 var J = window.JSS, AI = J.ai = {};
@@ -10,13 +10,21 @@ J.http = function (url, opts) {
   if (window.jssNative && window.jssNative.http) return window.jssNative.http({ url: url, method: opts.method || 'GET', headers: opts.headers || {}, body: opts.body });
   return fetch(url, { method: opts.method || 'GET', headers: opts.headers, body: opts.body }).then(function (r) { return r.text().then(function (t) { return { status: r.status, text: t }; }); });
 };
-AI.hasKey = function () { return !!(J.settings.apiKey && String(J.settings.apiKey).length > 10); };
-AI.call = async function (o) {
-  if (!AI.hasKey()) throw new Error('Add your Claude API key in Settings first.');
+AI.provider = function () { return J.settings.aiProvider === 'claude' ? 'claude' : 'gemini'; };
+AI.name = function () { return AI.provider() === 'claude' ? 'Claude' : 'Gemini'; };
+AI.hasKey = function () { var k = AI.provider() === 'claude' ? J.settings.apiKey : J.settings.geminiKey; return !!(k && String(k).trim().length > 10); };
+AI.call = function (o) {
+  if (!AI.hasKey()) return Promise.reject(new Error('Add your ' + AI.name() + ' key in Settings first.'));
+  return AI.provider() === 'claude' ? claudeCall(o) : geminiCall(o);
+};
+
+/* ---------- Claude (Anthropic, paid) ---------- */
+async function claudeCall(o) {
   var content = []; (o.images || []).forEach(function (im) { content.push({ type: 'image', source: { type: 'base64', media_type: im.type || 'image/jpeg', data: im.data } }); });
   content.push({ type: 'text', text: o.user });
-  var body = { model: o.model || J.settings.writerModel || 'claude-sonnet-5-5', max_tokens: o.maxTokens || 4000, system: o.system, messages: [{ role: 'user', content: content }] };
-  var r = await J.http('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': J.settings.apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' }, body: JSON.stringify(body) });
+  var model = o.role === 'chatter' ? (J.settings.chatterModel || J.settings.writerModel) : J.settings.writerModel;
+  var body = { model: model || 'claude-sonnet-5-5', max_tokens: o.maxTokens || 4000, system: o.system, messages: [{ role: 'user', content: content }] };
+  var r = await J.http('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': J.settings.apiKey.trim(), 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' }, body: JSON.stringify(body) });
   var data; try { data = JSON.parse(r.text); } catch (e) { throw new Error('Claude sent back something unreadable (HTTP ' + r.status + ').'); }
   if (r.status !== 200) {
     var em = (data.error && data.error.message) || '', et = (data.error && data.error.type) || '';
@@ -28,16 +36,90 @@ AI.call = async function (o) {
     throw new Error(em || ('Claude request failed (HTTP ' + r.status + ')'));
   }
   return (data.content || []).filter(function (c) { return c.type === 'text'; }).map(function (c) { return c.text; }).join('');
+}
+
+/* ---------- Gemini (Google, free tier) ---------- */
+var GEM = 'https://generativelanguage.googleapis.com/v1beta/';
+function gemHeaders() { return { 'content-type': 'application/json', 'x-goog-api-key': String(J.settings.geminiKey || '').trim() }; }
+function gemError(r, data) {
+  var e = (data && data.error) || {}, m = e.message || '', st = e.status || '';
+  var err;
+  if (/API key not valid|API_KEY_INVALID/i.test(m) || (r.status === 400 && /key/i.test(m))) err = 'Your Gemini key was not accepted. Copy it again from aistudio.google.com (Get API key) and paste it in Settings.';
+  else if (r.status === 403 || st === 'PERMISSION_DENIED') err = 'Google says this key is not allowed to use Gemini. Make a new key at aistudio.google.com.';
+  else if (r.status === 429 || st === 'RESOURCE_EXHAUSTED') err = 'You have used today\'s free Gemini requests. They reset overnight (about 3 AM Eastern). Try again tomorrow.';
+  else if (r.status >= 500) err = 'Gemini is busy right now. Try again in a minute.';
+  else if (r.status === 404) err = 'That Gemini model is not available any more. Click Test key in Settings and the app will pick a new one.';
+  else if (r.status === 0) err = 'Could not reach Google. Check your internet connection.';
+  else err = 'Gemini problem (' + r.status + '): ' + (m || 'unknown error');
+  var x = new Error(err); x.status = r.status; x.gstatus = st; return x;
+}
+AI.geminiModels = async function () {
+  var all = [], token = '';
+  for (var i = 0; i < 5; i++) {
+    var r = await J.http(GEM + 'models?pageSize=200' + (token ? '&pageToken=' + encodeURIComponent(token) : ''), { method: 'GET', headers: gemHeaders() });
+    var data = null; try { data = JSON.parse(r.text); } catch (e) {}
+    if (r.status !== 200) throw gemError(r, data);
+    (data.models || []).forEach(function (m) { if ((m.supportedGenerationMethods || []).indexOf('generateContent') >= 0) all.push({ id: String(m.name).replace(/^models\//, ''), label: m.displayName || m.name }); });
+    token = data.nextPageToken; if (!token) break;
+  }
+  return all;
 };
+function gemScore(id) {
+  var v = id.match(/gemini-(\d+(?:\.\d+)?)/), ver = v ? parseFloat(v[1]) : 0;
+  return ver * 10 + (/preview|exp/.test(id) ? 0 : 3) + (/-\d{3,}$|-\d{2}-\d{2}/.test(id) ? -1 : 0);
+}
+var GEM_SKIP = /(tts|image|live|audio|embed|native|robotics|computer|omni|veo|imagen|thinking-exp|learnlm|gemma|aqa|nano)/i;
+AI.geminiPickModels = async function () {
+  var list = await AI.geminiModels(), s = J.settings;
+  var flash = list.filter(function (m) { return /flash/i.test(m.id) && !GEM_SKIP.test(m.id); });
+  var full = flash.filter(function (m) { return !/lite/i.test(m.id); }).sort(function (a, b) { return gemScore(b.id) - gemScore(a.id); });
+  var lite = flash.filter(function (m) { return /lite/i.test(m.id); }).sort(function (a, b) { return gemScore(b.id) - gemScore(a.id); });
+  if (!full.length && !lite.length) throw new Error('Your Gemini key works, but Google did not offer any Flash models to it. Try again later.');
+  s.geminiList = full.concat(lite).map(function (m) { return { id: m.id, label: m.label }; });
+  if (!s.geminiModel || !s.geminiList.some(function (m) { return m.id === s.geminiModel; })) s.geminiModel = (full[0] || lite[0]).id;
+  s.geminiLite = (lite[0] || full[0]).id;
+  if (J.saveSettings) await J.saveSettings();
+  return s.geminiModel;
+};
+async function geminiCall(o, tries) {
+  tries = tries || {};
+  var s = J.settings;
+  if (!s.geminiModel) await AI.geminiPickModels();
+  var model = tries.lite ? s.geminiLite : s.geminiModel;
+  var parts = []; (o.images || []).forEach(function (im) { parts.push({ inline_data: { mime_type: im.type || 'image/jpeg', data: im.data } }); });
+  parts.push({ text: o.user });
+  var gen = { maxOutputTokens: Math.max(8192, (o.maxTokens || 4000) * 2), temperature: 1 };
+  if (o.json) gen.responseMimeType = 'application/json';
+  var body = { systemInstruction: { parts: [{ text: o.system }] }, contents: [{ role: 'user', parts: parts }], generationConfig: gen };
+  var r = await J.http(GEM + 'models/' + encodeURIComponent(model) + ':generateContent', { method: 'POST', headers: gemHeaders(), body: JSON.stringify(body) });
+  var data = null; try { data = JSON.parse(r.text); } catch (e) {}
+  if (r.status !== 200) {
+    var err = gemError(r, data);
+    if (r.status === 404 && !tries.repick) { s.geminiModel = ''; await AI.geminiPickModels(); return geminiCall(o, { repick: true }); }
+    if ((r.status === 429 || err.gstatus === 'RESOURCE_EXHAUSTED') && !tries.lite && s.geminiLite && s.geminiLite !== s.geminiModel) return geminiCall(o, Object.assign({}, tries, { lite: true }));
+    if (r.status === 400 && gen.responseMimeType && /mime|response/i.test((data && data.error && data.error.message) || '') && !tries.plain) return geminiCall(Object.assign({}, o, { json: false }), Object.assign({}, tries, { plain: true }));
+    throw err;
+  }
+  var c = (data.candidates || [])[0];
+  if (!c) { var br = data.promptFeedback && data.promptFeedback.blockReason; throw new Error(br ? 'Gemini refused this one (' + br + '). Try rewording the headline or notes.' : 'Gemini sent back nothing. Try again.'); }
+  var text = ((c.content && c.content.parts) || []).filter(function (p) { return !p.thought && p.text; }).map(function (p) { return p.text; }).join('');
+  if (!text) throw new Error(c.finishReason === 'SAFETY' ? 'Gemini\'s safety filter blocked this one. Try rewording it.' : c.finishReason === 'MAX_TOKENS' ? 'Gemini ran out of room before finishing. Try again.' : 'Gemini sent back an empty answer. Try again.');
+  return text;
+}
+
 function parseJson(t) { t = String(t).replace(/^\s*```(?:json)?/i, '').replace(/```\s*$/, '').trim(); var a = t.indexOf('{'), b = t.lastIndexOf('}'); if (a < 0 || b < a) throw new Error('no json'); return JSON.parse(t.slice(a, b + 1)); }
 AI.json = async function (o) {
+  o = Object.assign({ json: true }, o);
   var txt = await AI.call(o);
   try { return parseJson(txt); } catch (e) {
     txt = await AI.call(Object.assign({}, o, { user: o.user + '\n\nYour last reply was not valid JSON. Reply again with ONLY the JSON object, nothing before or after it.' }));
-    try { return parseJson(txt); } catch (e2) { throw new Error('Claude did not return usable JSON. Try again.'); }
+    try { return parseJson(txt); } catch (e2) { throw new Error(AI.name() + ' did not send back a usable answer. Try again.'); }
   }
 };
-AI.test = async function () { var t = await AI.call({ system: 'Reply with the single word OK.', user: 'ping', maxTokens: 20, model: J.settings.writerModel }); return /ok/i.test(t); };
+AI.test = async function () {
+  if (AI.provider() === 'gemini') await AI.geminiPickModels();
+  var t = await AI.call({ system: 'Reply with the single word OK.', user: 'ping', maxTokens: 20 }); return /ok/i.test(t);
+};
 
 /* ---------- fan roster: realistic usernames, ages, stances ---------- */
 var FIRSTS = {
@@ -172,7 +254,7 @@ AI.threads = async function (S, o) {
     + 'FANS YOU MAY WRITE AS (id | handle | platform | age | stance | quirks):\n' + chosen.map(function (f) { return personaLine(S, f); }).join('\n') + '\n\n'
     + 'PROMINENT ACCOUNTS: ' + Object.keys(J.FIGURES).map(function (k) { return k + ' = ' + J.FIGURES[k].name + ' (' + J.FIGURES[k].badge.toLowerCase() + ')'; }).join('; ') + '\n\n'
     + 'TASK: ' + (o.task || 'Write 6 to 8 threads reacting to the facts and the story.') + ' About two thirds should be platform "x" (3 to 6 posts each), the rest "forum" (4 to 8 posts with comment chains). Use at least 14 different people. Use each prominent account at least once. Every fan\'s stance must show in how they talk about that driver.\n\n' + THREAD_SCHEMA;
-  var res = await AI.json({ system: FAN_STYLE, user: user, model: J.settings.chatterModel || J.settings.writerModel, maxTokens: 8000 });
+  var res = await AI.json({ system: FAN_STYLE, user: user, role: 'chatter', maxTokens: 8000 });
   return AI.applyThreads(S, res, o.ref);
 };
 AI.applyThreads = function (S, res, ref) {
@@ -216,14 +298,14 @@ AI.articleDraft = async function (S, o) {
   if (o.images && o.images.length) parts.push(o.images.length + ' image(s) are attached in this order: ' + o.images.map(function (im, i) { return (i + 1) + '=' + (im.label || 'untitled'); }).join(', ') + '. Add one caption per image in photoCaptions.');
   parts.push('DRIVER REPUTATION RIGHT NOW (0-100): ' + repText(S));
   parts.push('Write the story now. ' + (o.interviews === false ? 'Return an empty interviews array.' : 'Include 2 to 3 pit road interviews tied to the story.') + '\n\n' + NEWS_SCHEMA);
-  return AI.json({ system: newsSystem(S, outlet), user: parts.join('\n\n'), images: o.images || [], model: J.settings.writerModel, maxTokens: 5000 });
+  return AI.json({ system: newsSystem(S, outlet), user: parts.join('\n\n'), images: o.images || [], role: 'writer', maxTokens: 5000 });
 };
 AI.article = async function (S, o) {
   var res = await AI.articleDraft(S, o), race = o.race || null;
   return AI.applyArticle(S, res, { outlet: o.outlet || 'wire', raceId: race ? race.id : '', media: o.mediaIds || [], replaceAutoFor: race ? race.id : null });
 };
 AI.applyArticle = function (S, res, o) {
-  var a = res.article || {}; if (!a.headline || !a.body) throw new Error('Claude returned a story without a headline or body.');
+  var a = res.article || {}; if (!a.headline || !a.body) throw new Error(AI.name() + ' returned a story without a headline or body.');
   var staff = (J.OUTLETS[o.outlet] || J.OUTLETS.wire).staff, now = Date.now();
   var art = { id: J.uid('a'), outlet: o.outlet, headline: String(a.headline).slice(0, 160), dek: String(a.dek || '').slice(0, 260), body: String(a.body), author: staff[Math.floor(Math.random() * staff.length)], ts: now, raceId: o.raceId || '', tags: (a.tags || []).slice(0, 6).map(String), media: o.media || [] };
   if (o.replaceAutoFor) S.articles = S.articles.filter(function (x) { return !(x.auto && x.raceId === o.replaceAutoFor); });
@@ -252,7 +334,7 @@ AI.outlooks = async function (S) {
     + 'DRIVER REPUTATION: ' + repText(S) + '\n\n'
     + 'Write three short takes as three different people, grounded ONLY in the numbers above. Do not change any number. Return ONLY JSON: {"chase":{"headline":"short","summary":"2 to 3 sentences","notes":{"Full Name":"one sentence"}},"race":{...same shape...},"season":{...same shape...}}. Up to 6 notes each, only for drivers with something interesting to say (bubble drivers, surprises, hot or cold streaks). '
     + 'Voices: chase = Dana Whitfield, analyst (precise, numbers first, polite but pointed). race = Tommy Bishop, racing YouTuber (loud, confident, a real opinion, one joke max). season = Big Lou Marchetti, radio host (old school, a little grumpy, a short story or comparison). Plain language, no em dashes, no cliches like "buckle up".';
-  var res = await AI.json({ system: 'You write short analyst commentary for a simulated NASCAR Racing 2003 league website. Everything is fiction about sim drivers. Stay on the racing.', user: user, model: J.settings.chatterModel || J.settings.writerModel, maxTokens: 3500 });
+  var res = await AI.json({ system: 'You write short analyst commentary for a simulated NASCAR Racing 2003 league website. Everything is fiction about sim drivers. Stay on the racing.', user: user, role: 'chatter', maxTokens: 3500 });
   var by = { chase: 'dana', race: 'tommy', season: 'lou' };
   ['chase', 'race', 'season'].forEach(function (k) {
     var r = res[k]; if (!r) return; var notes = {};

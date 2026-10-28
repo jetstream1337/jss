@@ -6,7 +6,7 @@
 var J = window.JSS, N = window.jssNative || null, ST = J.store = {};
 var LK = 'jss_app_leagues_v1', SK = 'jss_app_settings_v1';
 ST.native = !!(N && N.store);
-var DEFAULTS = { apiKey: '', writerModel: 'claude-sonnet-5-5', chatterModel: 'claude-haiku-5-5', autoCoverage: true, ghOwner: '', ghRepo: '', ghBranch: 'gh-pages', ghToken: '', autoPublish: true };
+var DEFAULTS = { aiProvider: '', geminiKey: '', geminiModel: '', geminiLite: '', geminiList: [], apiKey: '', writerModel: 'claude-sonnet-5-5', chatterModel: 'claude-haiku-5-5', autoCoverage: true, ghOwner: '', ghRepo: '', ghBranch: 'gh-pages', ghToken: '', autoPublish: true };
 ST.defaults = DEFAULTS;
 
 /* ---- leagues ---- */
@@ -32,7 +32,9 @@ ST.loadSettings = async function () {
   var s = null;
   if (ST.native) s = await N.settings.load();
   else { try { s = JSON.parse(localStorage.getItem(SK) || 'null'); } catch (e) { s = null; } }
-  return Object.assign({}, DEFAULTS, s || {});
+  s = Object.assign({}, DEFAULTS, s || {});
+  if (!s.aiProvider) s.aiProvider = s.apiKey ? 'claude' : 'gemini';
+  return s;
 };
 ST.saveSettings = async function (s) {
   if (ST.native) return N.settings.save(s);

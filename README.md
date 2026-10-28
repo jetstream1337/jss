@@ -27,15 +27,19 @@ You need a free GitHub account. GitHub builds the Windows installer for you, and
 
 ---
 
-## Part 2: Turn on the AI writing (about 3 minutes)
+## Part 2: Turn on the AI writing (free, about 3 minutes)
 
-The news stories, fan chatter in The Garage, and the outlook commentary are written by Claude. You pay Anthropic directly for what you use: about **10 to 15 cents per imported race**, and a few cents per Story Studio article.
+The news stories, the fan chatter in The Garage and the outlook commentary are written by AI. The app uses **Google Gemini** by default, which has a free daily allowance and needs **no credit card**.
 
-1. Go to **console.anthropic.com**, sign up, and add some credit under **Billing** ($5 lasts a long time).
-2. Go to **API Keys**, click **Create Key**, and copy it (it starts with `sk-ant-`).
-3. In the app, open **Settings**, paste it into **Claude API key**, and click **Test key**. You should see "The key works."
+1. Go to **aistudio.google.com** and sign in with a Google account.
+2. Click **Get API key**, then **Create API key**, and copy it.
+3. In the app, open **Settings**. Make sure **Gemini (free)** is selected, paste the key into **Gemini API key**, and click **Test key**. You should see "The key works."
 
-Without a key the app still works. Each race just gets a short, plain automatic recap instead of a full article and fan reactions.
+A race import uses about 3 requests, well inside the free allowance. If you ever hit the daily limit, the app switches to Google's lighter free model, and if that runs out too it tells you to try again the next day (it resets overnight). Google may use what you send on the free plan to improve its products, so keep personal information out of your story notes.
+
+**Want the best writing instead?** Pick **Claude (paid)** in Settings and use a key from console.anthropic.com. It costs about 10 to 15 cents per race.
+
+Without any key the app still works. Each race just gets a short, plain automatic recap and The Garage stays quiet.
 
 ---
 
@@ -63,27 +67,40 @@ If GitHub ever needs the token replaced (they expire), make a new one the same w
 
 | Page | What it is for |
 |---|---|
-| **Import Race** | Drop the standings file NR2003 saves in `exports_imports` (the .html file). Check the preview, click Import. Claude writes the recap and the fans react. |
-| **Story Studio** | Drop race screenshots or replay clips, write a headline and what happened. Pick an outlet: **Checkered Wire** (race coverage), **Silly Season Daily** (contracts and rumors) or **Pit Notes** (analysis). Claude writes it, you edit, then publish. |
+| **Import Race** | Drop the standings file NR2003 saves in `exports_imports` (the .html file). Check the preview, click Import. The AI writes the recap and the fans react. |
+| **Story Studio** | Drop race screenshots or replay clips, write a headline and what happened. Pick an outlet: **Checkered Wire** (race coverage), **Silly Season Daily** (contracts and rumors) or **Pit Notes** (analysis). The AI writes it, you edit, then publish. |
 | **Races** | Rename, change the date, change how points are scored, or remove a race. |
 | **Edit Schedule** | Race names, tracks and **track types** (the track type is what the Race Outlook uses). |
 | **League** | League name, playoff size and cut-off race, the note on the home page, backups. |
 | **Garage Tools** | Refresh fan chatter between races, add or replace fan accounts, nudge a driver's reputation, delete posts. |
-| **Settings** | Claude key, which models to use, website connection. |
+| **Settings** | AI key (Gemini free or Claude paid), website connection. |
 | **Preview public site** | See exactly what visitors see. |
 
 The **Series** box in the sidebar switches between Cup, Xfinity and Truck. Each one is its own league with its own schedule, standings, news and fans. Visitors get the same box on the website once more than one series has races.
 
 **Videos:** clips up to 40 MB go on the website. Bigger ones stay in the app and the site shows a still frame from them. You can paste a YouTube link under a big clip and the site will link to it.
 
-**Backups:** League page, **Download backup**. It holds every series, story, fan and photo. It never holds your Claude key or GitHub token, so it is safe to keep anywhere.
+**Backups:** League page, **Download backup**. It holds every series, story, fan and photo. It never holds your AI key or GitHub token, so it is safe to keep anywhere.
 
-**Where your data lives:** on your PC, in the app's data folder (**File** menu, **Open data folder**). Your Claude key and GitHub token are stored encrypted by Windows.
+**Where your data lives:** on your PC, in the app's data folder (**File** menu, **Open data folder**). Your AI key and GitHub token are stored encrypted by Windows.
+
+---
+
+## Updating the app later
+
+When you get a new version:
+
+1. Unzip it and copy **everything inside** into your **jss** folder, replacing the old files when Windows asks.
+2. In **GitHub Desktop**, type **Update app** in the Summary box (bottom left), click **Commit to main**, then click **Push origin** at the top.
+3. On github.com, open the **Actions** tab, wait for the green check, click the newest run, and download **JSS-Commissioner-Setup** under Artifacts.
+4. Run the new installer. It replaces the old app. Your leagues, stories, settings and keys stay.
+
+The website updates itself the next time the app publishes.
 
 ---
 
 ## Good to know
 
-- Everything written by Claude (articles, quotes, fan posts) is labeled as fictional on the site. Drivers use real NASCAR names because the NR2003 mod does, so the site keeps those labels on purpose.
+- Everything written by the AI (articles, quotes, fan posts) is labeled as fictional on the site. Drivers use real NASCAR names because the NR2003 mod does, so the site keeps those labels on purpose.
 - The website is just files on GitHub. There is no server to pay for and nothing to keep running.
-- The odds in the Chase, Race and Season outlooks come from the app's own race simulator (thousands of simulated races using your league's results), not from the AI. Claude only writes the commentary around them. Early in the season the numbers jump around a lot. That is normal.
+- The odds in the Chase, Race and Season outlooks come from the app's own race simulator (thousands of simulated races using your league's results), not from the AI. The AI only writes the commentary around them. Early in the season the numbers jump around a lot. That is normal.

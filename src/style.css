@@ -285,6 +285,8 @@ blockquote{margin:1.2em 0;padding:10px 18px;border-left:5px solid var(--yellow);
 .seg{display:flex}
 .seg button{border:1.5px solid var(--navy);background:#fff;padding:4px 10px;font-weight:700;font-size:13px}
 .seg button.on{background:var(--navy);color:#fff}
+.seg.big button{padding:9px 18px;font-size:15px}
+.seg.big button+button{border-left:0}
 blockquote.iv{font-size:15px;margin:0 0 10px;padding:6px 12px}
 blockquote.iv small{display:block;color:var(--muted);font-size:12px}
 

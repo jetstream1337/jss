@@ -139,7 +139,7 @@ J.routes.league = function (S) {
     + '<div class="row"><button class="btn sm" data-act="lgSave">Save</button></div></section>'
     + '<section class="panel"><h3>Commissioner note</h3><p class="sub">Shows at the top of the home page.</p><textarea id="annText" placeholder="Example: Martinsville moved to Saturday night.">' + esc(S.announcement.text) + '</textarea><div class="row"><button class="btn sm" data-act="annPost">Post note</button>' + (S.announcement.text ? '<button class="btn ghost sm" data-act="annClear">Remove note</button>' : '') + '</div></section>'
     + '<section class="panel"><h3>Series</h3><p class="sub">Each series is its own league. Switch between them with the Series box in the sidebar.</p>' + leagues + '</section>'
-    + '<section class="panel"><h3>Backup</h3><p class="sub">Save everything (all series, stories, fans, photos) to one file, or bring a backup back. Your Claude key and GitHub token are never put in a backup.</p><div class="row"><button class="btn sm" data-act="bkDown">Download backup</button><button class="btn ghost sm" data-act="bkUp">Restore a backup</button><input type="file" id="bkFile" accept=".json,application/json" hidden></div></section>'
+    + '<section class="panel"><h3>Backup</h3><p class="sub">Save everything (all series, stories, fans, photos) to one file, or bring a backup back. Your AI key and GitHub token are never put in a backup.</p><div class="row"><button class="btn sm" data-act="bkDown">Download backup</button><button class="btn ghost sm" data-act="bkUp">Restore a backup</button><input type="file" id="bkFile" accept=".json,application/json" hidden></div></section>'
     + '<section class="panel"><h3>Start over</h3><p class="sub">Only for ' + esc(S.series.label) + '. Download a backup first.</p><div class="row"><button class="btn danger sm" data-act="resetResults">Clear results only</button><button class="btn danger sm" data-act="resetSeason">New season (clear everything but the schedule)</button></div></section>';
 };
 J.afters.league = function () { var f = $('bkFile'); if (f) f.addEventListener('change', function () { restore(this.files[0]); this.value = ''; }); };
@@ -223,7 +223,7 @@ J.acts.delArticle = function (el) {
 var reacting = {};
 J.reactToArticle = async function (id, quiet) {
   var S = J.S, a = S.articles.find(function (x) { return x.id === id; }); if (!a) return;
-  if (!J.ai.hasKey()) { J.toast('Add your Claude key in Settings first.', true); return; }
+  if (!J.ai.hasKey()) { J.toast('Add your ' + J.ai.name() + ' key in Settings first.', true); return; }
   if (reacting[id]) return; reacting[id] = 1;
   if (!quiet) J.toast('The fans are reading the story. About 30 seconds.');
   try {
@@ -240,7 +240,7 @@ J.acts.reactArticle = function (el) { J.reactToArticle(el.dataset.id); };
 /* ---------- Garage tools ---------- */
 var gBusy = '';
 async function garageRun(kind) {
-  var S = J.S; if (gBusy) return; if (!J.ai.hasKey()) { J.toast('Add your Claude key in Settings first.', true); return; }
+  var S = J.S; if (gBusy) return; if (!J.ai.hasKey()) { J.toast('Add your ' + J.ai.name() + ' key in Settings first.', true); return; }
   if (!S.races.length) { J.toast('Import a race first.', true); return; }
   gBusy = kind; J.refresh();
   try {
@@ -262,7 +262,7 @@ J.routes.garagetools = function (S) {
   var b = function (k, label) { return '<button class="btn' + (k === 'refresh' ? '' : ' ghost') + ' sm" data-act="gtRun" data-k="' + k + '"' + (gBusy || !hasKey ? ' disabled' : '') + '>' + (gBusy === k ? 'Working...' : label) + '</button>'; };
   var drivers = J.agg(S.races);
   return J.phead('Garage Tools', 'Keep the fan chat and outlooks fresh')
-    + (!hasKey ? '<div class="warn" style="margin:0 0 18px">These need your Claude key. Add it in <a href="#/settings"><b>Settings</b></a>.</div>' : '')
+    + (!hasKey ? '<div class="warn" style="margin:0 0 18px">These need an AI key (Gemini is free). Add it in <a href="#/settings"><b>Settings</b></a>.</div>' : '')
     + '<section class="panel"><h3>Refresh</h3><p class="sub">Race imports do this for you. Use these between races or when the Garage feels stale.</p><div class="row" style="margin-top:0">' + b('refresh', 'Refresh the Garage') + b('talk', 'New fan chatter only') + b('outlooks', 'New outlook commentary only') + '</div></section>'
     + '<section class="panel"><h3>Fan accounts</h3><p class="sub">' + J.plural(S.fans.length, 'account') + ': ' + ages.teen + ' teens, ' + ages.young + ' young adults, ' + ages.adult + ' adults, ' + ages.oldhead + ' old-heads. ' + st.good + ' back a driver, ' + st.bad + ' are haters, ' + st.none + ' are neutral.</p>'
     + '<div class="row" style="margin-top:0"><button class="btn ghost sm" data-act="fansFill"' + (drivers.length ? '' : ' disabled') + '>Add more fans</button><button class="btn danger sm" data-act="fansReset"' + (S.fans.length ? '' : ' disabled') + '>Replace all fans</button></div></section>'
@@ -284,12 +284,18 @@ J.acts.ivDel = function (el) { var S = J.S; S.interviews = S.interviews.filter(f
 var MODELS = [['claude-sonnet-5-5', 'Sonnet 5.5 (recommended)'], ['claude-haiku-5-5', 'Haiku 5.5 (cheaper)'], ['claude-opus-5-5', 'Opus 5.5 (priciest)']];
 function modelSel(id, cur) { var known = MODELS.some(function (m) { return m[0] === cur; }); return '<select id="' + id + '">' + MODELS.map(function (m) { return '<option value="' + m[0] + '"' + (m[0] === cur ? ' selected' : '') + '>' + esc(m[1]) + '</option>'; }).join('') + (known ? '' : '<option value="' + esc(cur) + '" selected>' + esc(cur) + '</option>') + '</select>'; }
 J.routes.settings = function () {
-  var s = J.settings, P = J.publisher, url = P ? P.publicUrl() : '';
-  return J.phead('Settings', 'Claude, the public website and how the app behaves')
-    + '<section class="panel"><h3>Claude (AI writing)</h3><p class="sub">Writes the news, the fan chatter and the outlook commentary. You pay Anthropic directly for what you use: roughly 10 to 15 cents per imported race, a few cents per Story Studio article. Get a key at console.anthropic.com under API Keys.</p>'
-    + '<div class="fgrid"><div class="field wide"><label for="sKey">Claude API key</label><div class="inl"><input id="sKey" type="password" autocomplete="off" spellcheck="false" value="' + esc(s.apiKey) + '" placeholder="sk-ant-..." style="flex:1"><button class="btn ghost sm" data-act="showSecret" data-for="sKey">Show</button><button class="btn sm" data-act="testKey">Test key</button></div></div>'
-    + '<div class="field"><label for="sWriter">Model for news stories</label>' + modelSel('sWriter', s.writerModel) + '</div><div class="field"><label for="sChat">Model for fan chatter and outlooks</label>' + modelSel('sChat', s.chatterModel) + '</div></div>'
-    + '<label class="check"><input type="checkbox" id="sAuto"' + (s.autoCoverage !== false ? ' checked' : '') + '> After each race import, have Claude write the recap and fan reactions automatically</label>'
+  var s = J.settings, P = J.publisher, url = P ? P.publicUrl() : '', prov = J.ai.provider();
+  return J.phead('Settings', 'AI writing, the public website and how the app behaves')
+    + '<section class="panel"><h3>AI writing</h3><p class="sub">Writes the news, the fan chatter in The Garage and the outlook commentary.</p>'
+    + '<div class="seg big" role="radiogroup" aria-label="AI service"><button data-act="setProv" data-v="gemini" class="' + (prov === 'gemini' ? 'on' : '') + '">Gemini (free)</button><button data-act="setProv" data-v="claude" class="' + (prov === 'claude' ? 'on' : '') + '">Claude (paid)</button></div>'
+    + (prov === 'gemini'
+      ? '<p class="sub" style="margin-top:12px">Free from Google, no credit card. Get a key: go to <b>aistudio.google.com</b>, sign in with a Google account, click <b>Get API key</b>, then <b>Create API key</b>, and copy it. Google gives a daily allowance of free requests (a race import uses about 3). Google may use what you send on the free plan to improve its products, so keep personal info out of your story notes.</p>'
+        + '<div class="fgrid"><div class="field wide"><label for="sGKey">Gemini API key</label><div class="inl"><input id="sGKey" type="password" autocomplete="off" spellcheck="false" value="' + esc(s.geminiKey) + '" placeholder="AIza..." style="flex:1"><button class="btn ghost sm" data-act="showSecret" data-for="sGKey">Show</button><button class="btn sm" data-act="testKey">Test key</button></div></div>'
+        + ((s.geminiList || []).length ? '<div class="field wide" style="max-width:460px"><label for="sGModel">Model</label><select id="sGModel">' + s.geminiList.map(function (m) { return '<option value="' + esc(m.id) + '"' + (m.id === s.geminiModel ? ' selected' : '') + '>' + esc(m.label) + (m.id === s.geminiList[0].id ? ' (recommended)' : '') + '</option>'; }).join('') + '</select></div>' : '') + '</div>'
+      : '<p class="sub" style="margin-top:12px">The best writing. You pay Anthropic for what you use: roughly 10 to 15 cents per imported race. Get a key at <b>console.anthropic.com</b> under API Keys (needs credit added under Billing).</p>'
+        + '<div class="fgrid"><div class="field wide"><label for="sKey">Claude API key</label><div class="inl"><input id="sKey" type="password" autocomplete="off" spellcheck="false" value="' + esc(s.apiKey) + '" placeholder="sk-ant-..." style="flex:1"><button class="btn ghost sm" data-act="showSecret" data-for="sKey">Show</button><button class="btn sm" data-act="testKey">Test key</button></div></div>'
+        + '<div class="field"><label for="sWriter">Model for news stories</label>' + modelSel('sWriter', s.writerModel) + '</div><div class="field"><label for="sChat">Model for fan chatter and outlooks</label>' + modelSel('sChat', s.chatterModel) + '</div></div>')
+    + '<label class="check"><input type="checkbox" id="sAuto"' + (s.autoCoverage !== false ? ' checked' : '') + '> After each race import, have the AI write the recap and fan reactions automatically</label>'
     + '<div class="row"><button class="btn sm" data-act="saveAi">Save</button></div><div id="keyMsg" class="msg" hidden></div></section>'
     + '<section class="panel"><h3>Public website</h3><p class="sub">Every change you make here goes up to your free GitHub Pages site on its own. Visitors see it about 1 to 2 minutes later (GitHub takes a moment to update the site).</p>'
     + (url ? '<div class="urlbox"><span>Your site:</span><b id="pubUrl">' + esc(url) + '</b><button class="btn ghost sm" data-act="copyUrl">Copy link</button><button class="btn ghost sm" data-act="openUrl">Open</button></div>' : '')
@@ -310,14 +316,24 @@ J.routes.settings = function () {
 J.nav.push({ id: 'settings', label: 'Settings', group: 'Commissioner', admin: true });
 J.acts.showSecret = function (el) { var i = $(el.dataset.for); i.type = i.type === 'password' ? 'text' : 'password'; el.textContent = i.type === 'password' ? 'Show' : 'Hide'; };
 function boxMsg(id, t, err) { var m = $(id); if (!m) return; m.hidden = false; m.className = 'msg' + (err ? ' err' : ''); m.textContent = t; }
-J.acts.saveAi = async function () {
-  var s = J.settings; s.apiKey = $('sKey').value.trim(); s.writerModel = $('sWriter').value; s.chatterModel = $('sChat').value; s.autoCoverage = $('sAuto').checked;
-  await J.saveSettings(); boxMsg('keyMsg', 'Saved.');
-};
+function readAi() {
+  var s = J.settings, g = function (id) { return $(id); };
+  if (g('sKey')) s.apiKey = g('sKey').value.trim();
+  if (g('sWriter')) { s.writerModel = g('sWriter').value; s.chatterModel = g('sChat').value; }
+  if (g('sGKey')) { var k = g('sGKey').value.trim(); if (k !== s.geminiKey) { s.geminiKey = k; s.geminiModel = ''; s.geminiList = []; } }
+  if (g('sGModel')) s.geminiModel = g('sGModel').value;
+  if (g('sAuto')) s.autoCoverage = g('sAuto').checked;
+}
+J.acts.setProv = async function (el) { readAi(); J.settings.aiProvider = el.dataset.v; await J.saveSettings(); J.refresh(); };
+J.acts.saveAi = async function () { readAi(); await J.saveSettings(); boxMsg('keyMsg', 'Saved.'); };
 J.acts.testKey = async function () {
-  await J.acts.saveAi(); if (!J.ai.hasKey()) { boxMsg('keyMsg', 'Paste your key first.', true); return; }
+  readAi(); await J.saveSettings(); if (!J.ai.hasKey()) { boxMsg('keyMsg', 'Paste your key first.', true); return; }
   boxMsg('keyMsg', 'Checking...');
-  try { var ok = await J.ai.test(); boxMsg('keyMsg', ok ? 'The key works. Claude is ready.' : 'Claude answered, but oddly. It should still work.', !ok); }
+  try {
+    var ok = await J.ai.test(), nm = J.ai.name(), hadList = !!$('sGModel');
+    if (J.ai.provider() === 'gemini' && !hadList) J.refresh();
+    boxMsg('keyMsg', ok ? 'The key works. ' + nm + ' is ready.' + (J.ai.provider() === 'gemini' ? ' Using ' + J.settings.geminiModel + '.' : '') : nm + ' answered, but oddly. It should still work.', !ok);
+  }
   catch (e) { boxMsg('keyMsg', 'That did not work: ' + e.message, true); }
 };
 J.acts.saveGh = async function () {
