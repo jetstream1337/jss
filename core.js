@@ -107,7 +107,8 @@ J.normalize = function (S) {
   S.schedule.forEach(function (r, i) { if (!r.id) r.id = 's' + Date.now().toString(36) + i; if (!r.type) r.type = J.guessType(r.track || r.name); });
   S.races = Array.isArray(S.races) ? S.races : [];
   S.races.forEach(function (r, i) { if (!r.id) r.id = 'r' + i; r.meta = r.meta || {}; r.rows = r.rows || []; });
-  ['articles', 'posts', 'fans', 'media', 'interviews'].forEach(function (k) { S[k] = Array.isArray(S[k]) ? S[k] : []; });
+  ['articles', 'posts', 'fans', 'media', 'interviews', 'sessions'].forEach(function (k) { S[k] = Array.isArray(S[k]) ? S[k] : []; });
+  S.sessions.forEach(function (x) { x.rows = x.rows || []; x.meta = x.meta || {}; });
   S.rep = S.rep || {};
   S.ai = S.ai || {};
   S.announcement = S.announcement || { text: '', date: '' };
@@ -158,8 +159,21 @@ J.pointsFor = function (S, pos, n) {
   if (mode === 'custom' && last.custom) { var a = last.custom.split(',').map(function (x) { return Number(x.trim()); }); return isFinite(a[pos - 1]) ? a[pos - 1] : 0; }
   return J.nascarPts(pos);
 };
+/* ---------- practice / qualifying / happy hour ---------- */
+J.SESSIONS = { practice: 'Practice', qualifying: 'Qualifying', happy: 'Happy Hour' };
+J.SESSION_ORDER = ['practice', 'qualifying', 'happy'];
+J.sessionsFor = function (S, sid) { return (S.sessions || []).filter(function (x) { return sid && x.sid === sid; }).sort(function (a, b) { return J.SESSION_ORDER.indexOf(a.type) - J.SESSION_ORDER.indexOf(b.type); }); };
+J.sessionOf = function (S, sid, type) { return (S.sessions || []).find(function (x) { return x.sid === sid && x.type === type; }) || null; };
+J.timeSecs = function (t) { var s = String(t || '').trim(), m = s.match(/^(?:(\d+):)?(\d+(?:\.\d+)?)$/); return m ? (m[1] ? +m[1] * 60 : 0) + parseFloat(m[2]) : null; };
+/* Everyone in the league: drivers with race results first (standings order), then drivers only seen in practice/qualifying. */
+J.roster = function (S) {
+  var out = J.agg(S.races).map(function (d) { return { key: d.key, name: d.name, car: d.car, raced: true }; }), seen = {};
+  out.forEach(function (d) { seen[d.key] = 1; });
+  (S.sessions || []).slice().sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); }).forEach(function (x) { x.rows.forEach(function (r) { var k = J.driverKey(r.driver); if (k && !seen[k]) { seen[k] = 1; out.push({ key: k, name: String(r.driver).trim(), car: r.car || '', raced: false }); } }); });
+  return out;
+};
 J.findDriver = function (S, name) {
-  var ds = J.agg(S.races); if (!name || !ds.length) return null;
+  var ds = J.roster(S); if (!name || !ds.length) return null;
   var k = J.driverKey(name), hit = ds.find(function (d) { return d.key === k; });
   if (hit) return hit;
   var ln = J.lastName(name).toLowerCase();
@@ -196,7 +210,7 @@ J.ratings = function (S) {
 function simOne(arr, T, rand) {
   var sc = new Array(arr.length);
   for (var i = 0; i < arr.length; i++) {
-    var d = arr[i], z = (d.skill[T] - 0.5) * 4 + gauss(rand) * TYPE_SIGMA[T];
+    var d = arr[i], z = (d.skill[T] - 0.5) * 4 + (d.boost || 0) + gauss(rand) * TYPE_SIGMA[T];
     var dnf = rand() < d.dnfRate * TYPE_DNF[T]; if (dnf) z = -5 - rand();
     sc[i] = { i: i, z: z, dnf: dnf };
   }
@@ -255,25 +269,41 @@ J.simulateSeason = function (S, N) {
   var res = { N: N, drivers: out, cutAt: cutAt, played: played, remaining: remaining.length, size: S.chase.size, decided: cutAt <= played };
   CACHE[key] = res; return res;
 };
+/* how much a session tells us about race pace, by track type (qualifying matters most where passing is hard) */
+var SESSION_W = { qualifying: { super: 0.35, inter: 0.9, short: 1.0, road: 1.0, unique: 0.9 }, happy: { super: 0.25, inter: 0.8, short: 0.7, road: 0.7, unique: 0.8 }, practice: { super: 0.15, inter: 0.5, short: 0.5, road: 0.5, unique: 0.5 } };
+J.sessionBoost = function (S, sid, T) {
+  var out = {}, used = [];
+  J.sessionsFor(S, sid).forEach(function (x) {
+    var n = x.rows.length, w = (SESSION_W[x.type] || SESSION_W.practice)[T] || 0.5; if (n < 2) return; used.push(x.type);
+    x.rows.forEach(function (r) { var k = J.driverKey(r.driver), p = 1 - (r.position - 1) / (n - 1); out[k] = (out[k] || 0) + (p - 0.5) * 2 * w; });
+  });
+  return { boost: out, used: used };
+};
 J.raceOutlook = function (S) {
   var nx = J.nextRound(S); if (!nx) return { none: true };
   var T = nx.type || J.guessType(nx.track || nx.name);
-  var D = J.ratings(S), arr = Object.keys(D).map(function (k) { return D[k]; });
+  var D = J.ratings(S), sb = J.sessionBoost(S, nx.id, T);
+  J.sessionsFor(S, nx.id).forEach(function (x) { x.rows.forEach(function (r) { var k = J.driverKey(r.driver); if (k && !D[k]) { var sk = {}; J.TYPE_KEYS.forEach(function (t) { sk[t] = 0.5; }); D[k] = { key: k, name: String(r.driver).trim(), car: r.car || '', n: 0, sum: 0, byType: {}, dnf: 0, finSum: 0, overall: 0.5, skill: sk, dnfRate: 0.06, fresh: true }; } }); });
+  var field = {}; J.sessionsFor(S, nx.id).forEach(function (x) { x.rows.forEach(function (r) { field[J.driverKey(r.driver)] = 1; }); });
+  var arr = Object.keys(D).map(function (k) { return D[k]; });
+  if (Object.keys(field).length >= 5) arr = arr.filter(function (d) { return field[d.key]; });
   if (!arr.length) return { empty: true, next: nx, type: T };
-  var key = cacheKey(S, 'race' + nx.id); if (CACHE[key]) return CACHE[key];
+  var key = cacheKey(S, 'race' + nx.id) + '|' + (S.sessions || []).filter(function (x) { return x.sid === nx.id; }).map(function (x) { return x.id + x.rows.length; }).join(','); if (CACHE[key]) return CACHE[key];
+  arr.forEach(function (d) { d.boost = sb.boost[d.key] || 0; });
   var N = 3000, rand = J.rng(key), acc = arr.map(function () { return { w: 0, t5: 0, t10: 0, fin: 0, dnf: 0 }; });
   for (var s = 0; s < N; s++) { var res = simOne(arr, T, rand); res.forEach(function (o, p) { var a = acc[o.i]; if (p === 0) a.w++; if (p < 5) a.t5++; if (p < 10) a.t10++; a.fin += p + 1; if (o.dnf) a.dnf++; }); }
+  var qpos = {}, qs = J.sessionOf(S, nx.id, 'qualifying'); if (qs) qs.rows.forEach(function (r) { qpos[J.driverKey(r.driver)] = r.position; });
   var rows = arr.map(function (d, i) {
     var a = acc[i], hist = []; S.races.forEach(function (r) { if (nx.track && r.track === nx.track) { var x = r.rows.find(function (q) { return J.driverKey(q.driver) === d.key; }); if (x) hist.push(x.position); } });
     var tb = d.byType[T];
-    return { key: d.key, name: d.name, car: d.car, win: a.w / N, top5: a.t5 / N, top10: a.t10 / N, avg: a.fin / N, dnf: a.dnf / N, skill: d.skill[T], overall: d.overall, typeN: tb ? tb.n : 0, typeAvg: tb ? tb.fin / tb.n : null, avgAll: d.n ? d.finSum / d.n : 0, trackHist: hist };
+    return { key: d.key, name: d.name, car: d.car, win: a.w / N, top5: a.t5 / N, top10: a.t10 / N, avg: a.fin / N, dnf: a.dnf / N, skill: d.skill[T], overall: d.overall, typeN: tb ? tb.n : 0, typeAvg: tb ? tb.fin / tb.n : null, avgAll: d.n ? d.finSum / d.n : null, qual: qpos[d.key] || null, trackHist: hist };
   }).sort(function (a, b) { return b.win - a.win || b.top10 - a.top10; });
   var fav = rows.slice(0, 5), used = {}; fav.forEach(function (r) { used[r.key] = 1; });
   var well = rows.filter(function (r) { return !used[r.key]; }).sort(function (a, b) { return b.top10 - a.top10; }).slice(0, 6); well.forEach(function (r) { used[r.key] = 1; });
   var dark = rows.filter(function (r) { return !used[r.key] && r.typeN > 0 && r.skill > r.overall; }).sort(function (a, b) { return (b.skill - b.overall) - (a.skill - a.overall); }).slice(0, 4);
   var avoid = rows.slice().sort(function (a, b) { return a.top10 - b.top10; }).slice(0, 6);
   var risk = rows.slice().sort(function (a, b) { return b.dnf - a.dnf; }).slice(0, 4);
-  var out = { next: nx, type: T, rows: rows, favorites: fav, shouldRunWell: well, darkHorses: dark, notUpFront: avoid, wreckRisk: risk, N: N };
+  var out = { next: nx, type: T, rows: rows, favorites: fav, shouldRunWell: well, darkHorses: dark, notUpFront: avoid, wreckRisk: risk, N: N, sessionsUsed: sb.used };
   CACHE[key] = out; return out;
 };
 J.chaseOutlook = function (S) {

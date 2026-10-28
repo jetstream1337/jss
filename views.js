@@ -6,7 +6,7 @@ J.S = null; J.leagues = null; J.seriesList = []; J.blobs = {}; J.afters = {};
 J.ui = { repAll: false, repWorst: false, feedFilter: 'all', newsFilter: 'all' };
 
 var NAMES = {};
-function refreshNames(S) { NAMES = {}; J.agg(S.races).forEach(function (d) { NAMES[d.key] = d.name; }); }
+function refreshNames(S) { NAMES = {}; J.roster(S).forEach(function (d) { NAMES[d.key] = d.name; }); }
 function pct(x) { if (x <= 0) return '0%'; if (x < 0.01) return '<1%'; if (x > 0.99) return '>99%'; return Math.round(x * 100) + '%'; }
 function plural(n, w) { return n + ' ' + w + (n === 1 ? '' : 's'); }
 function empty(t, s, extra) { return '<div class="empty"><b>' + esc(t) + '</b><span>' + esc(s || '') + '</span>' + (extra || '') + '</div>'; }
@@ -26,6 +26,18 @@ function mediaTag(m, cls) {
 function thumbOf(S, a) { var id = (a.media || [])[0], m = id && mediaOf(S, id); if (!m) return ''; var src = m.type === 'video' ? posterSrc(m) : mediaSrc(m); return src ? '<img src="' + esc(src) + '" alt="" loading="lazy">' : ''; }
 function outletTag(a) { var o = J.OUTLETS[a.outlet] || J.OUTLETS.wire; return '<span class="otag" style="--oc:' + o.color + '">' + esc(o.name) + '</span>'; }
 function carPlate(c) { return '<span class="car">' + esc(c || '-') + '</span>'; }
+
+function sessionTable(x, limit) {
+  var rows = x.rows.slice().sort(function (a, b) { return a.position - b.position; }), lead = J.timeSecs(rows[0] && rows[0].time);
+  return '<div class="tw"><table class="data"><thead><tr><th>Pos</th><th>Car</th><th>Driver</th><th>Time</th><th>Gap</th></tr></thead><tbody>' + rows.slice(0, limit || 99).map(function (r) {
+    var t = J.timeSecs(r.time), gap = (t != null && lead != null && r.position > 1) ? '+' + (t - lead).toFixed(3) : '';
+    return '<tr data-driver="' + esc(J.driverKey(r.driver)) + '"><td class="rank">' + r.position + '</td><td>' + carPlate(r.car) + '</td><td><b>' + esc(r.driver) + '</b></td><td>' + esc(r.time || '-') + '</td><td class="dim">' + gap + '</td></tr>';
+  }).join('') + '</tbody></table></div>';
+}
+function sessionBlocks(S, sid, openFirst) {
+  return J.sessionsFor(S, sid).slice().reverse().map(function (x, i) { return '<details class="card sess"' + (openFirst && i === 0 ? ' open' : '') + '><summary>' + esc(J.SESSIONS[x.type]) + '<small>' + J.plural(x.rows.length, 'car') + (x.type === 'qualifying' && x.rows[0] ? ', pole ' + esc(x.rows[0].driver) : '') + (x.meta && x.meta.weather ? ', ' + esc(x.meta.weather) : '') + '</small></summary>' + sessionTable(x) + '</details>'; }).join('');
+}
+J.sessionBlocks = sessionBlocks;
 
 /* ---------- rail (sidebar) ---------- */
 function renderRail() {
@@ -87,7 +99,7 @@ J.routes.home = function (S) {
   }
   if (nx) {
     var ro = J.raceOutlook(S);
-    out += '<section class="card"><div class="card-h"><h3>Up next</h3><a href="#/garage/race">Race outlook</a></div><div class="card-b"><div class="wl"><span>' + esc(J.TYPES[nx.type] || '') + '</span><b>' + esc(nx.name) + '</b></div><p class="sub">' + esc(nx.track || '') + (nx.date ? ', ' + esc(J.fmtDate(nx.date)) : '') + '</p>'
+    out += '<section class="card"><div class="card-h"><h3>Up next</h3><a href="#/garage/race">Race outlook</a></div><div class="card-b"><div class="wl"><span>' + esc(J.TYPES[nx.type] || '') + '</span><b>' + esc(nx.name) + '</b></div><p class="sub">' + esc(nx.track || '') + (nx.date ? ', ' + esc(J.fmtDate(nx.date)) : '') + '</p>' + (function () { var q = J.sessionOf(S, nx.id, 'qualifying'); return q && q.rows[0] ? '<p class="sub"><b>Pole: ' + esc(q.rows[0].driver) + '</b>' + (q.rows[0].time ? ' (' + esc(q.rows[0].time) + ')' : '') + '</p>' : ''; })()
       + (ro && ro.favorites ? '<div class="favs">' + ro.favorites.slice(0, 3).map(function (f) { return '<div><span>' + esc(f.name) + '</span><b>' + pct(f.win) + '</b></div>'; }).join('') + '</div><small class="sub">Win odds</small>' : '') + '</div></section>';
   }
   out += '</div></div>';
@@ -121,7 +133,7 @@ J.acts.exportCsv = function () {
 
 /* ---------- Race results ---------- */
 J.routes.results = function (S, args) {
-  if (!S.races.length) return phead('Race Results', 'Finish order, laps led and points') + empty('No races yet', J.MODE === 'admin' ? 'Import a race and it shows up here.' : 'Results land here after the first race.');
+  if (!S.races.length) { var nx0 = J.nextRound(S), ss0 = nx0 ? J.sessionsFor(S, nx0.id) : []; return phead('Race Results', 'Finish order, laps led and points') + empty('No races yet', J.MODE === 'admin' ? 'Import a race and it shows up here.' : 'Results land here after the first race.') + (ss0.length ? '<h3 class="sech">' + esc(nx0.name) + ': practice and qualifying</h3>' + sessionBlocks(S, nx0.id, true) : ''); }
   var race = S.races.find(function (r) { return r.id === args[0]; }) || S.races[S.races.length - 1], info = J.raceInfo(race), w = info.winner, m = race.meta || {};
   var sel = '<select class="sel" id="raceSel" aria-label="Choose a race">' + S.races.slice().reverse().map(function (r) { return '<option value="' + esc(r.id) + '"' + (r.id === race.id ? ' selected' : '') + '>' + esc(r.name) + (r.date ? ' (' + esc(J.fmtDate(r.date)) + ')' : '') + '</option>'; }).join('') + '</select>';
   var chips = []; if (race.track) chips.push('Track <b>' + esc(race.track) + '</b>'); chips.push('Type <b>' + esc(J.TYPES[J.raceType(S, race)]) + '</b>'); if (race.date) chips.push('<b>' + esc(J.fmtDate(race.date)) + '</b>'); if (m.weather) chips.push('Weather <b>' + esc(m.weather) + '</b>'); if (m.pole) chips.push('Pole <b>' + esc(m.pole) + '</b>'); if (m.cautions != null) chips.push('Cautions <b>' + m.cautions + '</b>'); if (m.leadChanges != null) chips.push('Lead changes <b>' + m.leadChanges + '</b>'); if (info.laps) chips.push('Laps <b>' + info.laps + '</b>');
@@ -136,6 +148,7 @@ J.routes.results = function (S, args) {
     + (art.length ? '<a class="btn sm" href="#/news/' + esc(art[0].id) + '">Read the story</a>' : '') + '</div>'
     + '<div class="chips">' + chips.map(function (c) { return '<span class="chip">' + c + '</span>'; }).join('') + '</div>'
     + '<div class="tw"><table class="data"><thead><tr><th>Fin</th><th>Start</th><th>Car</th><th>Driver</th><th>Laps</th><th>Led</th><th>Status</th><th>Pts</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>'
+    + (J.sessionsFor(S, race.sid).length ? '<h3 class="sech">Practice and qualifying</h3>' + sessionBlocks(S, race.sid, false) : '')
     + (gal.length ? '<h3 class="sech">From the race</h3><div class="gallery">' + gal.map(function (x) { return '<button class="gitem" data-act="lightbox" data-id="' + esc(x.id) + '">' + mediaTag(x) + '</button>'; }).join('') + '</div>' : '');
 };
 J.nav.push({ id: 'results', label: 'Race Results' });
@@ -147,7 +160,7 @@ J.routes.schedule = function (S) {
   return phead('Schedule', S.schedule.length + ' races, ' + S.races.length + ' run')
     + '<div class="card">' + S.schedule.map(function (r, i) {
       var rc = done[r.id], isNext = nx && nx.id === r.id;
-      var st = rc ? '<a class="chip g" href="#/results/' + esc(rc.id) + '">Won by ' + esc(J.lastName(J.raceInfo(rc).winner.driver)) + '</a>' : isNext ? '<span class="chip y">Next up</span>' : '<span class="chip">Scheduled</span>';
+      var st = rc ? '<a class="chip g" href="#/results/' + esc(rc.id) + '">Won by ' + esc(J.lastName(J.raceInfo(rc).winner.driver)) + '</a>' : isNext ? '<span class="chip y">Next up' + (J.sessionOf(S, r.id, 'qualifying') ? ', qualifying in' : J.sessionsFor(S, r.id).length ? ', practice in' : '') + '</span>' : '<span class="chip">Scheduled</span>';
       var cut = (i + 1 === S.chase.regularRaces) ? '<div class="cutrow">' + esc(S.chase.name) + ' field set after this race</div>' : '';
       return '<div class="srow' + (isNext ? ' next' : '') + '"><div class="rd">' + (i + 1) + '</div><div class="sm"><b>' + esc(r.name) + '</b><small>' + esc(r.track || 'Track TBD') + (r.date ? ', ' + esc(J.fmtDate(r.date)) : '') + (r.note ? ', ' + esc(r.note) : '') + '</small></div><span class="chip b">' + esc(J.TYPES[r.type] || '') + '</span>' + st + '</div>' + cut;
     }).join('') + '</div>';
@@ -229,7 +242,7 @@ function threadHtml(S, t) {
 }
 J.threadHtml = threadHtml;
 function repPanel(S) {
-  var ds = J.agg(S.races); if (!ds.length) return '<section class="card"><div class="card-h"><h3>Driver reputation</h3></div><div class="card-b">' + empty('No drivers yet', 'Reputations start at 50 once drivers race.') + '</div></section>';
+  var ds = J.roster(S); if (!ds.length) return '<section class="card"><div class="card-h"><h3>Driver reputation</h3></div><div class="card-b">' + empty('No drivers yet', 'Reputations start at 50 once drivers are in.') + '</div></section>';
   var list = ds.map(function (d) { var r = J.repOf(S, d.key); return { d: d, score: r.score, ev: r.events.length, tr: J.repTrend(S, d.key) }; });
   list.sort(function (a, b) { return J.ui.repWorst ? a.score - b.score : b.score - a.score; });
   var shown = J.ui.repAll ? list : list.slice(0, 10);
@@ -284,17 +297,18 @@ function chasePage(S) {
 function racePage(S) {
   var ro = J.raceOutlook(S);
   if (ro.none) return empty('No race left on the schedule', 'Add more races in the commissioner app to see the next outlook.');
-  if (ro.empty) return '<div class="rhead"><b>' + esc(ro.next.name) + '</b><span>' + esc(ro.next.track || '') + ', ' + esc(J.TYPES[ro.type]) + '</span></div>' + empty('Race Outlook needs results', 'Once a few drivers have raced, this page shows who to expect up front.');
+  if (ro.empty) return '<div class="rhead"><b>' + esc(ro.next.name) + '</b><span>' + esc(ro.next.track || '') + ', ' + esc(J.TYPES[ro.type]) + '</span></div>' + empty('Race Outlook needs results', 'Once practice, qualifying or a race is in, this page shows who to expect up front.');
   var nx = ro.next, fav = ro.favorites[0];
   var fallback = fav.name + ' is the favorite at ' + pct(fav.win) + ' to win ' + nx.name + '. This is a ' + J.TYPES[ro.type].toLowerCase() + ' race, so ' + (ro.type === 'super' ? 'expect a pack and a lot of luck.' : ro.type === 'short' ? 'track position and patience matter most.' : ro.type === 'road' ? 'braking and mistakes decide it.' : 'tire wear and long runs matter most.');
   function grp(title, list, why) { return list.length ? '<section class="card grp"><div class="card-h"><h3>' + title + '</h3></div><div class="card-b">' + list.map(function (r) { return '<div class="gline" data-driver="' + esc(r.key) + '"><div><b>' + esc(r.name) + '</b><small>' + esc(why(r)) + '</small>' + aiNote(S, 'race', r.key) + '</div><span class="num">' + pct(r.top10) + ' top 10</span></div>'; }).join('') + '</div></section>' : ''; }
-  var typeWhy = function (r) { return r.typeN ? 'Avg finish ' + r.typeAvg.toFixed(1) + ' at ' + J.TYPES[ro.type].toLowerCase() + ' tracks' : 'Avg finish ' + r.avgAll.toFixed(1) + ' so far'; };
+  var typeWhy = function (r) { var q = r.qual ? 'Qualified P' + r.qual + '. ' : ''; return q + (r.typeN ? 'Avg finish ' + r.typeAvg.toFixed(1) + ' at ' + J.TYPES[ro.type].toLowerCase() + ' tracks' : r.avgAll != null ? 'Avg finish ' + r.avgAll.toFixed(1) + ' so far' : 'First race in the league'); };
   return '<div class="rhead"><div><small>Next race</small><b>' + esc(nx.name) + '</b><span>' + esc(nx.track || '') + (nx.date ? ', ' + esc(J.fmtDate(nx.date)) : '') + '</span></div><span class="chip b">' + esc(J.TYPES[ro.type]) + '</span></div>'
     + analyst(S, 'race', fallback)
     + '<section class="card"><div class="card-h"><h3>Win odds</h3></div><div class="card-b">' + ro.rows.slice(0, 8).map(function (r) { return '<div class="wo" data-driver="' + esc(r.key) + '"><span>' + esc(r.name) + '</span>' + oddsBar(r.win / (ro.rows[0].win || 1), 'ww') + '<em>' + pct(r.win) + '</em></div>'; }).join('') + '</div></section>'
     + '<div class="grid2">' + grp('Expect them up front', ro.favorites, typeWhy) + grp('Should run well', ro.shouldRunWell, typeWhy) + grp('Dark horses', ro.darkHorses, function (r) { return 'Better at this track type than their overall form'; }) + grp('Do not expect them', ro.notUpFront, typeWhy) + '</div>'
     + '<section class="card grp"><div class="card-h"><h3>Wreck and failure risk</h3></div><div class="card-b">' + ro.wreckRisk.map(function (r) { return '<div class="gline"><div><b>' + esc(r.name) + '</b></div><span class="num">' + pct(r.dnf) + ' chance of a DNF</span></div>'; }).join('') + '</div></section>'
-    + '<p class="fine">Based on ' + ro.N.toLocaleString() + ' simulated races. Bars are scaled to the favorite so small differences are visible.</p>';
+    + (J.sessionsFor(S, nx.id).length ? '<h3 class="sech">Practice and qualifying</h3>' + sessionBlocks(S, nx.id, true) : '')
+    + '<p class="fine">Based on ' + ro.N.toLocaleString() + ' simulated races' + (ro.sessionsUsed && ro.sessionsUsed.length ? ', including ' + ro.sessionsUsed.map(function (k) { return J.SESSIONS[k].toLowerCase(); }).join(' and ') + ' speed' : '') + '. Bars are scaled to the favorite so small differences are visible.</p>';
 }
 function seasonPage(S) {
   var so = J.seasonOutlook(S); if (!so) return empty('Season Outlook needs results', 'Import a race to see projected finishes for the full season.');
