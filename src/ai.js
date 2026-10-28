@@ -176,7 +176,7 @@ function displayName(age, handle, rand, f) {
   return f + ' ' + s;
 }
 AI.ensureFans = function (S) {
-  var ds = J.agg(S.races); if (!ds.length) return false;
+  var ds = J.roster(S); if (!ds.length) return false;
   var target = Math.min(58, Math.max(36, ds.length + 12)), rand = J.rng('fans' + S.id + S.fans.length), used = {}, guard = 0;
   var usedName = {}; S.fans.forEach(function (f) { used[f.handle.toLowerCase()] = 1; usedName[String(f.name).toLowerCase()] = 1; });
   while (S.fans.length < target && guard++ < 500) {
@@ -211,12 +211,43 @@ AI.raceFacts = function (S, race) {
   lines.push('Points standings now: ' + standingsText(S, 10) + '.');
   return lines.join('\n');
 };
+/* Facts for the days before a race: practice, qualifying, happy hour. The race itself has NOT happened. */
+AI.sessionFacts = function (S, sid) {
+  var r = S.schedule.find(function (x) { return x.id === sid; }) || { name: 'the next race', track: '', type: 'inter' };
+  var idx = S.schedule.indexOf(r) + 1, lines = [];
+  lines.push('UPCOMING RACE: ' + r.name + (r.track ? ' at ' + r.track : '') + ' (' + (J.TYPES[r.type] || 'oval').toLowerCase() + ')' + (idx ? ', round ' + idx + ' of ' + S.schedule.length : '') + (r.date ? ', ' + r.date : '') + '.');
+  lines.push('THE RACE HAS NOT BEEN RUN YET. Nobody has won it. Do not invent race results, finishing spots, wrecks in the race or a winner. Talk about practice and qualifying, predictions and hype.');
+  J.sessionsFor(S, sid).forEach(function (x) {
+    var rows = x.rows.slice().sort(function (a, b) { return a.position - b.position; });
+    lines.push(J.SESSIONS[x.type] + (x.meta && x.meta.weather ? ' (weather ' + x.meta.weather + ')' : '') + ', ' + rows.length + ' cars: ' + rows.slice(0, 20).map(function (q) { return q.position + ' #' + (q.car || '?') + ' ' + q.driver + (q.time ? ' ' + q.time : ''); }).join('; ') + (rows.length > 20 ? '; ... last: ' + rows.slice(-3).map(function (q) { return q.position + ' ' + q.driver; }).join(', ') : '') + '.');
+    if (x.type === 'qualifying' && rows[0]) lines.push('Pole sitter: ' + rows[0].driver + (rows[0].time ? ' (' + rows[0].time + ')' : '') + '.' + (rows[1] ? ' Outside pole: ' + rows[1].driver + '.' : ''));
+  });
+  if (S.races.length) lines.push('Points standings going in: ' + standingsText(S, 10) + '.');
+  else lines.push('This is the first race of the season, so there are no points yet.');
+  return lines.join('\n');
+};
+/* Read a results table off one or more screenshots. Returns {session, track, rows:[...]} */
+AI.readScreenshot = async function (S, images, typeHint) {
+  var names = J.roster(S).map(function (d) { return d.name + (d.car ? ' #' + d.car : ''); }).slice(0, 80);
+  var user = 'The commissioner says this is: ' + (typeHint === 'race' ? 'RACE RESULTS' : (J.SESSIONS[typeHint] || 'a results table').toUpperCase() + ' results') + '.\n'
+    + (names.length ? 'Drivers already in this league (use these exact spellings when the screenshot clearly shows one of them): ' + names.join(', ') + '.\n' : '')
+    + (images.length > 1 ? images.length + ' screenshots are attached; together they may show one long list. Merge them, no duplicates.\n' : '')
+    + 'Copy every row you can see, top to bottom. If a name is cut off or unreadable, write what you can see and add "?" at the end. Never make up a driver.\n'
+    + 'Return ONLY JSON: {"session":"race|qualifying|practice|happy|unknown","track":"track name if shown or empty","rows":[{"pos":1,"car":"11","driver":"Full Name","time":"lap time or empty","laps":null,"led":null,"start":null,"interval":"gap or empty","status":"Running or reason out, or empty"}]}';
+  var res = await AI.json({ system: 'You transcribe results tables from screenshots of the racing sim NASCAR Racing 2003 and similar games. You copy exactly what is on screen. You never guess or invent names or numbers.', user: user, images: images, role: 'writer', maxTokens: 6000 });
+  var rows = (res.rows || []).filter(function (r) { return r && r.driver; }).map(function (r, i) {
+    var n = function (v) { var m = String(v == null ? '' : v).match(/-?\d+/); return m ? parseInt(m[0], 10) : 0; };
+    return { position: n(r.pos) || i + 1, start: n(r.start), driver: String(r.driver).trim(), car: String(r.car || '').replace(/[^\w]/g, ''), team: '', laps: n(r.laps), lapsLed: n(r.led), filePoints: null, status: String(r.status || ''), interval: String(r.interval || ''), time: String(r.time || '') };
+  });
+  var seen = {}; rows = rows.filter(function (r) { var k = r.position + '|' + r.driver.toLowerCase(); if (seen[k]) return false; seen[k] = 1; return true; }).sort(function (a, b) { return a.position - b.position; });
+  return { session: res.session || 'unknown', track: res.track || '', rows: rows };
+};
 function repText(S) {
-  var out = []; J.agg(S.races).slice(0, 14).forEach(function (d) { var r = J.repOf(S, d.key); out.push(d.name + ' ' + r.score + (r.events[0] ? ' (latest: ' + (r.events[0].delta > 0 ? '+' : '') + r.events[0].delta + ' ' + r.events[0].why + ')' : '')); });
+  var out = []; J.roster(S).slice(0, 14).forEach(function (d) { var r = J.repOf(S, d.key); out.push(d.name + ' ' + r.score + (r.events[0] ? ' (latest: ' + (r.events[0].delta > 0 ? '+' : '') + r.events[0].delta + ' ' + r.events[0].why + ')' : '')); });
   return out.join('; ');
 }
 function personaLine(S, f) {
-  var st = f.stance || {}, nm = st.driver ? ((J.agg(S.races).find(function (d) { return d.key === st.driver; }) || {}).name || st.driver) : null;
+  var st = f.stance || {}, nm = st.driver ? ((J.roster(S).find(function (d) { return d.key === st.driver; }) || {}).name || st.driver) : null;
   return f.id + ' | ' + (f.platform === 'forum' ? 'u/' : '@') + f.handle + ' | ' + f.platform + ' | ' + f.age + ' | ' + (nm && st.level ? J.STANCE[st.level] + ' of ' + nm : 'no strong driver') + ' | ' + f.quirks;
 }
 
@@ -248,7 +279,7 @@ var FAN_STYLE = 'HOW REAL NASCAR FANS ACTUALLY WRITE\n'
 var THREAD_SCHEMA = 'Return ONLY JSON: {"threads":[{"platform":"x" or "forum","title":"forum threads only","posts":[{"by":"<persona id or ray|tommy|dana|lou>","text":"...","replyTo":null or <index of an earlier post in this thread>}]}]}\nThe first post of every thread has replyTo null. Every other post replies to an earlier post by index.';
 
 AI.threads = async function (S, o) {
-  AI.ensureFans(S); if (!S.fans.length) throw new Error('Import a race first so there are drivers for the fans to talk about.');
+  AI.ensureFans(S); if (!S.fans.length) throw new Error('Import a race, practice or qualifying first so there are drivers for the fans to talk about.');
   var rand = J.rng('pick' + Date.now()), ds = J.agg(S.races);
   var focus = {}; (o.focus || []).forEach(function (n) { var d = J.findDriver(S, n); if (d) focus[d.key] = 1; });
   var fans = S.fans.slice(), pri = fans.filter(function (f) { return f.stance && focus[f.stance.driver]; }), rest = J.shuffle(fans.filter(function (f) { return !(f.stance && focus[f.stance.driver]); }), rand);
@@ -306,6 +337,7 @@ AI.articleDraft = async function (S, o) {
   var outlet = o.outlet || 'wire', race = o.race || null, parts = [];
   parts.push('LEAGUE STANDINGS NOW: ' + (standingsText(S, 12) || 'no races run yet') + '.');
   if (race) parts.push('RACE DATA:\n' + AI.raceFacts(S, race));
+  else if (o.preSid) parts.push('PRE-RACE DATA (this story is a PREVIEW written before the race):\n' + AI.sessionFacts(S, o.preSid));
   if (o.headline) parts.push('COMMISSIONER\'S WORKING HEADLINE (this is the topic; keep its meaning, you may sharpen the wording): ' + o.headline);
   if (o.notes) parts.push('COMMISSIONER\'S NOTES (facts you may use):\n' + o.notes);
   if (o.images && o.images.length) parts.push(o.images.length + ' image(s) are attached in this order: ' + o.images.map(function (im, i) { return (i + 1) + '=' + (im.label || 'untitled'); }).join(', ') + '. Add one caption per image in photoCaptions.');
@@ -315,12 +347,12 @@ AI.articleDraft = async function (S, o) {
 };
 AI.article = async function (S, o) {
   var res = await AI.articleDraft(S, o), race = o.race || null;
-  return AI.applyArticle(S, res, { outlet: o.outlet || 'wire', raceId: race ? race.id : '', media: o.mediaIds || [], replaceAutoFor: race ? race.id : null });
+  return AI.applyArticle(S, res, { outlet: o.outlet || 'wire', raceId: race ? race.id : '', preSid: o.preSid || '', media: o.mediaIds || [], replaceAutoFor: race ? race.id : null });
 };
 AI.applyArticle = function (S, res, o) {
   var a = res.article || {}; if (!a.headline || !a.body) throw new Error(AI.name() + ' returned a story without a headline or body.');
   var staff = (J.OUTLETS[o.outlet] || J.OUTLETS.wire).staff, now = Date.now();
-  var art = { id: J.uid('a'), outlet: o.outlet, headline: String(a.headline).slice(0, 160), dek: String(a.dek || '').slice(0, 260), body: String(a.body), author: staff[Math.floor(Math.random() * staff.length)], ts: now, raceId: o.raceId || '', tags: (a.tags || []).slice(0, 6).map(String), media: o.media || [] };
+  var art = { id: J.uid('a'), outlet: o.outlet, headline: String(a.headline).slice(0, 160), dek: String(a.dek || '').slice(0, 260), body: String(a.body), author: staff[Math.floor(Math.random() * staff.length)], ts: now, raceId: o.raceId || '', preSid: o.preSid || '', tags: (a.tags || []).slice(0, 6).map(String), media: o.media || [] };
   if (o.replaceAutoFor) S.articles = S.articles.filter(function (x) { return !(x.auto && x.raceId === o.replaceAutoFor); });
   (a.photoCaptions || []).forEach(function (c, i) { var m = S.media.find(function (x) { return x.id === (o.media || [])[i]; }); if (m && c && !m.caption) m.caption = String(c).slice(0, 200); });
   S.articles.unshift(art);

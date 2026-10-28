@@ -77,12 +77,15 @@ function draftHtml() {
     + '<div class="row"><button class="btn good" data-act="stPublish">Publish story</button>' + (d.manual ? '' : '<button class="btn ghost" data-act="stGenerate">Write it again</button>') + '<button class="btn ghost" data-act="stDiscard">Discard</button></div></section>';
 }
 J.routes.studio = function (S) {
-  var hasKey = J.ai && J.ai.hasKey(), races = S.races.slice().reverse();
-  if (st.raceId === '' && races[0] && !st._touchedRace) st.raceId = races[0].id;
+  var hasKey = J.ai && J.ai.hasKey(), races = S.races.slice().reverse(), done = {};
+  S.races.forEach(function (r) { done[r.sid] = 1; });
+  var pre = S.schedule.filter(function (r) { return !done[r.id] && J.sessionsFor(S, r.id).length; });
+  var nx = J.nextRound(S);
+  if (st.raceId === '' && !st._touchedRace) st.raceId = (nx && pre.indexOf(nx) >= 0) ? 'pre:' + nx.id : races[0] ? races[0].id : '';
   return J.phead('Story Studio', 'Add race photos or video, write a headline, and the AI writes the story in the outlet\'s voice.')
     + '<section class="panel"><div class="fgrid">'
     + '<div class="field"><label for="stOutlet">Outlet</label><select id="stOutlet">' + Object.keys(J.OUTLETS).map(function (k) { return '<option value="' + k + '"' + (st.outlet === k ? ' selected' : '') + ' title="' + esc(J.OUTLETS[k].tag) + '">' + esc(J.OUTLETS[k].name) + ': ' + esc(J.OUTLETS[k].tag.toLowerCase()) + '</option>'; }).join('') + '</select></div>'
-    + '<div class="field"><label for="stRace">Race it is about</label><select id="stRace"><option value="">No specific race</option>' + races.map(function (r) { return '<option value="' + esc(r.id) + '"' + (r.id === st.raceId ? ' selected' : '') + '>' + esc(r.name) + (r.date ? ' (' + esc(J.fmtDate(r.date)) + ')' : '') + '</option>'; }).join('') + '</select></div>'
+    + '<div class="field"><label for="stRace">Race it is about</label><select id="stRace"><option value="">No specific race</option>' + pre.map(function (r) { var v = 'pre:' + r.id; return '<option value="' + esc(v) + '"' + (v === st.raceId ? ' selected' : '') + '>Before ' + esc(r.name) + ' (preview, ' + esc(J.sessionsFor(S, r.id).map(function (x) { return J.SESSIONS[x.type].toLowerCase(); }).join(' + ')) + ' in)</option>'; }).join('') + races.map(function (r) { return '<option value="' + esc(r.id) + '"' + (r.id === st.raceId ? ' selected' : '') + '>' + esc(r.name) + (r.date ? ' (' + esc(J.fmtDate(r.date)) + ')' : '') + '</option>'; }).join('') + '</select></div>'
     + '<div class="field wide"><label for="stHead">Your headline</label><input id="stHead" value="' + esc(st.headline) + '" placeholder="Example: Blaney and Logano tangle in turn 3, Blaney furious"></div>'
     + '<div class="field wide"><label for="stNotes">What happened (optional, but the more you say the better the story)</label><textarea id="stNotes" placeholder="Lap 22, Logano got into the back of Blaney off turn 2. Blaney spun and lost 3 laps. Blaney waved at him under caution...">' + esc(st.notes) + '</textarea></div></div>'
     + '<div class="drop" id="sDrop"><strong>Drop photos or video here</strong><p>Screenshots or replay clips from NR2003. The AI looks at them while writing. Videos: the app pulls a few frames out for it to look at.</p><div class="row" style="justify-content:center"><button class="btn ghost" data-act="stPick">Choose photos or video</button></div><input type="file" id="stFile" accept="image/*,video/*" multiple hidden></div>'
@@ -133,9 +136,9 @@ J.acts.stGenerate = async function () {
   if (st.items.some(function (x) { return x.loading; })) { smsg('Still reading your files. Give it a second.', true); return; }
   st.busy = true; J.refresh(); smsg(J.ai.name() + ' is writing the story. This usually takes 20 to 40 seconds.');
   try {
-    var race = S.races.find(function (r) { return r.id === st.raceId; }) || null;
+    var race = S.races.find(function (r) { return r.id === st.raceId; }) || null, preSid = /^pre:/.test(st.raceId) ? st.raceId.slice(4) : '';
     var notes = st.notes + (st.items.length ? '\n\nThe commissioner attached ' + st.items.length + ' photo/video item(s): ' + st.items.map(function (x) { return x.name + (x.duration ? ' (' + Math.round(x.duration) + 's clip)' : ''); }).join(', ') + '.' : '');
-    var res = await J.ai.articleDraft(S, { outlet: st.outlet, race: race, headline: st.headline, notes: notes, images: aiImages(), interviews: st.interviews });
+    var res = await J.ai.articleDraft(S, { outlet: st.outlet, race: race, preSid: preSid, headline: st.headline, notes: notes, images: aiImages(), interviews: st.interviews });
     if (!res.article || !res.article.body) throw new Error(J.ai.name() + ' returned an empty story. Try again.');
     res.interviews = (res.interviews || []).filter(function (x) { return x && x.quote && J.findDriver(S, x.driver); });
     res.reputation = (res.reputation || []).filter(function (x) { return x && Number(x.delta) && J.findDriver(S, x.driver); });
@@ -169,8 +172,8 @@ J.acts.stPublish = async function () {
   if (!a.headline || !a.body) { J.toast('The story needs a headline and some text.', true); return; }
   var ivs = (d.interviews || []).filter(function (_, i) { var c = document.querySelector('[data-iv="' + i + '"]'); return !c || c.checked; });
   var reps = (d.reputation || []).filter(function (_, i) { var c = document.querySelector('[data-rp="' + i + '"]'); return !c || c.checked; });
-  var raceId = st.raceId, ids = await saveItems(S, raceId, st.highlights);
-  var art = J.ai.applyArticle(S, { article: a, interviews: ivs, reputation: reps }, { outlet: st.outlet, raceId: raceId, media: ids });
+  var preSid = /^pre:/.test(st.raceId) ? st.raceId.slice(4) : '', raceId = preSid ? '' : st.raceId, ids = await saveItems(S, raceId, st.highlights);
+  var art = J.ai.applyArticle(S, { article: a, interviews: ivs, reputation: reps }, { outlet: st.outlet, raceId: raceId, preSid: preSid, media: ids });
   if (d.manual) { art.author = 'Commissioner'; }
   var react = st.react && J.ai.hasKey();
   st.items = []; st.draft = null; st.headline = ''; st.notes = '';

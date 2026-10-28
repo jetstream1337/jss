@@ -67,15 +67,24 @@ J.syncStatusHtml = function () {
 var MODES = { nascar: 'NASCAR style', file: 'Points in the file', simple: 'One per car beaten', custom: 'My own list' };
 J.routes.races = function (S) {
   var list = S.races.slice().reverse();
-  return J.phead('Races', S.races.length ? 'Rename, re-date, re-score or remove imported races.' : 'No races imported yet.', '<a class="btn sm" href="#/import">Import a race</a>')
+  return J.phead('Races', S.races.length ? 'Rename, re-date, re-score or remove imported races, practice and qualifying.' : 'No races imported yet.', '<a class="btn sm" href="#/import">Import results</a>')
     + (list.length ? '<section class="panel">' + list.map(function (r) {
       var info = J.raceInfo(r), arts = S.articles.filter(function (a) { return a.raceId === r.id; }).length;
       return '<div class="mrow"><div class="inl" style="flex:1"><input data-race="name" data-id="' + esc(r.id) + '" value="' + esc(r.name) + '" aria-label="Race name" style="min-width:200px;flex:1"><input type="date" data-race="date" data-id="' + esc(r.id) + '" value="' + esc(r.date || '') + '" aria-label="Date">'
         + '<select data-race="mode" data-id="' + esc(r.id) + '" aria-label="Points">' + Object.keys(MODES).map(function (k) { return '<option value="' + k + '"' + ((r.mode || 'nascar') === k ? ' selected' : '') + '>' + MODES[k] + '</option>'; }).join('') + '</select>'
         + (r.mode === 'custom' ? '<input data-race="custom" data-id="' + esc(r.id) + '" value="' + esc(r.custom || '') + '" placeholder="43,38,36..." aria-label="Custom points">' : '') + '</div>'
         + '<div class="inl"><small>Won by ' + esc(info.winner.driver) + ', ' + r.rows.length + ' cars, ' + J.plural(arts, 'story') + '</small><a class="btn ghost sm" href="#/results/' + esc(r.id) + '">View</a>' + (J.ai.hasKey() ? '<button class="btn ghost sm" data-act="raceCover" data-id="' + esc(r.id) + '">Write coverage</button>' : '') + '<button class="btn danger sm" data-act="raceDel" data-id="' + esc(r.id) + '">Remove</button></div></div>';
-    }).join('') + '</section>' : J.empty('Nothing here yet', 'Import your first race and it shows up here.', '<a class="btn sm" href="#/import">Import a race</a>'));
+    }).join('') + '</section>' : J.empty('No races yet', 'Import your first race and it shows up here.', '<a class="btn sm" href="#/import">Import a race</a>'))
+    + sessionsPanel(S);
 };
+function sessionsPanel(S) {
+  var by = {}; (S.sessions || []).forEach(function (x) { (by[x.sid] = by[x.sid] || []).push(x); });
+  var rounds = S.schedule.filter(function (r) { return by[r.id]; }); if (!rounds.length) return '';
+  return '<section class="panel"><h3>Practice and qualifying</h3><p class="sub">These never change the standings. They show on the site and feed the Race Outlook.</p>' + rounds.map(function (r) {
+    return J.sessionsFor(S, r.id).map(function (x) { return '<div class="mrow"><div><b>' + esc(r.name) + ': ' + esc(J.SESSIONS[x.type]) + '</b><small>' + J.plural(x.rows.length, 'car') + (x.rows[0] ? ', fastest ' + esc(x.rows[0].driver) + (x.rows[0].time ? ' (' + esc(x.rows[0].time) + ')' : '') : '') + (x.source ? ', from ' + esc(x.source) : '') + '</small></div><div class="inl"><a class="btn ghost sm" href="#/garage/race">View</a><button class="btn danger sm" data-act="sessDel" data-id="' + esc(x.id) + '">Remove</button></div></div>'; }).join('');
+  }).join('') + '</section>';
+}
+J.acts.sessDel = function (el) { var S = J.S, x = S.sessions.find(function (q) { return q.id === el.dataset.id; }); if (!x || !confirm('Remove ' + J.SESSIONS[x.type].toLowerCase() + ' for ' + x.name + '?')) return; S.sessions = S.sessions.filter(function (q) { return q.id !== x.id; }); J.save(); J.toast('Removed.'); };
 J.nav.push({ id: 'races', label: 'Races', group: 'Commissioner', admin: true });
 document.addEventListener('change', function (e) {
   var t = e.target, f = t.dataset && t.dataset.race; if (!f) return;
@@ -227,8 +236,9 @@ J.reactToArticle = async function (id, quiet) {
   if (reacting[id]) return; reacting[id] = 1;
   if (!quiet) J.toast('The fans are reading the story. About 30 seconds.');
   try {
-    var race = S.races.find(function (r) { return r.id === a.raceId; }) || S.races[S.races.length - 1];
-    var facts = (race ? J.ai.raceFacts(S, race) + '\n' : '') + 'THE ARTICLE (' + J.OUTLETS[a.outlet].name + '):\n' + a.headline + '\n' + (a.dek || '') + '\n' + a.body.slice(0, 3500);
+    var nx = J.nextRound(S), preSid = a.preSid || ((!a.raceId && nx && J.sessionsFor(S, nx.id).length && (!S.races.length || a.ts > (S.races[S.races.length - 1].ts || 0))) ? nx.id : '');
+    var race = preSid ? null : (S.races.find(function (r) { return r.id === a.raceId; }) || S.races[S.races.length - 1]);
+    var facts = (preSid ? J.ai.sessionFacts(S, preSid) + '\n' : race ? J.ai.raceFacts(S, race) + '\n' : '') + 'THE ARTICLE (' + J.OUTLETS[a.outlet].name + '):\n' + a.headline + '\n' + (a.dek || '') + '\n' + a.body.slice(0, 3500);
     var n = await J.ai.threads(S, { facts: facts, story: a, focus: a.tags || [], ref: { type: 'article', id: a.id }, task: 'Write 4 to 6 threads reacting to THIS article. People quote it, argue with it, call it fake news, add context, or bring up something it left out. Keep every fact consistent with the article and the race data.' });
     J.driftFans(S); J.save({ render: J.route().name === 'news' || J.route().name === 'garage' });
     J.toast(n + ' fan posts added.');
@@ -241,15 +251,17 @@ J.acts.reactArticle = function (el) { J.reactToArticle(el.dataset.id); };
 var gBusy = '';
 async function garageRun(kind) {
   var S = J.S; if (gBusy) return; if (!J.ai.hasKey()) { J.toast('Add your ' + J.ai.name() + ' key in Settings first.', true); return; }
-  if (!S.races.length) { J.toast('Import a race first.', true); return; }
+  var nx = J.nextRound(S), pre = nx && J.sessionsFor(S, nx.id).length;
+  if (!S.races.length && !pre) { J.toast('Import a race, practice or qualifying first.', true); return; }
+  if (kind === 'outlooks' && !S.races.length) { J.toast('Outlook commentary needs at least one race. Practice and qualifying already show in the Race Outlook.', true); return; }
   gBusy = kind; J.refresh();
   try {
     if (kind === 'refresh' || kind === 'talk') {
-      var race = S.races[S.races.length - 1], nx = J.nextRound(S);
-      var facts = J.ai.raceFacts(S, race) + (nx ? '\nNext race: ' + nx.name + ' at ' + (nx.track || 'TBD') + ' (' + J.TYPES[nx.type].toLowerCase() + ').' : '');
-      await J.ai.threads(S, { facts: facts, focus: [], ref: { type: 'week', id: race.id }, task: 'It is the middle of the week between races. Write 5 to 7 threads of the usual chatter: hot takes about the standings, predictions for the next race, someone still mad about last week, a fantasy lineup argument, a rumor, one person asking a dumb question and getting roasted. Not everything is about the last race.' });
+      var race = S.races[S.races.length - 1];
+      var facts = pre ? J.ai.sessionFacts(S, nx.id) + (race ? '\n\nLAST RACE, for context:\n' + J.ai.raceFacts(S, race) : '') : J.ai.raceFacts(S, race) + (nx ? '\nNext race: ' + nx.name + ' at ' + (nx.track || 'TBD') + ' (' + J.TYPES[nx.type].toLowerCase() + ').' : '');
+      await J.ai.threads(S, { facts: facts, focus: [], ref: { type: 'week', id: race ? race.id : nx.id }, task: pre ? 'The next race has NOT been run yet. Write 5 to 7 threads of pre-race chatter: practice and qualifying takes, predictions, fantasy picks, hype, someone worried about their driver, a rumor. Never say who won the next race.' : 'It is the middle of the week between races. Write 5 to 7 threads of the usual chatter: hot takes about the standings, predictions for the next race, someone still mad about last week, a fantasy lineup argument, a rumor, one person asking a dumb question and getting roasted. Not everything is about the last race.' });
     }
-    if (kind === 'refresh' || kind === 'outlooks') await J.ai.outlooks(S);
+    if ((kind === 'refresh' || kind === 'outlooks') && S.races.length) await J.ai.outlooks(S);
     J.driftFans(S); J.save({ render: false }); J.toast('The Garage is refreshed.');
   } catch (e) { J.toast(e.message, true); }
   gBusy = ''; J.refresh();
@@ -260,7 +272,7 @@ J.routes.garagetools = function (S) {
   var hasKey = J.ai.hasKey(), ths = J.threadsOf(S), ages = { teen: 0, young: 0, adult: 0, oldhead: 0 }, st = { good: 0, bad: 0, none: 0 };
   S.fans.forEach(function (f) { ages[f.age] = (ages[f.age] || 0) + 1; if (f.stance && f.stance.level > 0) st.good++; else if (f.stance && f.stance.level < 0) st.bad++; else st.none++; });
   var b = function (k, label) { return '<button class="btn' + (k === 'refresh' ? '' : ' ghost') + ' sm" data-act="gtRun" data-k="' + k + '"' + (gBusy || !hasKey ? ' disabled' : '') + '>' + (gBusy === k ? 'Working...' : label) + '</button>'; };
-  var drivers = J.agg(S.races);
+  var drivers = J.roster(S);
   return J.phead('Garage Tools', 'Keep the fan chat and outlooks fresh')
     + (!hasKey ? '<div class="warn" style="margin:0 0 18px">These need an AI key (Gemini is free). Add it in <a href="#/settings"><b>Settings</b></a>.</div>' : '')
     + '<section class="panel"><h3>Refresh</h3><p class="sub">Race imports do this for you. Use these between races or when the Garage feels stale.</p><div class="row" style="margin-top:0">' + b('refresh', 'Refresh the Garage') + b('talk', 'New fan chatter only') + b('outlooks', 'New outlook commentary only') + '</div></section>'

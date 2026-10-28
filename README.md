@@ -67,9 +67,9 @@ If GitHub ever needs the token replaced (they expire), make a new one the same w
 
 | Page | What it is for |
 |---|---|
-| **Import Race** | Drop the standings file NR2003 saves in `exports_imports` (the .html file). Check the preview, click Import. The AI writes the recap and the fans react. |
-| **Story Studio** | Drop race screenshots or replay clips, write a headline and what happened. Pick an outlet: **Checkered Wire** (race coverage), **Silly Season Daily** (contracts and rumors) or **Pit Notes** (analysis). The AI writes it, you edit, then publish. |
-| **Races** | Rename, change the date, change how points are scored, or remove a race. |
+| **Import Results** | Pick **Race results**, **Qualifying**, **Practice** or **Happy Hour**. Drop the NR2003 standings file from `exports_imports`, paste a list, or use a **screenshot** of the results screen (needs the AI key; check the names it read). Race results update the standings and the AI writes the recap. Practice and qualifying never touch the standings; they put the drivers in the field, get the fans hyping the race, show on the site and feed the Race Outlook. |
+| **Story Studio** | Drop race screenshots or replay clips, write a headline and what happened. For hype stories before a race, pick **Before (race name)** in the race box so the AI writes a preview and never makes up a result. Pick an outlet: **Checkered Wire** (race coverage), **Silly Season Daily** (contracts and rumors) or **Pit Notes** (analysis). The AI writes it, you edit, then publish. |
+| **Races** | Rename, change the date, change how points are scored, or remove a race. Practice and qualifying you imported are listed here too. |
 | **Edit Schedule** | Race names, tracks and **track types** (the track type is what the Race Outlook uses). |
 | **League** | League name, playoff size and cut-off race, the note on the home page, backups. |
 | **Garage Tools** | Refresh fan chatter between races, add or replace fan accounts, nudge a driver's reputation, delete posts. |

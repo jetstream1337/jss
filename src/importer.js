@@ -27,7 +27,7 @@ P.csv = function (text) {
   if (cell !== '' || row.length) endRow();
   return rows;
 };
-var KEYS = { pos: ['position', 'pos', 'finish', 'finishingposition', 'finishpos', 'place', 'rank', 'f', 'fin', 'p'], start: ['start', 'startpos', 'startingposition', 'grid', 's', 'st', 'qual'], driver: ['driver', 'drivername', 'name', 'driverfullname'], car: ['car', 'carnumber', 'number', 'carno', 'carnum', '#', 'no'], team: ['team', 'owner', 'sponsor'], laps: ['laps', 'lapscompleted', 'completed'], led: ['led', 'lapsled', 'ledlaps'], pts: ['points', 'pts'], status: ['status', 'out', 'reason', 'result'], interval: ['interval', 'gap', 'diff'] };
+var KEYS = { pos: ['position', 'pos', 'finish', 'finishingposition', 'finishpos', 'place', 'rank', 'f', 'fin', 'p'], start: ['start', 'startpos', 'startingposition', 'grid', 's', 'st', 'qual'], driver: ['driver', 'drivername', 'name', 'driverfullname'], car: ['car', 'carnumber', 'number', 'carno', 'carnum', '#', 'no'], team: ['team', 'owner', 'sponsor'], laps: ['laps', 'lapscompleted', 'completed'], led: ['led', 'lapsled', 'ledlaps'], pts: ['points', 'pts'], status: ['status', 'out', 'reason', 'result'], interval: ['interval', 'gap', 'diff'], time: ['time', 'besttime', 'bestlap', 'laptime', 'lap'], speed: ['speed', 'mph', 'kph'] };
 P.rowsToResults = function (rows) {
   var norm = function (s) { return String(s || '').toLowerCase().replace(/[^a-z0-9#]/g, ''); };
   var hi = -1;
@@ -52,7 +52,7 @@ P.rowsToResults = function (rows) {
     if (namesOnly) name = name.replace(/^\s*P?\d+[.):\-]?\s+/i, '').trim();
     if (!name || /^\d+$/.test(name)) return;
     var pos = H.pos >= 0 ? num(cellOf(r, 'pos')) : null;
-    out.push({ position: (pos != null && pos > 0) ? pos : out.length + 1, start: num(cellOf(r, 'start')) || 0, driver: name, car: cellOf(r, 'car').replace(/[^\w]/g, ''), team: cellOf(r, 'team'), laps: num(cellOf(r, 'laps')) || 0, lapsLed: num(cellOf(r, 'led')) || 0, filePoints: cellOf(r, 'pts') !== '' ? num(cellOf(r, 'pts')) : null, status: cellOf(r, 'status'), interval: cellOf(r, 'interval') });
+    out.push({ position: (pos != null && pos > 0) ? pos : out.length + 1, start: num(cellOf(r, 'start')) || 0, driver: name, car: cellOf(r, 'car').replace(/[^\w]/g, ''), team: cellOf(r, 'team'), laps: num(cellOf(r, 'laps')) || 0, lapsLed: num(cellOf(r, 'led')) || 0, filePoints: cellOf(r, 'pts') !== '' ? num(cellOf(r, 'pts')) : null, status: cellOf(r, 'status'), interval: cellOf(r, 'interval'), time: cellOf(r, 'time'), speed: cellOf(r, 'speed') });
   });
   if (!out.length) {
     var seen = (hi >= 0 ? rows[hi] : rows[0] || []).filter(Boolean).slice(0, 10).join(', ');
@@ -61,42 +61,43 @@ P.rowsToResults = function (rows) {
   out.sort(function (a, b) { return a.position - b.position; });
   return { rows: out };
 };
-function poleFrom(rows) {
-  var h = rows[0].map(function (c) { return c.toLowerCase(); }); var di = h.indexOf('driver'), ti = h.indexOf('time');
-  for (var i = 1; i < rows.length; i++) { var r = rows[i]; if (r[di] && (ti < 0 || /\d/.test(r[ti] || ''))) return r[di]; }
-  return '';
-}
-P.nr2003 = function (t) {
+var SESSION_KEY = function (name) { name = String(name || '').toLowerCase(); return /happy/.test(name) ? 'happy' : /qual/.test(name) ? 'qualifying' : /pract/.test(name) ? 'practice' : /race/.test(name) ? 'race' : ''; };
+/* Every session in an NR2003 standings export: practice, qualifying, happy hour and race. */
+P.nr2003All = function (t) {
   var doc = new DOMParser().parseFromString(t, 'text/html');
-  var meta = { source: 'NR2003 export', track: '', date: '' }, session = '', tables = {};
+  var meta = { source: 'NR2003 export', track: '', date: '' }, session = '', tables = {}, smeta = {};
   doc.querySelectorAll('h1,h2,h3,table').forEach(function (el) {
     if (el.tagName === 'TABLE') {
       var rows = Array.prototype.map.call(el.rows, function (r) { return Array.prototype.map.call(r.cells, function (c) { return c.textContent.replace(/\s+/g, ' ').trim(); }); });
-      if (rows.length && rows[0].some(function (c) { return /^driver$/i.test(c); }) && !tables[session]) tables[session] = rows;
+      if (session && rows.length && rows[0].some(function (c) { return /^driver$/i.test(c); }) && !tables[session]) tables[session] = rows;
       return;
     }
-    var x = el.textContent.replace(/\s+/g, ' ').trim(), m;
+    var x = el.textContent.replace(/\s+/g, ' ').trim(), m, sm = smeta[session] || (session ? (smeta[session] = {}) : {});
     if ((m = x.match(/^Track:\s*(.+)$/i))) meta.track = J.titleCase(m[1]);
     else if ((m = x.match(/^Date:\s*(.+)$/i))) meta.date = P.parseDate(m[1]);
-    else if ((m = x.match(/^Session:\s*(.+)$/i))) session = m[1].toLowerCase();
-    else if (/race/.test(session)) {
-      if ((m = x.match(/^Weather:\s*(.+)$/i))) meta.weather = m[1].replace(/�/g, '°').replace(/\s+°/, '°');
-      else if ((m = x.match(/^Caution Flags:\s*(\d+)/i))) meta.cautions = +m[1];
-      else if ((m = x.match(/^Lead Changes:\s*(\d+)\s*\((\d+)/i))) { meta.leadChanges = +m[1]; meta.leadDrivers = +m[2]; }
-    }
+    else if ((m = x.match(/^Session:\s*(.+)$/i))) session = SESSION_KEY(m[1]);
+    else if ((m = x.match(/^Weather:\s*(.+)$/i))) sm.weather = m[1].replace(/�/g, '°').replace(/\s+°/, '°');
+    else if ((m = x.match(/^Caution Flags:\s*(\d+)/i))) sm.cautions = +m[1];
+    else if ((m = x.match(/^Lead Changes:\s*(\d+)\s*\((\d+)/i))) { sm.leadChanges = +m[1]; sm.leadDrivers = +m[2]; }
   });
-  var keys = Object.keys(tables), rk = keys.find(function (k) { return /race/.test(k); });
-  if (!rk) return { error: /session:\s*race/i.test(t) ? 'The Race part of this file is empty. Export the standings again after the race is finished.' : 'I could not find a Race session in this file. Is it the standings export from NR2003?' };
-  var res = P.rowsToResults(tables[rk]); if (res.error) return res;
-  var qk = keys.find(function (k) { return /qual/.test(k); }); if (qk) { var p = poleFrom(tables[qk]); if (p) meta.pole = p; }
-  res.meta = meta; return res;
+  var out = { kind: 'nr2003', meta: meta, sessions: {} };
+  ['practice', 'qualifying', 'happy', 'race'].forEach(function (k) {
+    if (!tables[k]) return;
+    var res = tables[k].length > 1 ? P.rowsToResults(tables[k]) : { error: 'empty' };
+    if (k !== 'race' && res.rows) res.rows = res.rows.filter(function (r) { return r.time && /\d/.test(r.time); }).map(function (r, i) { r.position = i + 1; return r; });
+    if (res.rows && !res.rows.length) res = { error: 'empty' };
+    out.sessions[k] = { rows: res.rows || [], empty: !!res.error, meta: Object.assign({}, smeta[k] || {}) };
+  });
+  var q = out.sessions.qualifying; if (out.sessions.race && q && q.rows.length) out.sessions.race.meta.pole = q.rows[0].driver;
+  if (!Object.keys(out.sessions).some(function (k) { return !out.sessions[k].empty; })) return { error: Object.keys(out.sessions).length ? 'Every session in this file is empty. Export the standings again from NR2003 after the session you want is finished.' : 'I could not find any sessions in this file. Is it the standings export from NR2003?' };
+  return out;
 };
 P.results = function (text, name) {
   var head = text.slice(0, 4000);
-  if (/\.html?$/i.test(name || '') || /<\s*(html|table|!doctype)/i.test(head)) return P.nr2003(text);
+  if (/\.html?$/i.test(name || '') || /<\s*(html|table|!doctype)/i.test(head)) return P.nr2003All(text);
   var rows = P.csv(text); if (!rows.length) return { error: 'That file looks empty.' };
   var r = P.rowsToResults(rows); if (r.error) return r;
-  r.meta = { source: 'CSV' }; return r;
+  return { kind: 'table', meta: { source: /pasted/.test(name || '') ? 'Pasted' : 'CSV' }, rows: r.rows };
 };
 P.score = function (rows, mode, bonus, custom) {
   var n = rows.length, maxLed = Math.max.apply(null, rows.map(function (r) { return r.lapsLed || 0; }).concat([0]));
@@ -124,126 +125,275 @@ P.matchRound = function (S, track) {
 J.readFileText = function (f) { return new Promise(function (res, rej) { var r = new FileReader(); r.onload = function () { res(String(r.result)); }; r.onerror = function () { rej(r.error); }; r.readAsText(f); }); };
 
 /* ---------- import page ---------- */
-var imp = null;          // { rows, meta, file, form:{...} }
-J.coverageRun = null;    // { raceId, raceName, steps:[{id,label,state,detail}], done, fails }
-var STEP_LABELS = { recap: 'Race recap article (Checkered Wire)', fans: 'Fan reactions in The Garage', outlooks: 'Chase, Race and Season outlook commentary', drift: 'Fans changing sides' };
+var imp = null;          // { source, file, meta, sessions?, rows?, form, edit:{}, del:{} }
+J.importType = 'race';   // race | qualifying | practice | happy
+J.coverageRun = null;    // { title, steps:[{id,label,state,detail}], done, fails }
+var TYPES = [['race', 'Race results'], ['qualifying', 'Qualifying'], ['practice', 'Practice'], ['happy', 'Happy Hour']];
+var STEP_LABELS = { recap: 'Race recap article (Checkered Wire)', fans: 'Fan reactions in The Garage', hype: 'Fans hyping up the race in The Garage', outlooks: 'Chase, Race and Season outlook commentary', drift: 'Fans changing sides' };
+function typeLabel(t) { return t === 'race' ? 'Race' : J.SESSIONS[t]; }
 
 function coverageHtml() {
   var c = J.coverageRun; if (!c) return '';
-  return '<section class="panel" id="covPanel"><h3>Race coverage: ' + esc(c.raceName) + '</h3><p class="sub">' + (c.done ? (c.fails ? 'Finished with ' + J.plural(c.fails, 'problem') + '. You can try again from Races.' : 'All done. It is on the site now.') : J.ai.name() + ' is writing. This takes about a minute. You can keep using the app.') + '</p><ul class="prog">'
+  return '<section class="panel" id="covPanel"><h3>' + esc(c.title) + '</h3><p class="sub">' + (c.done ? (c.fails ? 'Finished with ' + J.plural(c.fails, 'problem') + '. You can try again later.' : 'All done. It is on the site now.') : J.ai.name() + ' is writing. This takes about a minute. You can keep using the app.') + '</p><ul class="prog">'
     + c.steps.map(function (s) { return '<li class="' + s.state + '"><i></i>' + esc(s.label) + (s.detail ? '<small>' + esc(s.detail) + '</small>' : '') + '</li>'; }).join('') + '</ul>'
-    + (c.done ? '<div class="row"><a class="btn sm" href="#/news">See the news</a><a class="btn ghost sm" href="#/garage/feed">See The Garage</a><button class="btn ghost sm" data-act="covDismiss">Dismiss</button></div>' : '') + '</section>';
+    + (c.done ? '<div class="row">' + (c.kind === 'race' ? '<a class="btn sm" href="#/news">See the news</a>' : '<a class="btn sm" href="#/garage/race">See the Race Outlook</a>') + '<a class="btn ghost sm" href="#/garage/feed">See The Garage</a><button class="btn ghost sm" data-act="covDismiss">Dismiss</button></div>' : '') + '</section>';
 }
 function paintCoverage() { var el = $('covPanel'); if (el) el.outerHTML = coverageHtml(); else if (J.route().name === 'import' && $('covSlot')) $('covSlot').innerHTML = coverageHtml(); }
 J.acts.covDismiss = function () { J.coverageRun = null; var el = $('covPanel'); if (el) el.remove(); };
+function startRun(title, kind, steps) {
+  if (J.coverageRun && !J.coverageRun.done) { J.toast('The AI is still working on the last import. Try again in a minute.', true); return null; }
+  var c = J.coverageRun = { title: title, kind: kind, done: false, fails: 0, steps: steps.map(function (k) { return { id: k, label: STEP_LABELS[k], state: '', detail: '' }; }) };
+  paintCoverage(); return c;
+}
+function stepFn(c) { return function (name, state, detail) { var s = c.steps.find(function (x) { return x.id === name; }); if (s) { s.state = state; s.detail = detail || ''; } if (state !== 'run') J.save({ render: false, quiet: true }); paintCoverage(); }; }
+function finishRun(c, fails) { c.done = true; c.fails = fails; J.save({ render: J.route().name !== 'import' && J.route().name !== 'studio' }); paintCoverage(); J.toast(fails ? 'Finished with ' + J.plural(fails, 'problem') + '.' : 'Done. It is on the site.', !!fails); }
 
 J.runCoverage = async function (race) {
-  if (J.coverageRun && !J.coverageRun.done) { J.toast('Coverage is already running for another race. Try again in a minute.', true); return; }
-  var S = J.S;
-  var c = J.coverageRun = { raceId: race.id, raceName: race.name, done: false, fails: 0, steps: ['recap', 'fans', 'outlooks', 'drift'].map(function (k) { return { id: k, label: STEP_LABELS[k], state: '', detail: '' }; }) };
-  paintCoverage();
-  var fails = await J.ai.coverage(S, race, function (name, state, detail) {
-    var s = c.steps.find(function (x) { return x.id === name; }); if (s) { s.state = state; s.detail = detail || ''; }
-    if (state !== 'run') J.save({ render: false, quiet: true });
-    paintCoverage();
-  });
-  c.done = true; c.fails = fails;
+  var S = J.S, c = startRun('Race coverage: ' + race.name, 'race', ['recap', 'fans', 'outlooks', 'drift']); if (!c) return;
+  var fails = await J.ai.coverage(S, race, stepFn(c));
   if (fails && !S.articles.some(function (a) { return a.raceId === race.id; })) S.articles.unshift(J.autoRecap(S, race));
-  J.save({ render: J.route().name !== 'import' && J.route().name !== 'studio' });
-  paintCoverage();
-  J.toast(fails ? 'Coverage finished with ' + J.plural(fails, 'problem') + '.' : 'Race coverage is up.', !!fails);
+  finishRun(c, fails);
+};
+J.runSessionCoverage = async function (sess) {
+  var S = J.S, round = S.schedule.find(function (r) { return r.id === sess.sid; }) || { name: sess.name };
+  var steps = ['hype'].concat(S.races.length ? ['outlooks'] : []).concat(['drift']);
+  var c = startRun(J.SESSIONS[sess.type] + ' coverage: ' + round.name, 'session', steps); if (!c) return;
+  var step = stepFn(c), fails = 0, top = sess.rows.slice(0, 3).map(function (r) { return r.driver; });
+  step('hype', 'run');
+  try {
+    var n = await J.ai.threads(S, { facts: J.ai.sessionFacts(S, sess.sid), focus: top, ref: { type: 'session', id: sess.id }, task: 'The race has NOT happened yet. ' + J.SESSIONS[sess.type] + ' just finished. Write 5 to 7 threads of pre-race talk: reactions to who was fast and who was slow, hype and predictions for the race, someone mad about where their driver ended up, a fantasy or betting pick, a "practice speed means nothing" argument, a media figure with an observation. Never say who won the race.' });
+    step('hype', 'ok', n + ' posts');
+  } catch (e) { fails++; step('hype', 'err', e.message); }
+  if (S.races.length) { step('outlooks', 'run'); try { await J.ai.outlooks(S); step('outlooks', 'ok'); } catch (e) { fails++; step('outlooks', 'err', e.message); } }
+  var ch = J.driftFans(S); step('drift', 'ok', ch.length ? ch.length + ' fans changed sides' : 'no one switched');
+  finishRun(c, fails);
 };
 
 J.routes['import'] = function (S) {
-  var hasKey = J.ai && J.ai.hasKey();
-  var out = J.phead('Import Race', 'Bring in a finished race from NR2003. Standings, results and the outlooks update right away.')
+  var hasKey = J.ai && J.ai.hasKey(), t = J.importType;
+  var avail = imp && imp.source === 'nr2003' ? imp.sessions : null;
+  var chips = '<div class="fchips" role="radiogroup" aria-label="What are you importing">' + TYPES.map(function (x) {
+    var dis = avail && (!avail[x[0]] || avail[x[0]].empty);
+    return '<button class="fc' + (t === x[0] ? ' on' : '') + '" data-act="impType" data-v="' + x[0] + '"' + (dis ? ' disabled title="Not in this file"' : '') + '>' + x[1] + '</button>';
+  }).join('') + '</div>';
+  return J.phead('Import Results', 'Race results update the standings. Practice and qualifying get the fans talking before the race.')
     + '<div id="covSlot">' + coverageHtml() + '</div>'
-    + '<section class="panel"><div class="drop" id="drop"><strong>Drop the race file here</strong><p>Use the standings file NR2003 saves in <b>exports_imports</b> (it ends in .html). A CSV or a plain list of names in finishing order also works. You can drop the file anywhere in this window.</p>'
-    + '<div class="row" style="justify-content:center"><button class="btn" data-act="impPick">Choose file</button><button class="btn ghost" data-act="impPasteToggle">Paste results</button><button class="btn ghost" data-act="impTemplate">CSV template</button></div>'
-    + '<input type="file" id="impFile" accept=".html,.htm,.csv,.txt,text/html,text/csv,text/plain" hidden></div>'
-    + '<div id="pasteBox" hidden><div class="field" style="margin-top:12px"><label for="impPaste">Paste a table or one driver per line, winner first</label><textarea id="impPaste" placeholder="Position,Driver,Car&#10;1,Tyler Reddick,45&#10;2,Chris Buescher,17"></textarea></div><div class="row"><button class="btn sm" data-act="impParsePaste">Read pasted results</button></div></div>'
+    + '<section class="panel"><h3 style="font-size:20px;margin-bottom:10px">What are you importing?</h3>' + chips
+    + '<div class="drop" id="drop"><strong>Drop the file or screenshot here</strong><p>The standings file NR2003 saves in <b>exports_imports</b> (ends in .html) has practice, qualifying, happy hour and the race in it. A CSV, a pasted list, or a <b>screenshot</b> of the results screen also works.' + (hasKey ? '' : ' Screenshots need the AI key (Gemini is free) in Settings.') + '</p>'
+    + '<div class="row" style="justify-content:center"><button class="btn" data-act="impPick">Choose file</button><button class="btn ghost" data-act="impShot">Screenshot</button><button class="btn ghost" data-act="impPasteToggle">Paste results</button><button class="btn ghost" data-act="impTemplate">CSV template</button></div>'
+    + '<input type="file" id="impFile" accept=".html,.htm,.csv,.txt,text/html,text/csv,text/plain,image/*" hidden><input type="file" id="impShotFile" accept="image/*" multiple hidden></div>'
+    + '<p class="fine" style="text-align:center;margin-bottom:0">Tip: you can also press Ctrl+V on this page to paste a screenshot you copied.</p>'
+    + '<div id="pasteBox" hidden><div class="field" style="margin-top:12px"><label for="impPaste">Paste a table or one driver per line, fastest or winner first</label><textarea id="impPaste" placeholder="Pos,Car,Driver,Time&#10;1,11,Denny Hamlin,46.412&#10;2,54,Ty Gibbs,47.236"></textarea></div><div class="row"><button class="btn sm" data-act="impParsePaste">Read pasted results</button></div></div>'
     + '<div id="impMsg" class="msg" hidden></div></section>'
     + '<div id="impForm"></div>'
-    + (!hasKey ? '<p class="fine">No AI key saved yet, so imports get a plain automatic recap. Add a free Gemini key in <a href="#/settings" style="color:var(--blue);font-weight:600">Settings</a> for full articles and fan chatter.</p>' : '');
-  return out;
+    + (!hasKey ? '<p class="fine">No AI key saved yet, so race imports get a plain automatic recap and practice or qualifying will not get fan reactions. Add a free Gemini key in <a href="#/settings" style="color:var(--blue);font-weight:600">Settings</a>.</p>' : '');
 };
 J.afters['import'] = function () {
-  var f = $('impFile'); if (f) f.addEventListener('change', function () { if (this.files[0]) handleFile(this.files[0]); this.value = ''; });
+  var f = $('impFile'); if (f) f.addEventListener('change', function () { if (this.files[0]) handleFiles(this.files); this.value = ''; });
+  var g = $('impShotFile'); if (g) g.addEventListener('change', function () { if (this.files.length) handleFiles(this.files); this.value = ''; });
   if (imp) renderPreview();
+  if (imp && imp.lastMsg) msg(imp.lastMsg[0], imp.lastMsg[1]);
 };
-J.nav.push({ id: 'import', label: 'Import Race', group: 'Commissioner', admin: true });
+J.nav.push({ id: 'import', label: 'Import Results', group: 'Commissioner', admin: true });
 
-function msg(text, err) { var m = $('impMsg'); if (!m) return; m.hidden = false; m.className = 'msg' + (err ? ' err' : ''); m.textContent = text; }
-function handleFile(f) { return J.readFileText(f).then(function (t) { loadText(t, f.name); }).catch(function (e) { msg('Could not read that file: ' + (e && e.message || e), true); }); }
-J.importFile = function (f) { if (J.route().name !== 'import') { J.go('import'); setTimeout(function () { handleFile(f); }, 60); } else handleFile(f); };
+function msg(text, err) { if (imp) imp.lastMsg = [text, err]; var m = $('impMsg'); if (!m) return; m.hidden = !text; m.className = 'msg' + (err ? ' err' : ''); m.textContent = text || ''; }
+function isImage(f) { return /^image\//.test(f.type) || /\.(png|jpe?g|webp|bmp|gif)$/i.test(f.name); }
+function handleFiles(list) {
+  var files = Array.prototype.slice.call(list || []), imgs = files.filter(isImage);
+  if (imgs.length) return readShots(imgs);
+  var f = files[0]; if (!f) return;
+  return J.readFileText(f).then(function (t) { loadText(t, f.name); }).catch(function (e) { msg('Could not read that file: ' + (e && e.message || e), true); });
+}
+J.importFile = function (f) { var fl = f.length != null ? f : [f]; if (J.route().name !== 'import') { J.go('import'); setTimeout(function () { handleFiles(fl); }, 60); } else handleFiles(fl); };
+function defaultRound(S, track, type) {
+  if (type === 'race') return P.matchRound(S, track);
+  var done = {}; S.races.forEach(function (r) { done[r.sid] = 1; });
+  var open = S.schedule.filter(function (r) { return !done[r.id]; });
+  var hit = track ? P.matchRound(S, track) : null;
+  return hit || open[0] || null;
+}
+function setupForm(track, date) {
+  var S = J.S, round = defaultRound(S, track, J.importType);
+  imp.form = { round: round ? round.id : '', name: round ? round.name : (track || 'Race'), track: round ? (round.track || track || '') : (track || ''), date: date || J.todayISO(), mode: (S.races[S.races.length - 1] || {}).mode || 'nascar', bonus: false, custom: '' };
+  imp.edit = {}; imp.del = {};
+}
 function loadText(text, name) {
   var S = J.S;
   if (!text || !text.trim()) { msg('That file is empty.', true); return; }
   var res;
   try { res = P.results(text, name); } catch (e) { console.error(e); msg('I could not understand that file (' + e.message + '). Try the CSV template instead.', true); return; }
-  if (res.error) { msg(res.error, true); imp = null; $('impForm').innerHTML = ''; return; }
-  var m = res.meta || {}, round = P.matchRound(S, m.track);
-  imp = { rows: res.rows, meta: m, file: name, form: { round: round ? round.id : '', name: round ? round.name : (m.track || name.replace(/\.[^.]+$/, '')), track: round ? (round.track || m.track || '') : (m.track || ''), date: m.date || J.todayISO(), mode: (S.races[S.races.length - 1] || {}).mode || 'nascar', bonus: false, custom: '' } };
-  msg('Read ' + name + ': ' + imp.rows.length + ' finishers' + (m.source === 'NR2003 export' ? ' (NR2003 export)' : '') + '. Check the preview below, then import.', false);
-  renderPreview();
+  if (res.error) { imp = null; $('impForm').innerHTML = ''; msg(res.error, true); return; }
+  imp = { source: res.kind, file: name, meta: res.meta || {}, sessions: res.sessions || null, rows: res.rows || null };
+  if (res.kind === 'nr2003') {
+    var has = function (k) { return res.sessions[k] && !res.sessions[k].empty; };
+    if (!has(J.importType)) J.importType = has('race') ? 'race' : has('happy') ? 'happy' : has('qualifying') ? 'qualifying' : 'practice';
+    var found = TYPES.filter(function (x) { return has(x[0]); }).map(function (x) { return x[1].replace(' results', ''); });
+    setupForm(imp.meta.track, imp.meta.date);
+    msg('Read ' + name + ' (NR2003 export). Found: ' + found.join(', ') + '. Showing ' + typeLabel(J.importType).toLowerCase() + '. Check it below, then import.', false);
+  } else {
+    setupForm('', '');
+    msg('Read ' + imp.rows.length + ' drivers from ' + (/pasted/.test(name) ? 'what you pasted' : name) + '. Make sure the right type is picked above (now: ' + typeLabel(J.importType) + '), then import.', false);
+  }
+  J.refresh();
   var el = $('impForm'); if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
-function readForm() {
-  if (!imp) return; var f = imp.form, g = function (id) { var e = $(id); return e ? e : null; };
-  if (g('impRound')) { f.round = g('impRound').value; f.name = g('impName').value; f.track = g('impTrack').value; f.date = g('impDate').value; f.mode = g('impScoring').value; f.bonus = g('impBonus').checked; f.custom = g('impCustom').value; }
+function shrink(file) {
+  return new Promise(function (res, rej) {
+    var u = URL.createObjectURL(file), im = new Image();
+    im.onload = function () { var s = Math.min(1, 1800 / Math.max(im.naturalWidth, im.naturalHeight)), c = document.createElement('canvas'); c.width = Math.round(im.naturalWidth * s); c.height = Math.round(im.naturalHeight * s); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); URL.revokeObjectURL(u); res({ data: c.toDataURL('image/jpeg', 0.9).split(',')[1], type: 'image/jpeg' }); };
+    im.onerror = function () { URL.revokeObjectURL(u); rej(new Error('Could not open that picture.')); };
+    im.src = u;
+  });
 }
+var reading = false;
+async function readShots(files) {
+  var S = J.S;
+  if (!J.ai.hasKey()) { msg('Reading a screenshot needs the AI key. Add a free Gemini key in Settings, or use the NR2003 export file or Paste results instead.', true); return; }
+  if (reading) return; reading = true;
+  imp = null; $('impForm').innerHTML = '';
+  msg('Reading ' + (files.length > 1 ? files.length + ' screenshots' : 'the screenshot') + '. This takes 10 to 30 seconds...', false);
+  try {
+    var imgs = []; for (var i = 0; i < Math.min(files.length, 6); i++) imgs.push(await shrink(files[i]));
+    var res = await J.ai.readScreenshot(S, imgs, J.importType);
+    if (!res.rows.length) throw new Error('No results table found in that picture. Try a clearer screenshot of the results screen.');
+    var valid = { race: 1, qualifying: 1, practice: 1, happy: 1 }, note = '';
+    if (valid[res.session] && res.session !== J.importType) { note = ' It looks like ' + typeLabel(res.session).toLowerCase() + ', so I switched to that. Change it above if that is wrong.'; J.importType = res.session; }
+    var unknown = 0, roster = J.roster(S);
+    res.rows.forEach(function (r) { var clean = r.driver.replace(/\?+$/, '').trim(), d = roster.length ? J.findDriver(S, clean) : null; if (d) r.driver = d.name; else { r.driver = clean; if (roster.length) { r._new = true; unknown++; } } if (/\?$/.test(r.driver)) r._new = true; });
+    imp = { source: 'shot', file: 'screenshot', meta: { source: 'Screenshot', track: res.track }, rows: res.rows };
+    setupForm(res.track, '');
+    reading = false;
+    J.refresh();
+    msg('Read ' + res.rows.length + ' drivers from the screenshot.' + note + ' The AI read these off a picture, so check every name' + (unknown ? ' (' + unknown + ' not seen before, marked NEW)' : '') + '. You can fix any name in the table.', false);
+  } catch (e) { reading = false; msg(e.message || String(e), true); }
+}
+document.addEventListener('paste', function (e) {
+  if (J.route().name !== 'import' || !e.clipboardData) return;
+  var t = e.target; if (t && /^(TEXTAREA|INPUT)$/.test(t.tagName)) return;
+  var files = Array.prototype.filter.call(e.clipboardData.files || [], isImage); if (!files.length) return;
+  e.preventDefault(); readShots(files);
+});
+function rowsNow() {
+  if (!imp) return [];
+  var base = imp.source === 'nr2003' ? ((imp.sessions[J.importType] || {}).rows || []) : (imp.rows || []);
+  return base.map(function (r, i) { if (imp.del[J.importType + i]) return null; var o = Object.assign({}, r); if (imp.edit[J.importType + i] != null) { o.driver = imp.edit[J.importType + i]; o._new = false; } o._i = i; return o; }).filter(Boolean);
+}
+function metaNow() { var m = Object.assign({}, imp.meta); if (imp.source === 'nr2003' && imp.sessions[J.importType]) Object.assign(m, imp.sessions[J.importType].meta); return m; }
+function readForm() {
+  if (!imp) return; var f = imp.form, g = function (id) { return $(id); };
+  if (g('impRound')) { f.round = g('impRound').value; f.date = g('impDate').value; }
+  if (g('impName')) { f.name = g('impName').value; f.track = g('impTrack').value; f.mode = g('impScoring').value; f.bonus = g('impBonus').checked; f.custom = g('impCustom').value; }
+}
+function nameCell(r) { return '<input class="nmin" data-ri="' + r._i + '" value="' + esc(r.driver) + '" aria-label="Driver name">' + (r._new ? ' <span class="chip y">NEW</span>' : '') + '<button class="xrow" data-act="impDelRow" data-ri="' + r._i + '" aria-label="Remove row" title="Remove this row">&#10005;</button>'; }
 function renderPreview() {
   var S = J.S, el = $('impForm'); if (!el || !imp) return;
-  var f = imp.form, rows = P.score(imp.rows, f.mode, f.bonus, f.custom); imp.scored = rows;
+  var t = J.importType, f = imp.form, rows = rowsNow(), meta = metaNow(), hasKey = J.ai && J.ai.hasKey();
+  if (!rows.length) { el.innerHTML = '<section class="panel"><p class="dim">' + (imp.source === 'nr2003' ? 'The ' + typeLabel(t).toLowerCase() + ' part of this file is empty. Pick another one above.' : 'No rows left.') + '</p></section>'; return; }
   var done = {}; S.races.forEach(function (r) { done[r.sid] = 1; });
   var warns = [], seen = {}, dup = false;
   rows.forEach(function (r) { if (seen[r.position]) dup = true; seen[r.position] = 1; });
-  if (dup) warns.push('Two drivers share the same finishing position. Check the file.');
+  if (dup) warns.push('Two drivers share the same position. Check the list.');
   if (rows.length < 5) warns.push('Only ' + rows.length + ' drivers found. Is this the whole field?');
-  if (f.mode === 'file' && rows.some(function (r) { return r.filePoints == null; })) warns.push('Some rows have no points in the file, so NASCAR-style points were used for them.');
-  if (f.mode === 'custom' && rows.some(function (r) { return r.points === 0; })) warns.push('Your custom points list is shorter than the field. Drivers past the end get 0.');
-  var nm = f.name.trim().toLowerCase();
-  if (nm && S.races.some(function (r) { return r.name.toLowerCase() === nm && r.date === f.date; })) warns.push('A race with this name and date is already imported. Importing again counts it twice.');
-  if (f.round && done[f.round]) warns.push('That schedule round already has a result. Pick another round or remove the old race first.');
-  var opts = '<option value="">Not on the schedule</option>' + S.schedule.map(function (r, i) { return '<option value="' + esc(r.id) + '"' + (r.id === f.round ? ' selected' : '') + '>' + (i + 1) + '. ' + esc(r.name) + (done[r.id] ? ' (has a result)' : '') + '</option>'; }).join('');
-  var hasKey = J.ai && J.ai.hasKey();
-  el.innerHTML = '<section class="panel"><h3>Check the race</h3><div class="fgrid">'
-    + '<div class="field"><label for="impRound">Schedule round</label><select id="impRound">' + opts + '</select></div>'
-    + '<div class="field"><label for="impName">Race name</label><input id="impName" value="' + esc(f.name) + '"></div>'
-    + '<div class="field"><label for="impTrack">Track</label><input id="impTrack" value="' + esc(f.track) + '"></div>'
-    + '<div class="field"><label for="impDate">Date</label><input id="impDate" type="date" value="' + esc(f.date) + '"></div>'
-    + '<div class="field"><label for="impScoring">Points</label><select id="impScoring"><option value="nascar"' + (f.mode === 'nascar' ? ' selected' : '') + '>NASCAR style (40, 35, 34...)</option><option value="file"' + (f.mode === 'file' ? ' selected' : '') + '>Use the points in the file</option><option value="simple"' + (f.mode === 'simple' ? ' selected' : '') + '>One per car beaten</option><option value="custom"' + (f.mode === 'custom' ? ' selected' : '') + '>My own list</option></select></div>'
-    + '<div class="field"' + (f.mode === 'custom' ? '' : ' hidden') + '><label for="impCustom">Points for P1, P2, P3... (commas)</label><input id="impCustom" value="' + esc(f.custom) + '" placeholder="43,38,36,35"></div></div>'
-    + '<label class="check"' + (f.mode === 'file' ? ' hidden' : '') + '><input type="checkbox" id="impBonus"' + (f.bonus ? ' checked' : '') + '> Bonus points: +1 for leading a lap, +1 more for leading the most laps</label>'
-    + (imp.meta.pole || imp.meta.weather || imp.meta.cautions != null ? '<div class="chips" style="margin:6px 0 0;padding:10px 0;background:none;border:0">' + (imp.meta.pole ? '<span class="chip">Pole <b>' + esc(imp.meta.pole) + '</b></span>' : '') + (imp.meta.weather ? '<span class="chip">Weather <b>' + esc(imp.meta.weather) + '</b></span>' : '') + (imp.meta.cautions != null ? '<span class="chip">Cautions <b>' + imp.meta.cautions + '</b></span>' : '') + (imp.meta.leadChanges != null ? '<span class="chip">Lead changes <b>' + imp.meta.leadChanges + '</b></span>' : '') + '</div>' : '')
+  var opts;
+  if (t === 'race') {
+    var scored = P.score(rows, f.mode, f.bonus, f.custom); imp.scored = scored;
+    if (f.mode === 'file' && rows.some(function (r) { return r.filePoints == null; })) warns.push('Some rows have no points in the file, so NASCAR-style points were used for them.');
+    if (f.mode === 'custom' && scored.some(function (r) { return r.points === 0; })) warns.push('Your custom points list is shorter than the field. Drivers past the end get 0.');
+    var nm = String(f.name).trim().toLowerCase();
+    if (nm && S.races.some(function (r) { return r.name.toLowerCase() === nm && r.date === f.date; })) warns.push('A race with this name and date is already imported. Importing again counts it twice.');
+    if (f.round && done[f.round]) warns.push('That schedule round already has a result. Pick another round or remove the old race first.');
+    opts = '<option value="">Not on the schedule</option>' + S.schedule.map(function (r, i) { return '<option value="' + esc(r.id) + '"' + (r.id === f.round ? ' selected' : '') + '>' + (i + 1) + '. ' + esc(r.name) + (done[r.id] ? ' (has a result)' : '') + '</option>'; }).join('');
+    var extra = imp.source === 'nr2003' ? TYPES.slice(1).filter(function (x) { return imp.sessions[x[0]] && !imp.sessions[x[0]].empty; }).map(function (x) { return x[1]; }) : [];
+    el.innerHTML = '<section class="panel"><h3>Check the race</h3><div class="fgrid">'
+      + '<div class="field"><label for="impRound">Schedule round</label><select id="impRound">' + opts + '</select></div>'
+      + '<div class="field"><label for="impName">Race name</label><input id="impName" value="' + esc(f.name) + '"></div>'
+      + '<div class="field"><label for="impTrack">Track</label><input id="impTrack" value="' + esc(f.track) + '"></div>'
+      + '<div class="field"><label for="impDate">Date</label><input id="impDate" type="date" value="' + esc(f.date) + '"></div>'
+      + '<div class="field"><label for="impScoring">Points</label><select id="impScoring"><option value="nascar"' + (f.mode === 'nascar' ? ' selected' : '') + '>NASCAR style (40, 35, 34...)</option><option value="file"' + (f.mode === 'file' ? ' selected' : '') + '>Use the points in the file</option><option value="simple"' + (f.mode === 'simple' ? ' selected' : '') + '>One per car beaten</option><option value="custom"' + (f.mode === 'custom' ? ' selected' : '') + '>My own list</option></select></div>'
+      + '<div class="field"' + (f.mode === 'custom' ? '' : ' hidden') + '><label for="impCustom">Points for P1, P2, P3... (commas)</label><input id="impCustom" value="' + esc(f.custom) + '" placeholder="43,38,36,35"></div></div>'
+      + '<label class="check"' + (f.mode === 'file' ? ' hidden' : '') + '><input type="checkbox" id="impBonus"' + (f.bonus ? ' checked' : '') + '> Bonus points: +1 for leading a lap, +1 more for leading the most laps</label>'
+      + (meta.pole || meta.weather || meta.cautions != null ? '<div class="chips" style="margin:6px 0 0;padding:10px 0;background:none;border:0">' + (meta.pole ? '<span class="chip">Pole <b>' + esc(meta.pole) + '</b></span>' : '') + (meta.weather ? '<span class="chip">Weather <b>' + esc(meta.weather) + '</b></span>' : '') + (meta.cautions != null ? '<span class="chip">Cautions <b>' + meta.cautions + '</b></span>' : '') + (meta.leadChanges != null ? '<span class="chip">Lead changes <b>' + meta.leadChanges + '</b></span>' : '') + '</div>' : '')
+      + (extra.length ? '<p class="sub" style="margin:4px 0 0">' + esc(extra.join(' and ')) + ' from this file will be saved with the race too.</p>' : '')
+      + warns.map(function (w) { return '<div class="warn">' + esc(w) + '</div>'; }).join('')
+      + '<div class="row"><button class="btn" data-act="impConfirm">Import ' + rows.length + ' drivers</button><button class="btn ghost" data-act="impCancel">Cancel</button>'
+      + (hasKey ? '<label class="check" style="margin:0 0 0 6px"><input type="checkbox" id="impCover"' + (J.settings.autoCoverage !== false ? ' checked' : '') + '> Have ' + esc(J.ai.name()) + ' write the recap and fan reactions</label>' : '') + '</div></section>'
+      + '<div class="card"><div class="tw"><table class="data"><thead><tr><th>Fin</th><th>Start</th><th>Car</th><th>Driver</th><th>Laps</th><th>Led</th><th>Status</th><th>Pts</th></tr></thead><tbody>'
+      + scored.map(function (r) { return '<tr><td class="rank">' + r.position + '</td><td>' + (r.start || '-') + '</td><td><span class="car">' + esc(r.car || '-') + '</span></td><td>' + nameCell(r) + '</td><td>' + (r.laps || '-') + '</td><td>' + (r.lapsLed || 0) + '</td><td class="' + (J.isDnf(r) ? 'dnf' : 'dim') + '">' + esc(r.status || '-') + '</td><td class="pts"><b>' + r.points + '</b></td></tr>'; }).join('')
+      + '</tbody></table></div></div>';
+    return;
+  }
+  // practice / qualifying / happy hour
+  if (f.round && done[f.round]) warns.push('That race has already been run. ' + J.SESSIONS[t] + ' for it will still be saved and shown with its results.');
+  if (f.round && J.sessionOf(S, f.round, t)) warns.push('This round already has ' + J.SESSIONS[t].toLowerCase() + '. Importing replaces it.');
+  if (!f.round) warns.push('Pick which race this ' + J.SESSIONS[t].toLowerCase() + ' is for.');
+  opts = '<option value="">Pick a race</option>' + S.schedule.map(function (r, i) { return '<option value="' + esc(r.id) + '"' + (r.id === f.round ? ' selected' : '') + '>' + (i + 1) + '. ' + esc(r.name) + (done[r.id] ? ' (already run)' : '') + '</option>'; }).join('');
+  el.innerHTML = '<section class="panel"><h3>Check ' + esc(J.SESSIONS[t].toLowerCase()) + '</h3><div class="fgrid">'
+    + '<div class="field"><label for="impRound">For which race</label><select id="impRound">' + opts + '</select></div>'
+    + '<div class="field"><label for="impDate">Date</label><input id="impDate" type="date" value="' + esc(f.date) + '"></div></div>'
+    + (meta.weather ? '<div class="chips" style="margin:6px 0 0;padding:10px 0;background:none;border:0"><span class="chip">Weather <b>' + esc(meta.weather) + '</b></span>' + (t === 'qualifying' && rows[0] ? '<span class="chip">Pole <b>' + esc(rows[0].driver) + '</b></span>' : '') + '</div>' : (t === 'qualifying' && rows[0] ? '<div class="chips" style="margin:6px 0 0;padding:10px 0;background:none;border:0"><span class="chip">Pole <b>' + esc(rows[0].driver) + '</b></span></div>' : ''))
     + warns.map(function (w) { return '<div class="warn">' + esc(w) + '</div>'; }).join('')
-    + '<div class="row"><button class="btn" data-act="impConfirm">Import ' + rows.length + ' drivers</button><button class="btn ghost" data-act="impCancel">Cancel</button>'
-    + (hasKey ? '<label class="check" style="margin:0 0 0 6px"><input type="checkbox" id="impCover"' + (J.settings.autoCoverage !== false ? ' checked' : '') + '> Have ' + J.ai.name() + ' write the recap and fan reactions</label>' : '') + '</div></section>'
-    + '<div class="card"><div class="tw"><table class="data"><thead><tr><th>Fin</th><th>Start</th><th>Car</th><th>Driver</th><th>Laps</th><th>Led</th><th>Status</th><th>Pts</th></tr></thead><tbody>'
-    + rows.map(function (r) { return '<tr><td class="rank">' + r.position + '</td><td>' + (r.start || '-') + '</td><td><span class="car">' + esc(r.car || '-') + '</span></td><td><b>' + esc(r.driver) + '</b></td><td>' + (r.laps || '-') + '</td><td>' + (r.lapsLed || 0) + '</td><td class="' + (J.isDnf(r) ? 'dnf' : 'dim') + '">' + esc(r.status || '-') + '</td><td class="pts"><b>' + r.points + '</b></td></tr>'; }).join('')
+    + '<div class="row"><button class="btn" data-act="impConfirm"' + (f.round ? '' : ' disabled') + '>Save ' + esc(J.SESSIONS[t].toLowerCase()) + ' (' + rows.length + ' drivers)</button><button class="btn ghost" data-act="impCancel">Cancel</button>'
+    + (hasKey ? '<label class="check" style="margin:0 0 0 6px"><input type="checkbox" id="impCover"' + (J.settings.autoCoverage !== false ? ' checked' : '') + '> Have the fans react and hype the race</label>' : '') + '</div>'
+    + '<p class="fine">This does not change the standings. It tells the site who is in the field, shows the ' + esc(J.SESSIONS[t].toLowerCase()) + ' results, and feeds the Race Outlook.</p></section>'
+    + '<div class="card"><div class="tw"><table class="data"><thead><tr><th>Pos</th><th>Car</th><th>Driver</th><th>Time</th></tr></thead><tbody>'
+    + rows.map(function (r) { return '<tr><td class="rank">' + r.position + '</td><td><span class="car">' + esc(r.car || '-') + '</span></td><td>' + nameCell(r) + '</td><td>' + esc(r.time || '-') + '</td></tr>'; }).join('')
     + '</tbody></table></div></div>';
 }
 document.addEventListener('change', function (e) {
-  var t = e.target; if (!imp || !t.id || !/^imp(Round|Name|Track|Date|Scoring|Bonus|Custom)$/.test(t.id)) return;
-  if (t.id === 'impRound') { var r = J.S.schedule.find(function (x) { return x.id === t.value; }); if (r) { $('impName').value = r.name; if (r.track) $('impTrack').value = r.track; } }
+  var t = e.target; if (!imp || !t) return;
+  if (t.classList && t.classList.contains('nmin')) { var v = t.value.trim(); if (v) imp.edit[J.importType + t.dataset.ri] = v; renderPreview(); return; }
+  if (!t.id || !/^imp(Round|Name|Track|Date|Scoring|Bonus|Custom)$/.test(t.id)) return;
+  if (t.id === 'impRound' && $('impName')) { var r = J.S.schedule.find(function (x) { return x.id === t.value; }); if (r) { $('impName').value = r.name; if (r.track) $('impTrack').value = r.track; } }
   readForm(); renderPreview();
 });
+J.acts.impType = function (el) {
+  if (el.disabled) return; readForm();
+  J.importType = el.dataset.v;
+  if (imp) { var keep = imp.form; setupForm(imp.meta.track || keep.track, keep.date); }
+  J.refresh();
+};
+J.acts.impDelRow = function (el) { if (!imp) return; imp.del[J.importType + el.dataset.ri] = 1; renderPreview(); };
 J.acts.impPick = function () { $('impFile').click(); };
+J.acts.impShot = function () { $('impShotFile').click(); };
 J.acts.impPasteToggle = function () { $('pasteBox').hidden = !$('pasteBox').hidden; if (!$('pasteBox').hidden) $('impPaste').focus(); };
 J.acts.impParsePaste = function () { loadText($('impPaste').value, 'pasted-results.csv'); };
-J.acts.impTemplate = function () { J.download('jss-results-template.csv', 'Position,Driver,Car,Team,Start,Led,Status\n1,Example Driver,24,Example Racing,3,45,Running\n2,Another Driver,11,Another Racing,1,12,Running\n3,Third Driver,5,Third Racing,8,0,Running\n'); };
-J.acts.impCancel = function () { imp = null; $('impForm').innerHTML = ''; var m = $('impMsg'); if (m) m.hidden = true; };
+J.acts.impTemplate = function () { J.download('jss-results-template.csv', 'Position,Driver,Car,Team,Start,Led,Status,Time\n1,Example Driver,24,Example Racing,3,45,Running,\n2,Another Driver,11,Another Racing,1,12,Running,\n3,Third Driver,5,Third Racing,8,0,Running,\n'); };
+J.acts.impCancel = function () { imp = null; $('impForm').innerHTML = ''; var m = $('impMsg'); if (m) m.hidden = true; J.refresh(); };
+function cleanRow(r) { var o = {}; Object.keys(r).forEach(function (k) { if (k.charAt(0) !== '_') o[k] = r[k]; }); return o; }
+function saveSession(S, type, sid, rows, meta, source, date) {
+  var round = S.schedule.find(function (x) { return x.id === sid; }) || {};
+  var sess = { id: J.uid('q'), sid: sid, type: type, name: round.name || '', track: round.track || meta.track || '', date: date || '', meta: { weather: meta.weather || '' }, source: source, ts: Date.now(),
+    rows: rows.map(function (r, i) { return { position: r.position || i + 1, car: r.car || '', driver: String(r.driver).trim(), time: r.time || '', speed: r.speed || '', laps: r.laps || 0 }; }) };
+  S.sessions = S.sessions.filter(function (x) { return !(x.sid === sid && x.type === type); });
+  S.sessions.push(sess);
+  return sess;
+}
 J.acts.impConfirm = function () {
-  var S = J.S; if (!imp || !imp.scored) return; readForm();
-  var f = imp.form, name = f.name.trim(); if (!name) { msg('Give the race a name first.', true); return; }
-  var cover = $('impCover') ? $('impCover').checked : false;
-  var meta = {}; Object.keys(imp.meta).forEach(function (k) { meta[k] = imp.meta[k]; });
-  var race = { id: J.uid('r'), sid: f.round || '', name: name, track: f.track.trim(), date: f.date || J.todayISO(), mode: f.mode, bonus: f.bonus, custom: f.custom, seed: 0, meta: meta, rows: P.score(imp.rows, f.mode, f.bonus, f.custom) };
+  var S = J.S; if (!imp) return; readForm();
+  var t = J.importType, f = imp.form, rows = rowsNow().map(cleanRow), meta = metaNow();
+  var cover = $('impCover') ? $('impCover').checked : false, src = imp.source === 'nr2003' ? 'NR2003 export' : imp.source === 'shot' ? 'Screenshot' : imp.meta.source;
+  if (!rows.length) return;
+  if (t !== 'race') {
+    if (!f.round) { msg('Pick which race this is for.', true); return; }
+    var sess = saveSession(S, t, f.round, rows, meta, src, f.date);
+    var leftT = imp.source === 'nr2003' ? TYPES.filter(function (x) { return x[0] !== t && x[0] !== 'race' && imp.sessions[x[0]] && !imp.sessions[x[0]].empty && !J.sessionOf(S, f.round, x[0]); }) : [];
+    var left = leftT.map(function (x) { return x[1]; });
+    if (!left.length) imp = null; else { imp.lastMsg = null; J.importType = leftT[0][0]; imp.edit = {}; imp.del = {}; }
+    J.save({ render: true });
+    if (left.length) msg(J.SESSIONS[t] + ' saved. This file also has ' + left.join(' and ') + ', shown below now. Save it too if you want it.', false);
+    J.toast(J.SESSIONS[t] + ' saved for ' + sess.name + '.');
+    if (cover && J.ai && J.ai.hasKey()) J.runSessionCoverage(sess);
+    return;
+  }
+  var name = String(f.name).trim(); if (!name) { msg('Give the race a name first.', true); return; }
+  var race = { id: J.uid('r'), sid: f.round || '', name: name, track: String(f.track).trim(), date: f.date || J.todayISO(), mode: f.mode, bonus: f.bonus, custom: f.custom, seed: 0, meta: Object.assign({ source: src }, meta), rows: P.score(rows, f.mode, f.bonus, f.custom) };
+  delete race.meta.date; race.meta.track = race.meta.track || race.track;
   if (race.sid && !S.schedule.some(function (x) { return x.id === race.sid; })) race.sid = '';
+  if (imp.source === 'nr2003' && race.sid) ['practice', 'qualifying', 'happy'].forEach(function (k) { var x = imp.sessions[k]; if (x && !x.empty && !J.sessionOf(S, race.sid, k)) saveSession(S, k, race.sid, x.rows, Object.assign({}, imp.meta, x.meta), src, race.date); });
+  if (!race.meta.pole && race.sid) { var q = J.sessionOf(S, race.sid, 'qualifying'); if (q && q.rows[0]) race.meta.pole = q.rows[0].driver; }
   S.races.push(race);
   S.races.sort(function (a, b) { return String(a.date).localeCompare(String(b.date)); });
   imp = null;
-  // On-track reputation: small, automatic nudges from the result itself
   var info = J.raceInfo(race);
   J.repApply(S, info.winner.driver, 2, 'Won ' + race.name, 'track', race.id);
   if (info.mover && info.mover.gain >= 12) J.repApply(S, info.mover.row.driver, 1, 'Charged from P' + info.mover.row.start + ' to P' + info.mover.row.position + ' at ' + race.name, 'track', race.id);
@@ -259,8 +409,9 @@ J.acts.impConfirm = function () {
 window.addEventListener('drop', function (e) {
   var files = e.dataTransfer && e.dataTransfer.files; if (!files || !files.length) return;
   e.preventDefault();
-  var f = files[0], media = /^(image|video)\//.test(f.type);
-  if (media || J.route().name === 'studio') { if (J.studioAddFiles) { if (J.route().name !== 'studio') J.go('studio'); setTimeout(function () { J.studioAddFiles(files); }, 60); } return; }
-  J.importFile(f);
+  var r = J.route().name, f = files[0], media = /^(image|video)\//.test(f.type);
+  if (r === 'import') { J.importFile(files); return; }
+  if (media || r === 'studio') { if (J.studioAddFiles) { if (r !== 'studio') J.go('studio'); setTimeout(function () { J.studioAddFiles(files); }, 60); } return; }
+  J.importFile(files);
 });
 })();
