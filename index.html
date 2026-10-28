@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en" data-mode="public">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jet's Sim Series</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:ital,wght@0,600;0,700;0,800;1,700;1,800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <aside class="rail" id="rail">
+    <div class="brand"><span class="plate">JSS</span><div class="bname"><b id="brandName">Jet's Sim Series</b><small id="brandSub"></small></div></div>
+    <div class="seriesbox" id="seriesBox"></div>
+    <nav class="navlist" id="navlist" aria-label="Main"></nav>
+    <div class="railfoot" id="railFoot"></div>
+  </aside>
+  <main class="stage">
+    <div id="view"></div>
+    <footer class="footer">Jet's Sim Series is a simulated NASCAR Racing 2003 league. Articles, fan posts, interviews and rumors are fictional and written by AI for fun. They are not real statements or real social media. Unofficial and not affiliated with NASCAR.</footer>
+  </main>
+</div>
+
+<dialog id="dlg"><div id="dlgBody"></div></dialog>
+<div id="toast" class="toast" role="status"></div>
+<script src="core.js"></script>
+<script src="views.js"></script>
+
+<script>JSS.boot();</script>
+</body>
+</html>
