@@ -37,7 +37,7 @@ J.nascarPts = function (p) { return p === 1 ? 40 : Math.max(1, 37 - p); };
 /* ---------- series, tracks, outlets, figures ---------- */
 J.SERIES = {
   cup: { id: 'cup', label: 'Cup Series', short: 'CUP', chaseSize: 16, regularRaces: 26, winLocks: true },
-  xfinity: { id: 'xfinity', label: 'Xfinity Series', short: 'XFINITY', chaseSize: 12, regularRaces: 26, winLocks: true },
+  xfinity: { id: 'xfinity', label: "O'Reilly Auto Parts Series", short: "O'REILLY", chaseSize: 12, regularRaces: 26, winLocks: true }, // id kept as 'xfinity' so saved leagues and published files keep working
   truck: { id: 'truck', label: 'Truck Series', short: 'TRUCKS', chaseSize: 10, regularRaces: 16, winLocks: true }
 };
 J.TYPES = { super: 'Superspeedway', inter: 'Intermediate', short: 'Short track', road: 'Road course', unique: 'Flat / unique' };
@@ -74,10 +74,16 @@ J.OUTLETS = {
   notes: { id: 'notes', name: 'Pit Notes', tag: 'Analysis and features', color: '#b88a00', staff: ['Wes Ostrander', 'Priya Nandakumar'] }
 };
 J.FIGURES = {
-  ray: { id: 'ray', name: 'Ray Calloway', handle: '@RayCallowayRaces', badge: 'REPORTER', followers: '412K', color: '#0a1f44', bio: 'Pit road reporter. Post-race interviews, facts first.' },
-  tommy: { id: 'tommy', name: 'Tommy Bishop', handle: '@TurnThreeTommy', badge: 'CREATOR', followers: '1.1M', color: '#e3202c', bio: 'Racing YouTuber. New video every race week. Hot takes included.' },
-  dana: { id: 'dana', name: 'Dana Whitfield', handle: '@DanaOnTheWall', badge: 'ANALYST', followers: '188K', color: '#1f4fb4', bio: 'Loop data, tire falloff and the numbers you did not ask for.' },
-  lou: { id: 'lou', name: 'Big Lou Marchetti', handle: '@LouOnTheRadio', badge: 'RADIO', followers: '96K', color: '#b88a00', bio: 'Weeknight racing radio. Thirty years of opinions, one microphone.' }
+  ray: { id: 'ray', name: 'Ray Calloway', handle: '@RayCallowayRaces', badge: 'Reporter', followers: '412K', color: '#2f6fff', bio: 'Pit road reporter. Post-race interviews, facts first.', voice: 'beat reporter: short factual posts, quotes drivers, "per" and "told me", corrects rumors, never takes sides' },
+  tommy: { id: 'tommy', name: 'Tommy Bishop', handle: '@TurnThreeTommy', badge: 'YouTuber', followers: '1.1M', color: '#e3202c', bio: 'Racing YouTuber. New video every race week. Hot takes included.', voice: 'loud YouTuber: big confident takes, plugs his next video, loves a poll, owns his bad predictions with a joke' },
+  dana: { id: 'dana', name: 'Dana Whitfield', handle: '@DanaOnTheWall', badge: 'Analyst', followers: '188K', color: '#06b6d4', bio: 'Loop data, tire falloff and the numbers you did not ask for.', voice: 'data analyst: numbers first, average running position, passes, polite but pointed, threads with "1/" style' },
+  lou: { id: 'lou', name: 'Big Lou Marchetti', handle: '@LouOnTheRadio', badge: 'Radio', followers: '96K', color: '#ffc20e', bio: 'Weeknight racing radio. Thirty years of opinions, one microphone.', voice: 'old-school radio host: tells a story, mildly grumpy about the modern sport, invites callers' },
+  nate: { id: 'nate', name: 'Nate Kessler', handle: '@KesslerKnows', badge: 'Insider', followers: '231K', color: '#a855f7', bio: 'Silly season, sponsors and who is talking to whom.', voice: 'silly season insider: "hearing...", "per multiple sources", teases news with eyes emoji, never fully confirms, only rides and contracts and sponsors' },
+  sam: { id: 'sam', name: 'Lap By Lap Stats', handle: '@LapByLapStats', badge: 'Stats', followers: '74K', color: '#94a3b8', bio: 'Numbers only. No opinions. (Some opinions.)', voice: 'stats account: deadpan, starts with a stat, "first driver since...", only league numbers from the facts, no adjectives' },
+  pod: { id: 'pod', name: 'The Bump Draft Pod', handle: '@BumpDraftPod', badge: 'Podcast', followers: '58K', color: '#22c55e', bio: 'Two guys, two mics, one race a week.', voice: 'podcast account: casual, "new episode up", asks fans questions, argues between its two hosts in the post' },
+  kayla: { id: 'kayla', name: 'Kayla Reyes', handle: '@KaylaRacesToo', badge: 'Streamer', followers: '143K', color: '#ec4899', bio: 'Sim racer and streamer. Live on race nights.', voice: 'sim racing streamer: talks setups and lines like a driver, upbeat, playful trash talk, "chat was screaming"' },
+  hank: { id: 'hank', name: 'Hank Purcell', handle: '@HankOnTheBox', badge: 'Ex-crew chief', followers: '67K', color: '#f97316', bio: 'Twenty years on the box. Now I just yell at the TV.', voice: 'retired crew chief: explains strategy calls and adjustments, calm, blunt about bad calls, "I would have taken two"' },
+  memes: { id: 'memes', name: 'Caution Clock Memes', handle: '@CautionClockMemes', badge: 'Memes', followers: '305K', color: '#eab308', bio: 'Shitposting about left turns since 2019.', voice: 'meme account: one-line jokes, "nobody: / driver:" formats, describes the meme in words, never mean about anything but racing' }
 };
 J.STANCE = { 2: 'superfan', 1: 'fan', '-1': 'hater', '-2': 'superhater' };
 
@@ -97,6 +103,7 @@ J.normalize = function (S) {
   var base = J.SERIES[sid] || J.SERIES.cup;
   S.v = 3; S.id = sid;
   S.series = S.series || { id: base.id, label: base.label, short: base.short };
+  if (J.SERIES[sid]) { S.series.label = base.label; S.series.short = base.short; } // series names follow the current official names
   S.league = S.league || { name: "Jet's Sim Series" };
   S.chase = S.chase || {};
   if (!S.chase.name) S.chase.name = 'The Chase';
@@ -181,6 +188,35 @@ J.findDriver = function (S, name) {
   if (m.length === 1) return m[0];
   m = ds.filter(function (d) { return d.key.indexOf(k) >= 0 || k.indexOf(d.key) >= 0; });
   return m.length === 1 ? m[0] : null;
+};
+
+/* ---------- Chase picture: who is in on points right now, and how far from the cut line ----------
+   Race winners are locked in first (when win-locks are on). The rest of the spots go by points.
+   toCut: points above (+) or below (-) the cut line. For drivers inside it is the gap to the first driver out;
+   for drivers outside it is the gap to the last driver in. */
+J.chasePicture = function (S) {
+  var ds = J.agg(S.races), size = S.chase.size, total = Math.max(S.schedule.length, S.races.length);
+  if (!ds.length) return null;
+  var decided = S.races.length >= Math.min(S.chase.regularRaces, total);
+  var winners = S.chase.winLocks ? ds.filter(function (d) { return d.wins > 0; }).sort(function (a, b) { return b.wins - a.wins || b.pts - a.pts; }) : [];
+  var lockedW = winners.slice(0, size), lockSet = {}; lockedW.forEach(function (d) { lockSet[d.key] = 1; });
+  var others = ds.filter(function (d) { return !lockSet[d.key]; });
+  var spots = Math.max(0, size - lockedW.length);
+  var inPts = others.slice(0, spots), outPts = others.slice(spots);
+  var lastIn = inPts[inPts.length - 1] || null, firstOut = outPts[0] || null;
+  var info = {};
+  ds.forEach(function (d, i) {
+    var o = { key: d.key, pos: i + 1, locked: !!lockSet[d.key], in: false, toCut: null, status: '' };
+    if (o.locked) { o.in = true; o.status = 'win'; }
+    else if (inPts.indexOf(d) >= 0) { o.in = true; o.toCut = firstOut ? d.pts - firstOut.pts : null; o.status = 'points'; }
+    else { o.in = false; o.toCut = spots > 0 && lastIn ? d.pts - lastIn.pts : null; o.status = spots > 0 ? 'out' : 'needwin'; }
+    info[d.key] = o;
+  });
+  var grid = lockedW.concat(inPts, outPts);
+  // where the line falls in plain points order: before the first driver who is out
+  var cutIndex = ds.findIndex(function (d) { return !info[d.key].in; });
+  var bubble = { lastIn: inPts.slice(-2), firstOut: outPts.slice(0, 2) };
+  return { info: info, grid: grid, cutIndex: cutIndex, size: size, spots: spots, winners: lockedW.length, decided: decided, bubble: bubble, lastIn: lastIn, firstOut: firstOut, cutRace: Math.min(S.chase.regularRaces, total), left: Math.max(0, Math.min(S.chase.regularRaces, total) - S.races.length) };
 };
 
 /* ---------- outlook simulations (deterministic, seeded) ---------- */

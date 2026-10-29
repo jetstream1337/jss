@@ -10,7 +10,10 @@ function refreshNames(S) { NAMES = {}; J.roster(S).forEach(function (d) { NAMES[
 function pct(x) { if (x <= 0) return '0%'; if (x < 0.01) return '<1%'; if (x > 0.99) return '>99%'; return Math.round(x * 100) + '%'; }
 function plural(n, w) { return n + ' ' + w + (n === 1 ? '' : 's'); }
 function empty(t, s, extra) { return '<div class="empty"><b>' + esc(t) + '</b><span>' + esc(s || '') + '</span>' + (extra || '') + '</div>'; }
-function phead(title, sub, actions) { return '<header class="phead"><div><h1>' + esc(title) + '</h1>' + (sub ? '<p>' + esc(sub) + '</p>' : '') + '</div>' + (actions ? '<div class="actions">' + actions + '</div>' : '') + '</header><div class="stripe"><i></i><i></i><i></i></div>'; }
+function phead(title, sub, actions) {
+  var r = J.route().name, a = J.pageArt(r);
+  return '<header class="banner bn-' + esc(r) + ' acc-' + a.acc + '"><span class="emblem">' + J.icon(a.icon) + '</span><div class="bn-t"><h1>' + esc(title) + '</h1>' + (sub ? '<p>' + esc(sub) + '</p>' : '') + '</div>' + (actions ? '<div class="actions">' + actions + '</div>' : '') + '<i class="bn-stripe" aria-hidden="true"></i></header>';
+}
 J.phead = phead; J.empty = empty; J.pct = pct; J.plural = plural;
 function mediaOf(S, id) { return S.media.find(function (m) { return m.id === id; }); }
 function mediaSrc(m) { return J.blobs[m.id] || m.url || ''; }
@@ -24,7 +27,7 @@ function mediaTag(m, cls) {
   var s = mediaSrc(m); return s ? '<img class="' + (cls || '') + '" src="' + esc(s) + '" alt="' + esc(m.caption || m.name || '') + '" loading="lazy">' : '<div class="nomedia">Photo</div>';
 }
 function thumbOf(S, a) { var id = (a.media || [])[0], m = id && mediaOf(S, id); if (!m) return ''; var src = m.type === 'video' ? posterSrc(m) : mediaSrc(m); return src ? '<img src="' + esc(src) + '" alt="" loading="lazy">' : ''; }
-function outletTag(a) { var o = J.OUTLETS[a.outlet] || J.OUTLETS.wire; return '<span class="otag" style="--oc:' + o.color + '">' + esc(o.name) + '</span>'; }
+function outletTag(a) { return J.outletLogo(a.outlet, 'sm'); }
 function carPlate(c) { return '<span class="car">' + esc(c || '-') + '</span>'; }
 
 function sessionTable(x, limit) {
@@ -41,15 +44,15 @@ J.sessionBlocks = sessionBlocks;
 
 /* ---------- rail (sidebar) ---------- */
 function renderRail() {
-  var S = J.S, r = J.route(), items = J.nav.filter(function (n) { return !n.admin || !J.isPublicView(); });
+  var S = J.S, r = J.route(), pub = J.isPublicView(), items = J.nav.filter(function (n) { return n.admin ? !pub : n.pub ? pub : true; });
   var html = '', lastGroup = '';
   items.forEach(function (n) {
     if (n.group && n.group !== lastGroup) { html += '<div class="navgroup">' + esc(n.group) + '</div>'; lastGroup = n.group; }
-    html += '<a href="#/' + n.id + '" class="' + (r.name === n.id ? 'on' : '') + '">' + esc(n.label) + '</a>';
+    html += '<a href="#/' + n.id + '" class="' + (r.name === n.id ? 'on' : '') + '"' + (r.name === n.id ? ' aria-current="page"' : '') + '>' + J.icon(J.pageArt(n.id).icon) + '<span>' + esc(n.label) + '</span></a>';
   });
   $('navlist').innerHTML = html;
   $('brandName').textContent = S ? S.league.name : "Jet's Sim Series";
-  $('brandSub').textContent = S ? S.series.label.toUpperCase() : '';
+  $('brandSub').textContent = S ? S.series.label : '';
   var opts = J.seriesList;
   var showSel = !J.isPublicView() || (J.MODE === 'public' ? opts.length > 1 : Object.keys(J.leagues || {}).length > 1);
   $('seriesBox').innerHTML = showSel
@@ -108,26 +111,55 @@ J.routes.home = function (S) {
 J.nav.push({ id: 'home', label: 'Home' });
 
 /* ---------- Standings ---------- */
-J.routes.standings = function (S) {
-  var ds = J.agg(S.races), n = S.races.length;
+function cutCell(o) {
+  if (!o) return '<td class="cut dim">-</td>';
+  if (o.status === 'win') return '<td class="cut"><span class="lock" title="Locked in with a win">Win</span></td>';
+  if (o.status === 'needwin') return '<td class="cut"><span class="needwin" title="Every spot is taken by race winners">Needs a win</span></td>';
+  if (o.toCut == null) return '<td class="cut dim">-</td>';
+  var cls = o.toCut > 0 ? 'above' : o.toCut < 0 ? 'below' : 'tied';
+  return '<td class="cut"><span class="tocut ' + cls + '">' + (o.toCut > 0 ? '+' : o.toCut < 0 ? '&minus;' : '') + Math.abs(o.toCut) + '</span></td>';
+}
+function bubbleCard(S, cp) {
+  if (!cp || !cp.lastIn || !cp.firstOut) return '';
+  var row = function (d, side) { var o = cp.info[d.key]; return '<button class="bub ' + side + '" data-driver="' + esc(d.key) + '"><span class="bp">P' + o.pos + '</span><b>' + esc(d.name) + '</b><span class="tocut ' + (o.toCut > 0 ? 'above' : o.toCut < 0 ? 'below' : 'tied') + '">' + (o.toCut > 0 ? '+' : o.toCut < 0 ? '&minus;' : '') + Math.abs(o.toCut || 0) + '</span></button>'; };
+  var when = cp.decided ? 'Field is set' : cp.left === 1 ? 'Field set after the next race' : 'Field set in ' + cp.left + ' races (after race ' + cp.cutRace + ')';
+  return '<section class="bubble"><div class="bub-h"><h3>On the bubble</h3><span>' + esc(when) + (cp.winners ? ', ' + plural(cp.winners, 'winner') + ' locked in, ' + plural(cp.spots, 'spot') + ' left on points' : '') + '</span></div>'
+    + '<div class="bub-row"><div class="bub-side">' + cp.bubble.lastIn.map(function (d) { return row(d, 'in'); }).join('') + '</div><div class="bub-line" aria-hidden="true"><i></i></div><div class="bub-side">' + cp.bubble.firstOut.map(function (d) { return row(d, 'out'); }).join('') + '</div></div></section>';
+}
+J.routes.standings = function (S, args) {
+  var ds = J.agg(S.races), n = S.races.length, view = args[0] === 'chase' ? 'chase' : 'points';
   if (!ds.length) return phead('Standings', 'Driver points championship') + empty('No points yet', 'Standings appear after the first race.');
   var prev = {}; if (n > 1) J.agg(S.races.slice(0, -1)).forEach(function (d, i) { prev[d.key] = i; });
-  var top = ds[0].pts || 1, size = S.chase.size;
-  var pod = ds.slice(0, 3).map(function (d, i) { return '<div class="pod p' + (i + 1) + '" data-driver="' + esc(d.key) + '"><div class="pos">' + (i + 1) + '</div><div><b>' + esc(d.name) + '</b><small>' + (d.car ? '#' + esc(d.car) + ' ' : '') + esc(d.team || '') + '</small><div class="pp">' + d.pts + ' pts</div><small>' + d.wins + ' W, ' + d.t5 + ' top 5</small></div></div>'; }).join('');
-  var rows = ds.map(function (d, i) {
-    var mv = '<small class="flat">-</small>';
-    if (n > 1 && prev[d.key] != null) { var c = prev[d.key] - i; mv = c > 0 ? '<small class="up">&#9650;' + c + '</small>' : c < 0 ? '<small class="down">&#9660;' + (-c) + '</small>' : '<small class="flat">-</small>'; }
-    var cut = (i === size) ? '<tr class="cutline"><td colspan="11">' + esc(S.chase.name) + ' cut line after race ' + S.chase.regularRaces + ' (top ' + size + ')</td></tr>' : '';
-    return cut + '<tr data-driver="' + esc(d.key) + '"><td class="rank">' + (i + 1) + mv + '</td><td><div class="drv">' + carPlate(d.car) + '<div><b>' + esc(d.name) + '</b><small>' + esc(d.team || '') + '</small></div></div></td><td class="pts"><b>' + d.pts + '</b><span class="bar"><i style="width:' + Math.max(3, Math.round(d.pts / top * 100)) + '%"></i></span></td><td class="dim">' + (i ? '-' + (ds[0].pts - d.pts) : 'Leader') + '</td><td>' + d.starts + '</td><td>' + d.wins + '</td><td>' + d.t5 + '</td><td>' + d.t10 + '</td><td>' + d.poles + '</td><td>' + d.led + '</td><td>' + d.avg.toFixed(1) + '</td></tr>';
-  }).join('');
-  return phead('Standings', S.series.label + ' driver championship after ' + plural(n, 'race'), '<button class="btn ghost sm" data-act="exportCsv">Export CSV</button>')
-    + '<div class="podium">' + pod + '</div><div class="card"><div class="tw"><table class="data"><thead><tr><th>Pos</th><th>Driver</th><th>Points</th><th>Behind</th><th>Starts</th><th>Wins</th><th>Top 5</th><th>Top 10</th><th>Poles</th><th>Led</th><th>Avg</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+  var top = ds[0].pts || 1, cp = J.chasePicture(S), byKey = {}; ds.forEach(function (d, i) { byKey[d.key] = { d: d, i: i }; });
+  var tabs = '<nav class="subtabs" aria-label="Standings view"><a href="#/standings" class="' + (view === 'points' ? 'on' : '') + '">Points</a><a href="#/standings/chase" class="' + (view === 'chase' ? 'on' : '') + '">' + esc(S.chase.name) + ' grid</a></nav>';
+  var pod = ds.slice(0, 3).map(function (d, i) { return '<div class="pod p' + (i + 1) + '" data-driver="' + esc(d.key) + '"><div class="pos">' + (i + 1) + '</div><div><b>' + esc(d.name) + '</b><small>' + (d.car ? '#' + esc(d.car) + ' ' : '') + esc(d.team || '') + '</small><div class="pp">' + d.pts + ' pts</div><small>' + plural(d.wins, 'win') + ', ' + d.t5 + ' top 5</small></div></div>'; }).join('');
+  var cutRow = function (cols) { return '<tr class="cutline"><td colspan="' + cols + '"><span>' + esc(S.chase.name) + ' cut line</span></td></tr>'; };
+  var mvOf = function (d, i) { if (!(n > 1 && prev[d.key] != null)) return '<small class="flat">-</small>'; var c = prev[d.key] - i; return c > 0 ? '<small class="up">&#9650;' + c + '</small>' : c < 0 ? '<small class="down">&#9660;' + (-c) + '</small>' : '<small class="flat">-</small>'; };
+  var body;
+  if (view === 'points') {
+    var rows = ds.map(function (d, i) {
+      var o = cp && cp.info[d.key];
+      return (cp && i === cp.cutIndex ? cutRow(12) : '') + '<tr data-driver="' + esc(d.key) + '" class="' + (o && o.in ? 'inch' : 'outch') + '"><td class="rank">' + (i + 1) + mvOf(d, i) + '</td><td><div class="drv">' + carPlate(d.car) + '<div><b>' + esc(d.name) + '</b><small>' + esc(d.team || '') + '</small></div></div></td><td class="pts"><b>' + d.pts + '</b><span class="bar"><i style="width:' + Math.max(3, Math.round(d.pts / top * 100)) + '%"></i></span></td><td class="dim">' + (i ? '&minus;' + (ds[0].pts - d.pts) : 'Leader') + '</td>' + cutCell(o) + '<td>' + d.starts + '</td><td>' + d.wins + '</td><td>' + d.t5 + '</td><td>' + d.t10 + '</td><td>' + d.poles + '</td><td>' + d.led + '</td><td>' + d.avg.toFixed(1) + '</td></tr>';
+    }).join('');
+    body = '<div class="podium">' + pod + '</div>' + bubbleCard(S, cp)
+      + '<div class="card"><div class="tw"><table class="data stand"><thead><tr><th>Pos</th><th>Driver</th><th>Points</th><th>Behind</th><th title="Points above or below the ' + esc(S.chase.name) + ' cut line">+/&minus; Cut</th><th>Starts</th><th>Wins</th><th>Top 5</th><th>Top 10</th><th>Poles</th><th>Led</th><th>Avg</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>'
+      + '<p class="fine">+/&minus; Cut is how many points a driver is above or below the cut line for ' + esc(S.chase.name) + '. ' + (S.chase.winLocks ? 'A race win locks a driver in, as long as there are not more winners than spots. ' : '') + 'The top ' + cp.size + ' make it after race ' + cp.cutRace + '.</p>';
+  } else {
+    var g = cp.grid.map(function (d, i) {
+      var o = cp.info[d.key], k = byKey[d.key];
+      return (i === cp.size ? cutRow(7) : '') + '<tr data-driver="' + esc(d.key) + '" class="' + (o.in ? 'inch' : 'outch') + '"><td class="rank">' + (i + 1) + '</td><td><div class="drv">' + carPlate(d.car) + '<div><b>' + esc(d.name) + '</b><small>P' + (k.i + 1) + ' in points</small></div></div></td><td>' + d.wins + '</td><td class="pts"><b>' + d.pts + '</b></td>' + cutCell(o) + '<td>' + (o.status === 'win' ? '<span class="chip g">In on a win</span>' : o.in ? '<span class="chip b">In on points</span>' : '<span class="chip r">Out</span>') + '</td><td>' + d.t5 + '</td></tr>';
+    }).join('');
+    body = bubbleCard(S, cp) + '<div class="card"><div class="tw"><table class="data stand"><thead><tr><th>Seed</th><th>Driver</th><th>Wins</th><th>Points</th><th>+/&minus; Cut</th><th>How</th><th>Top 5</th></tr></thead><tbody>' + g + '</tbody></table></div></div>'
+      + '<p class="fine">If the field were set today. Winners are seeded first, then the rest by points. ' + (cp.decided ? 'The field is set.' : 'Odds of making it are on the Chase Outlook page in The Garage.') + '</p>';
+  }
+  return phead('Standings', S.series.label + ' championship after ' + plural(n, 'race'), '<button class="btn ghost sm" data-act="exportCsv">Export CSV</button>') + tabs + body;
 };
 J.nav.push({ id: 'standings', label: 'Standings' });
 J.acts.exportCsv = function () {
   var S = J.S, ds = J.agg(S.races); if (!ds.length) { J.toast('No standings to export yet.'); return; }
   var q = function (x) { return '"' + String(x == null ? '' : x).replace(/"/g, '""') + '"'; };
-  var lines = [['Position', 'Driver', 'Car', 'Team', 'Points', 'Behind', 'Starts', 'Wins', 'Top 5', 'Top 10', 'Poles', 'Laps Led', 'Avg Finish']].concat(ds.map(function (d, i) { return [i + 1, d.name, d.car, d.team, d.pts, i ? ds[0].pts - d.pts : 0, d.starts, d.wins, d.t5, d.t10, d.poles, d.led, d.avg.toFixed(1)]; }));
+  var cp = J.chasePicture(S), cutTxt = function (d) { var o = cp && cp.info[d.key]; return !o ? '' : o.status === 'win' ? 'Win' : o.status === 'needwin' ? 'Needs a win' : o.toCut == null ? '' : (o.toCut > 0 ? '+' : '') + o.toCut; };
+  var lines = [['Position', 'Driver', 'Car', 'Team', 'Points', 'Behind', 'To Cut Line', 'Starts', 'Wins', 'Top 5', 'Top 10', 'Poles', 'Laps Led', 'Avg Finish']].concat(ds.map(function (d, i) { return [i + 1, d.name, d.car, d.team, d.pts, i ? ds[0].pts - d.pts : 0, cutTxt(d), d.starts, d.wins, d.t5, d.t10, d.poles, d.led, d.avg.toFixed(1)]; }));
   J.download('standings.csv', lines.map(function (r) { return r.map(q).join(','); }).join('\n'));
 };
 
@@ -179,7 +211,7 @@ J.routes.news = function (S, args) {
     var o = J.OUTLETS[a.outlet] || J.OUTLETS.wire, media = (a.media || []).map(function (id) { return mediaOf(S, id); }).filter(Boolean);
     var threads = J.threadsOf(S).filter(function (t) { return t.ref && t.ref.type === 'article' && t.ref.id === a.id; }).slice(0, 3);
     var iv = (S.interviews || []).filter(function (x) { return x.ref === a.id; });
-    return '<div class="crumb"><a href="#/news">&#8592; All news</a></div><article class="article"><div class="a-top" style="--oc:' + o.color + '"><span class="otag" style="--oc:' + o.color + '">' + esc(o.name) + '</span><span class="otag-sub">' + esc(o.tag) + '</span></div>'
+    return '<div class="crumb"><a href="#/news">&#8592; All news</a></div><article class="article ol-' + o.id + '"><div class="a-top">' + J.outletLogo(o.id, 'lg') + (a.preSid ? '<span class="chip y">Preview</span>' : '') + '</div>'
       + '<h1>' + esc(a.headline) + '</h1>' + (a.dek ? '<p class="dek">' + esc(a.dek) + '</p>' : '')
       + '<div class="byline"><b>By ' + esc(a.author || o.staff[0]) + '</b><span>' + esc(J.fmtStamp(a.ts)) + '</span>' + (a.auto ? '<span class="chip">Automatic recap</span>' : '') + '</div>'
       + (media.length ? '<div class="a-media' + (media.length === 1 ? ' one' : '') + '">' + media.map(function (m) { return '<figure><button class="gitem" data-act="lightbox" data-id="' + esc(m.id) + '">' + mediaTag(m) + '</button>' + (m.caption ? '<figcaption>' + esc(m.caption) + '</figcaption>' : '') + '</figure>'; }).join('') + '</div>' : '')
@@ -191,11 +223,11 @@ J.routes.news = function (S, args) {
       + (J.MODE === 'admin' && !J.isPublicView() ? '<div class="adminbar"><button class="btn ghost sm" data-act="editArticle" data-id="' + esc(a.id) + '">Edit</button><button class="btn ghost sm" data-act="reactArticle" data-id="' + esc(a.id) + '">Generate fan reactions</button><button class="btn danger sm" data-act="delArticle" data-id="' + esc(a.id) + '">Delete story</button></div>' : '');
   }
   var f = J.ui.newsFilter, list = arts.filter(function (x) { return f === 'all' || x.outlet === f; });
-  var chips = '<div class="fchips"><button class="fc' + (f === 'all' ? ' on' : '') + '" data-act="newsFilter" data-v="all">All outlets</button>' + Object.keys(J.OUTLETS).map(function (k) { return '<button class="fc' + (f === k ? ' on' : '') + '" data-act="newsFilter" data-v="' + k + '">' + esc(J.OUTLETS[k].name) + '</button>'; }).join('') + '</div>';
+  var chips = '<div class="fchips"><button class="fc' + (f === 'all' ? ' on' : '') + '" data-act="newsFilter" data-v="all">All outlets</button>' + Object.keys(J.OUTLETS).map(function (k) { return '<button class="fc fc-ol' + (f === k ? ' on' : '') + '" data-act="newsFilter" data-v="' + k + '">' + J.outletLogo(k, 'xs') + '</button>'; }).join('') + '</div>';
   var head = phead('News', 'Three outlets cover the league: race coverage, silly season and analysis.') + chips;
   if (!list.length) return head + empty('No stories here yet', J.MODE === 'admin' ? 'Import a race or write one in Story Studio.' : 'Check back after the next race.');
   var first = list[0], rest = list.slice(1);
-  return head + '<a class="feat" href="#/news/' + esc(first.id) + '">' + (thumbOf(S, first) ? '<div class="fthumb">' + thumbOf(S, first) + '</div>' : '') + '<div>' + outletTag(first) + '<h2>' + esc(first.headline) + '</h2><p>' + esc(first.dek || '') + '</p><small>' + esc(first.author || '') + ' / ' + esc(J.fmtStamp(first.ts)) + '</small></div></a>'
+  return head + '<a class="feat' + (thumbOf(S, first) ? '' : ' nothumb') + ' ol-' + esc(first.outlet) + '" href="#/news/' + esc(first.id) + '">' + (thumbOf(S, first) ? '<div class="fthumb">' + thumbOf(S, first) + '</div>' : '') + '<div>' + outletTag(first) + '<h2>' + esc(first.headline) + '</h2><p>' + esc(first.dek || '') + '</p><small>' + esc(first.author || '') + ' / ' + esc(J.fmtStamp(first.ts)) + '</small></div></a>'
     + '<div class="ngrid">' + rest.map(function (a) { return '<a class="acard" href="#/news/' + esc(a.id) + '">' + (thumbOf(S, a) ? '<div class="athumb">' + thumbOf(S, a) + '</div>' : '') + outletTag(a) + '<h4>' + esc(a.headline) + '</h4><p>' + esc(a.dek || '') + '</p><small>' + esc(J.fmtStamp(a.ts)) + '</small></a>'; }).join('') + '</div>';
 };
 J.nav.push({ id: 'news', label: 'News' });
@@ -225,17 +257,37 @@ function stanceTag(fan) {
   var label = J.STANCE[st.level], nm = NAMES[st.driver] ? J.lastName(NAMES[st.driver]) : st.driver;
   return '<span class="stance ' + (st.level > 0 ? 'good' : 'bad') + '">' + label + ' / ' + esc(nm) + '</span>';
 }
-function postHtml(S, p, depth) {
+function fmtCount(n) { return n >= 10000 ? (n / 1000).toFixed(0) + 'K' : n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K' : String(n); }
+function authorLine(au, forum) {
+  return au.figure ? '<b>' + esc(au.name) + '</b><span class="badge" style="--c:' + au.color + '">' + esc(au.badge) + '</span><span class="hdl">' + esc(au.handle) + '</span>'
+    : forum ? '<b>' + esc(au.handle) + '</b>' : '<b>' + esc(au.name) + '</b><span class="hdl">' + esc(au.handle) + '</span>';
+}
+function quoteHtml(S, p) {
+  var q = S.posts.find(function (x) { return x.id === p.quote; }); if (!q) return '';
+  var au = J.postAuthor(S, q); if (!au) return '';
+  if (!au.figure) au.handle = (q.platform === 'forum' ? 'u/' : '@') + au.fan.handle;
+  var t = q.text.length > 220 ? q.text.slice(0, 217) + '...' : q.text;
+  return '<div class="qpost">' + J.avatar(au) + '<div><div class="ph">' + authorLine(au, false) + '</div><p>' + esc(t) + '</p></div></div>';
+}
+function pollHtml(p, likes) {
+  var r = J.rng('poll' + p.id), w = p.poll.map(function () { return 0.4 + r() * 2; }), sum = w.reduce(function (a, b) { return a + b; }, 0);
+  var pc = w.map(function (x) { return Math.round(x / sum * 100); }), d = 100 - pc.reduce(function (a, b) { return a + b; }, 0); pc[0] += d;
+  var top = Math.max.apply(null, pc), votes = Math.round(likes * (2 + r() * 4));
+  return '<div class="poll">' + p.poll.map(function (o, i) { return '<div class="popt' + (pc[i] === top ? ' win' : '') + '"><i style="width:' + pc[i] + '%"></i><span>' + esc(o) + '</span><b>' + pc[i] + '%</b></div>'; }).join('') + '<small>' + fmtCount(votes) + ' votes, final results</small></div>';
+}
+function postHtml(S, p, kids) {
   var au = J.postAuthor(S, p); if (!au) return '';
   var likes = J.likesFor(p, au.figure), forum = p.platform === 'forum';
   if (!au.figure) au.handle = (forum ? 'u/' : '@') + au.fan.handle;
-  var tag = au.figure ? '<span class="badge">' + esc(au.badge) + '</span>' : stanceTag(au.fan);
-  var ini = au.name.replace(/[^A-Za-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean).slice(0, 2).map(function (x) { return x[0]; }).join('').toUpperCase() || '?';
-  return '<div class="post' + (au.figure ? ' fig' : '') + (forum ? ' forum' : '') + '"><div class="av" style="background:' + au.color + '">' + esc(ini) + '</div><div class="pb"><div class="ph"><b>' + esc(forum && !au.figure ? au.handle : au.name) + '</b>' + (au.figure ? '<span class="hdl">' + esc(au.handle) + '</span>' : (forum ? '' : '<span class="hdl">' + esc(au.handle) + '</span>')) + tag + '<span class="tm">' + esc(J.ago(p.ts)) + '</span></div><p>' + esc(p.text).replace(/\n/g, '<br>') + '</p><div class="rx"><span>' + (forum ? '&#9650; ' : '&#9825; ') + likes + '</span>' + (forum ? '<span>Reply</span>' : '<span>Repost ' + Math.floor(likes / 5) + '</span>') + '</div></div></div>';
+  var tag = au.figure ? '' : stanceTag(au.fan), reps = Math.floor(likes / (4 + (likes % 5))), replies = (kids || 0) + Math.floor(likes / 23);
+  var rx = forum ? '<span class="vote">&#9650; ' + fmtCount(likes) + ' &#9660;</span><span>Reply</span><span>Share</span>'
+    : '<span title="Replies">' + J.icon('garage', 'sm') + fmtCount(replies) + '</span><span title="Reposts">&#8645; ' + fmtCount(reps) + '</span><span title="Likes">&#9825; ' + fmtCount(likes) + '</span><span class="views" title="Views">' + fmtCount(likes * (18 + likes % 11)) + ' views</span>';
+  return '<div class="post' + (au.figure ? ' fig' : '') + (forum ? ' forum' : '') + '">' + J.avatar(au) + '<div class="pb"><div class="ph">' + authorLine(au, forum) + tag + '<span class="tm">' + esc(J.ago(p.ts)) + '</span></div><p>' + esc(p.text).replace(/\n/g, '<br>') + '</p>'
+    + (p.quote ? quoteHtml(S, p) : '') + (p.poll ? pollHtml(p, likes) : '') + '<div class="rx">' + rx + '</div></div></div>';
 }
 function threadHtml(S, t) {
   var kids = {}; t.posts.forEach(function (p) { if (p.parent) (kids[p.parent] = kids[p.parent] || []).push(p); });
-  function walk(p, d) { return postHtml(S, p) + ((kids[p.id] || []).length ? '<div class="replies' + (d >= 2 ? ' flat' : '') + '">' + kids[p.id].map(function (c) { return walk(c, d + 1); }).join('') + '</div>' : ''); }
+  function walk(p, d) { return postHtml(S, p, (kids[p.id] || []).length) + ((kids[p.id] || []).length ? '<div class="replies' + (d >= 2 ? ' flat' : '') + '">' + kids[p.id].map(function (c) { return walk(c, d + 1); }).join('') + '</div>' : ''); }
   var root = t.root, forum = t.platform === 'forum';
   var head = forum && root.title ? '<h4 class="ftitle">' + esc(root.title) + '</h4>' : '';
   return '<article class="thread ' + (forum ? 'forumt' : '') + '">' + head + walk(root, 0) + '</article>';
@@ -268,14 +320,14 @@ function aiNote(S, kind, key) { var a = S.ai[kind]; return a && a.notes && a.not
 function analyst(S, kind, fallback) {
   var a = S.ai[kind]; var fig = J.FIGURES[(a && a.by) || 'dana'];
   var text = a && a.summary ? a.summary : fallback;
-  return '<div class="analyst"><div class="av" style="background:' + fig.color + '">' + esc(fig.name.split(' ').map(function (x) { return x[0]; }).join('')) + '</div><div><b>' + esc(a && a.headline ? a.headline : fig.name) + '</b><span class="hdl">' + esc(fig.handle) + '</span><p>' + esc(text) + '</p></div></div>';
+  return '<div class="analyst" style="--c:' + fig.color + '">' + J.avatar({ figure: true, name: fig.name, color: fig.color }, true) + '<div><div class="ph"><b>' + esc(fig.name) + '</b><span class="badge" style="--c:' + fig.color + '">' + esc(fig.badge) + '</span><span class="hdl">' + esc(fig.handle) + '</span></div>' + (a && a.headline ? '<h4>' + esc(a.headline) + '</h4>' : '') + '<p>' + esc(text) + '</p></div></div>';
 }
 function oddsBar(v, cls) { return '<span class="odds ' + (cls || '') + '"><i style="width:' + Math.max(1, Math.round(v * 100)) + '%"></i><b>' + pct(v) + '</b></span>'; }
 
 function feedPage(S) {
   var f = J.ui.feedFilter, ths = J.threadsOf(S).filter(function (t) { return f === 'all' || t.platform === f; }).slice(0, 40);
   var chips = '<div class="fchips"><button class="fc' + (f === 'all' ? ' on' : '') + '" data-act="feedFilter" data-v="all">Everything</button><button class="fc' + (f === 'x' ? ' on' : '') + '" data-act="feedFilter" data-v="x">Feed</button><button class="fc' + (f === 'forum' ? ' on' : '') + '" data-act="feedFilter" data-v="forum">Forum</button></div>';
-  var figs = '<div class="figs">' + Object.keys(J.FIGURES).map(function (k) { var x = J.FIGURES[k]; return '<div class="fig-c"><div class="av" style="background:' + x.color + '">' + x.name.split(' ').map(function (w) { return w[0]; }).join('').slice(0, 2) + '</div><div><b>' + esc(x.name) + '</b><span class="badge">' + x.badge + '</span><small>' + esc(x.handle) + ' / ' + x.followers + ' followers</small></div></div>'; }).join('') + '</div>';
+  var figs = '<section class="figs" aria-label="Accounts everyone follows"><h3>Accounts everyone follows</h3><div class="figrow">' + Object.keys(J.FIGURES).map(function (k) { var x = J.FIGURES[k]; return '<div class="fig-c" title="' + esc(x.bio) + '">' + J.avatar({ figure: true, name: x.name, color: x.color }) + '<div><b>' + esc(x.name) + '</b><small>' + esc(x.handle) + '</small><small><span class="badge" style="--c:' + x.color + '">' + esc(x.badge) + '</span> ' + x.followers + '</small></div></div>'; }).join('') + '</div></section>';
   var body = ths.length ? '<div class="card">' + ths.map(function (t) { return threadHtml(S, t); }).join('') + '</div>' : empty('The Garage is quiet', J.MODE === 'admin' ? 'Import a race with an AI key saved and the fans show up. Add a free Gemini key in Settings.' : 'Fans start talking after the next race.');
   var iv = (S.interviews || []).slice(0, 4);
   var ivh = iv.length ? '<section class="card"><div class="card-h"><h3>Pit road</h3><small class="dim">Ray Calloway, interviews</small></div><div class="card-b">' + iv.map(function (x) { return '<blockquote class="iv"><b>' + esc(x.driver) + '</b> ' + esc(x.quote) + '<small>' + esc(x.tone || '') + ' / ' + esc(J.ago(x.ts)) + '</small></blockquote>'; }).join('') + '<p class="fine">Fictional quotes written for the league.</p></div></section>' : '';
@@ -326,6 +378,24 @@ J.routes.garage = function (S, args) {
   return phead('The Garage', sub, actions) + gtabs(tab) + body;
 };
 J.nav.push({ id: 'garage', label: 'The Garage' });
+
+/* ---------- Settings for visitors (theme, default series) ---------- */
+J.routes.display = function (S) {
+  var p = J.themePref(), opt = function (k, label, desc, icon) { return '<label class="tchoice tc-' + k + (p === k ? ' on' : '') + '"><input type="radio" name="theme" value="' + k + '"' + (p === k ? ' checked' : '') + '><span class="tc-prev" aria-hidden="true"><i></i><i></i><i></i></span><span class="tc-t">' + J.icon(icon) + '<b>' + label + '</b></span><small>' + desc + '</small></label>'; };
+  var list = J.seriesList || [], cur = ''; try { cur = localStorage.getItem('jss_public_series') || ''; } catch (e) {}
+  return phead('Settings', 'How this site looks on your screen')
+    + '<section class="panel"><h3>Appearance</h3><div class="tchoices" role="radiogroup" aria-label="Theme">'
+    + opt('dark', 'Dark', 'Black with NASCAR yellow, red and blue. The default.', 'moon') + opt('light', 'Light', 'White pages with navy, easier in bright rooms.', 'sun') + opt('auto', 'Match my device', 'Follows your phone or computer setting.', 'auto')
+    + '</div></section>'
+    + (J.MODE === 'public' && list.length > 1 ? '<section class="panel"><h3>Series</h3><p class="sub">Which series opens when you visit.</p><div class="field" style="max-width:360px"><label for="defSeries">Open this series first</label><select id="defSeries">' + list.map(function (o) { return '<option value="' + esc(o.id) + '"' + ((cur || (S && S.id)) === o.id ? ' selected' : '') + '>' + esc(o.label) + '</option>'; }).join('') + '</select></div></section>' : '')
+    + '<p class="fine">Saved in this browser only.</p>';
+};
+J.nav.push({ id: 'display', label: 'Settings', pub: true });
+document.addEventListener('change', function (e) {
+  var t = e.target;
+  if (t.name === 'theme') { J.setTheme(t.value); document.querySelectorAll('.tchoice').forEach(function (l) { l.classList.toggle('on', l.querySelector('input').checked); }); }
+  else if (t.id === 'defSeries') { try { localStorage.setItem('jss_public_series', t.value); } catch (x) {} if (J.acts.switchSeries && J.S && t.value !== J.S.id) J.acts.switchSeries(t); }
+});
 
 /* ---------- driver dialog + global clicks ---------- */
 function openDriver(key) {

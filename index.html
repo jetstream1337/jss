@@ -6,13 +6,15 @@
 <title>Jet's Sim Series</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:ital,wght@0,600;0,700;0,800;1,700;1,800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Saira:ital,wdth,wght@0,50..125,100..900;1,50..125,100..900&display=swap" rel="stylesheet">
+<meta name="color-scheme" content="dark light">
+<script>try{var t=localStorage.getItem("jss_theme")||"dark";if(t==="auto")t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";document.documentElement.setAttribute("data-theme",t==="light"?"light":"dark")}catch(e){document.documentElement.setAttribute("data-theme","dark")}</script>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="app">
   <aside class="rail" id="rail">
-    <div class="brand"><span class="plate">JSS</span><div class="bname"><b id="brandName">Jet's Sim Series</b><small id="brandSub"></small></div></div>
+    <a class="brand" href="#/home" aria-label="Home"><span class="plate">JSS</span><div class="bname"><b id="brandName">Jet's Sim Series</b><small id="brandSub"></small></div></a>
     <div class="seriesbox" id="seriesBox"></div>
     <nav class="navlist" id="navlist" aria-label="Main"></nav>
     <div class="railfoot" id="railFoot"></div>
@@ -26,6 +28,7 @@
 <dialog id="dlg"><div id="dlgBody"></div></dialog>
 <div id="toast" class="toast" role="status"></div>
 <script src="core.js"></script>
+<script src="art.js"></script>
 <script src="views.js"></script>
 
 <script>JSS.boot();</script>
