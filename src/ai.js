@@ -7,8 +7,17 @@ J.settings = J.settings || {};
 /* ---------- network (Electron bridge when present, plain fetch otherwise) ---------- */
 J.http = function (url, opts) {
   opts = opts || {};
-  if (window.jssNative && window.jssNative.http) return window.jssNative.http({ url: url, method: opts.method || 'GET', headers: opts.headers || {}, body: opts.body });
-  return fetch(url, { method: opts.method || 'GET', headers: opts.headers, body: opts.body }).then(function (r) { return r.text().then(function (t) { return { status: r.status, text: t }; }); });
+  if (window.jssNative && window.jssNative.http) return window.jssNative.http({ url: url, method: opts.method || 'GET', headers: opts.headers || {}, body: opts.body, timeoutMs: opts.timeoutMs });
+  var ctl = window.AbortController ? new AbortController() : null, t = ctl ? setTimeout(function () { ctl.abort(); }, opts.timeoutMs || 180000) : null;
+  return fetch(url, { method: opts.method || 'GET', headers: opts.headers, body: opts.body, signal: ctl ? ctl.signal : undefined })
+    .then(function (r) { return r.text().then(function (x) { clearTimeout(t); return { status: r.status, text: x }; }); })
+    .catch(function (e) { clearTimeout(t); return { status: 0, text: JSON.stringify({ message: 'Network error (' + (e && e.name === 'AbortError' ? 'timed out' : (e && e.message) || e) + ')' }) }; });
+};
+/* one automatic retry when the connection itself fails (not when the server answers with an error) */
+J.httpRetry = async function (url, opts) {
+  var r = await J.http(url, opts);
+  if (r.status === 0 && !/timed out|Blocked host/.test(r.text || '')) { await new Promise(function (ok) { setTimeout(ok, 2500); }); r = await J.http(url, opts); }
+  return r;
 };
 AI.provider = function () { return J.settings.aiProvider === 'claude' ? 'claude' : 'gemini'; };
 AI.name = function () { return AI.provider() === 'claude' ? 'Claude' : 'Gemini'; };
@@ -24,8 +33,9 @@ async function claudeCall(o) {
   content.push({ type: 'text', text: o.user });
   var model = o.role === 'chatter' ? (J.settings.chatterModel || J.settings.writerModel) : J.settings.writerModel;
   var body = { model: model || 'claude-sonnet-5-5', max_tokens: o.maxTokens || 4000, system: o.system, messages: [{ role: 'user', content: content }] };
-  var r = await J.http('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': J.settings.apiKey.trim(), 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' }, body: JSON.stringify(body) });
+  var r = await J.httpRetry('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': J.settings.apiKey.trim(), 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' }, body: JSON.stringify(body) });
   var data; try { data = JSON.parse(r.text); } catch (e) { throw new Error('Claude sent back something unreadable (HTTP ' + r.status + ').'); }
+  if (r.status === 0) throw new Error('The app could not connect to Anthropic' + (data && data.message ? ' (' + String(data.message).replace(/^Network error \(|\)$/g, '') + ')' : '') + '. If your browser works, an antivirus web shield, VPN or firewall may be blocking the JSS app.');
   if (r.status !== 200) {
     var em = (data.error && data.error.message) || '', et = (data.error && data.error.type) || '';
     if (r.status === 401 || et === 'authentication_error') throw new Error('Your Claude key was not accepted. Check it in Settings.');
@@ -42,21 +52,21 @@ async function claudeCall(o) {
 var GEM = 'https://generativelanguage.googleapis.com/v1beta/';
 function gemHeaders() { return { 'content-type': 'application/json', 'x-goog-api-key': String(J.settings.geminiKey || '').trim() }; }
 function gemError(r, data) {
-  var e = (data && data.error) || {}, m = e.message || '', st = e.status || '';
+  var e = (data && data.error) || {}, m = e.message || (data && data.message) || '', st = e.status || '';
   var err;
   if (/API key not valid|API_KEY_INVALID/i.test(m) || (r.status === 400 && /key/i.test(m))) err = 'Your Gemini key was not accepted. Copy it again from aistudio.google.com (Get API key) and paste it in Settings.';
   else if (r.status === 403 || st === 'PERMISSION_DENIED') err = 'Google says this key is not allowed to use Gemini. Make a new key at aistudio.google.com.';
   else if (r.status === 429 || st === 'RESOURCE_EXHAUSTED') err = 'You have used today\'s free Gemini requests. They reset overnight (about 3 AM Eastern). Try again tomorrow.';
   else if (r.status >= 500) err = 'Gemini is busy right now. Try again in a few minutes.';
   else if (r.status === 404) err = 'That Gemini model is not available any more. Click Test key in Settings and the app will pick a new one.';
-  else if (r.status === 0) err = 'Could not reach Google. Check your internet connection.';
+  else if (r.status === 0) err = /timed out/.test(m) ? 'Google took too long to answer (over 3 minutes). Try again; if it keeps happening pick a "Lite" model in Settings.' : 'The app could not connect to Google' + (m ? ' (' + m.replace(/^Network error \(|\)$/g, '') + ')' : '') + '. If your browser works, an antivirus "web shield", VPN or firewall may be blocking the JSS app. Try again, or allow the app in that program.';
   else err = 'Gemini problem (' + r.status + '): ' + (m || 'unknown error');
   var x = new Error(err); x.status = r.status; x.gstatus = st; return x;
 }
 AI.geminiModels = async function () {
   var all = [], token = '';
   for (var i = 0; i < 5; i++) {
-    var r = await J.http(GEM + 'models?pageSize=200' + (token ? '&pageToken=' + encodeURIComponent(token) : ''), { method: 'GET', headers: gemHeaders() });
+    var r = await J.httpRetry(GEM + 'models?pageSize=200' + (token ? '&pageToken=' + encodeURIComponent(token) : ''), { method: 'GET', headers: gemHeaders(), timeoutMs: 30000 });
     var data = null; try { data = JSON.parse(r.text); } catch (e) {}
     if (r.status !== 200) throw gemError(r, data);
     (data.models || []).forEach(function (m) { if ((m.supportedGenerationMethods || []).indexOf('generateContent') >= 0) all.push({ id: String(m.name).replace(/^models\//, ''), label: m.displayName || m.name }); });
@@ -93,6 +103,7 @@ async function geminiCall(o) {
     try { return await geminiOnce(o, models[i], plain); }
     catch (e) {
       lastErr = e;
+      if (e.status === 400 && e.gmsg && /thinking/i.test(e.gmsg) && !J.settings.geminiNoThinkCfg) { J.settings.geminiNoThinkCfg = true; i--; continue; }
       if (e.status === 400 && e.gmsg && /mime|response_?mime|json/i.test(e.gmsg) && !plain) { plain = true; i--; continue; }
       if (e.status === 404 && !repicked) { repicked = true; s.geminiModel = ''; await AI.geminiPickModels(); return geminiCall(o); }
       if (e.status >= 500 && !busyRetried) { busyRetried = true; await sleep(2500); i--; continue; }
@@ -108,8 +119,9 @@ async function geminiOnce(o, model, plain) {
   parts.push({ text: o.user });
   var gen = { maxOutputTokens: Math.max(8192, (o.maxTokens || 4000) * 2), temperature: 1 };
   if (o.json && !plain) gen.responseMimeType = 'application/json';
+  if (!J.settings.geminiNoThinkCfg) gen.thinkingConfig = { thinkingLevel: 'low' };
   var body = { systemInstruction: { parts: [{ text: o.system }] }, contents: [{ role: 'user', parts: parts }], generationConfig: gen };
-  var r = await J.http(GEM + 'models/' + encodeURIComponent(model) + ':generateContent', { method: 'POST', headers: gemHeaders(), body: JSON.stringify(body) });
+  var r = await J.httpRetry(GEM + 'models/' + encodeURIComponent(model) + ':generateContent', { method: 'POST', headers: gemHeaders(), body: JSON.stringify(body), timeoutMs: 180000 });
   var data = null; try { data = JSON.parse(r.text); } catch (e) {}
   if (r.status !== 200) { var err = gemError(r, data); err.gmsg = (data && data.error && data.error.message) || String(r.text || '').slice(0, 200); err.model = model; throw err; }
   var c = (data.candidates || [])[0];

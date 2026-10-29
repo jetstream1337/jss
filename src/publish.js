@@ -25,7 +25,7 @@ P.schedule = function (ms) {
 /* ---------- GitHub API ---------- */
 async function gh(method, path, body) {
   var c = cfg();
-  var r = await J.http(API + path, { method: method, headers: { 'Authorization': 'Bearer ' + c.token, 'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+  var r = await (J.httpRetry || J.http)(API + path, { method: method, headers: { 'Authorization': 'Bearer ' + c.token, 'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
   var data = null; try { data = r.text ? JSON.parse(r.text) : null; } catch (e) {}
   if (r.status >= 200 && r.status < 300) return data;
   var e = new Error(explain(r.status, data, path)); e.status = r.status; e.data = data; throw e;
@@ -38,7 +38,7 @@ function explain(status, data, path) {
   if (status === 404) return 'GitHub could not find ' + cfg().owner + '/' + cfg().repo + '. Check the username and repository name, and that the token was made for this repository.';
   if (status === 409) return 'The repository is empty or busy. Try again in a moment.';
   if (status === 422 && /too large|size/i.test(m)) return 'A file is too big for GitHub. Try a shorter video clip.';
-  if (status === 0) return 'Could not reach GitHub. Check your internet connection.';
+  if (status === 0) return 'The app could not connect to GitHub' + (m ? ' (' + m.replace(/^Network error \(|\)$/g, '') + ')' : '') + '. If your browser works, an antivirus web shield, VPN or firewall may be blocking the JSS app.';
   return 'GitHub problem (' + status + '): ' + (m || 'unknown error');
 }
 function sha1js(m) {

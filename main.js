@@ -1,7 +1,7 @@
 // JSS Commissioner - Electron main process.
 // Holds the window, does network requests (so Claude and GitHub calls are not blocked by the browser),
 // and keeps leagues, photos/videos and settings on disk. API key and GitHub token are encrypted with Windows' own protection.
-const { app, BrowserWindow, ipcMain, safeStorage, shell, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, safeStorage, shell, Menu, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -19,19 +19,36 @@ function safeName(s) { return String(s).replace(/[^a-zA-Z0-9_:-]/g, '').replace(
 function writeAtomic(file, data) { const tmp = file + '.tmp'; fs.writeFileSync(tmp, data); fs.renameSync(tmp, file); }
 function readJson(file, fallback) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { return fallback; } }
 
-// ---- network (only Claude and GitHub) ----
+// ---- network (only Claude, Gemini and GitHub) ----
+// Uses Electron's net.fetch first: it goes through the same network stack as Chrome on this PC, so Windows proxy,
+// VPN and antivirus certificate settings work. Falls back to Node's fetch. Times out after 3 minutes with a clear message.
+function withTimeout(ms) { const c = new AbortController(); const t = setTimeout(() => c.abort(), ms); return { signal: c.signal, done: () => clearTimeout(t) }; }
+async function tryFetch(fn, url, opts, ms) {
+  const to = withTimeout(ms);
+  try { const r = await fn(url, Object.assign({}, opts, { signal: to.signal })); const text = await r.text(); return { status: r.status, text }; }
+  finally { to.done(); }
+}
 ipcMain.handle('http', async (_e, req) => {
   const u = new URL(req.url);
-  if (u.protocol !== 'https:' || !ALLOWED_HOSTS.includes(u.hostname)) return { status: 0, text: JSON.stringify({ message: 'Blocked host' }) };
+  if (u.protocol !== 'https:' || !ALLOWED_HOSTS.includes(u.hostname)) return { status: 0, text: JSON.stringify({ message: 'Blocked host ' + u.hostname }) };
   const headers = Object.assign({}, req.headers || {});
   delete headers['anthropic-dangerous-direct-browser-access'];
   if (u.hostname === 'api.github.com') headers['User-Agent'] = 'JSS-Commissioner';
-  try {
-    const r = await fetch(req.url, { method: req.method || 'GET', headers, body: req.body });
-    return { status: r.status, text: await r.text() };
-  } catch (e) {
-    return { status: 0, text: JSON.stringify({ message: 'Network error: ' + e.message }) };
+  const opts = { method: req.method || 'GET', headers, body: req.body };
+  const ms = Math.min(Math.max(Number(req.timeoutMs) || 180000, 5000), 300000);
+  const errs = [];
+  const tries = [];
+  if (net && typeof net.fetch === 'function') tries.push(['chrome', (url, o) => net.fetch(url, o)]);
+  if (typeof fetch === 'function') tries.push(['node', (url, o) => fetch(url, o)]);
+  for (const [name, fn] of tries) {
+    try { return await tryFetch(fn, req.url, opts, ms); }
+    catch (e) {
+      const msg = e && e.name === 'AbortError' ? 'timed out after ' + Math.round(ms / 1000) + ' seconds' : ((e && e.cause && (e.cause.code || e.cause.message)) || (e && e.message) || String(e));
+      errs.push(name + ': ' + msg);
+      if (e && e.name === 'AbortError') break; // the server is just slow; trying again the other way would only double the wait
+    }
   }
+  return { status: 0, text: JSON.stringify({ message: 'Network error (' + errs.join('; ') + ')' }) };
 });
 
 // ---- leagues ----
