@@ -76,7 +76,7 @@ function extOf(m, blob) { var t = (blob && blob.type) || ''; if (m.type === 'ima
 P.buildFiles = async function () {
   var files = [], add = function (path, text) { files.push({ path: path, text: text }); };
   add('index.html', P.publicIndex(await J.readAppFile('index.html')));
-  for (var i = 0, n = ['core.js', 'views.js', 'style.css']; i < n.length; i++) add(n[i], await J.readAppFile(n[i]));
+  for (var i = 0, n = ['core.js', 'art.js', 'views.js', 'style.css']; i < n.length; i++) add(n[i], await J.readAppFile(n[i]));
   add('.nojekyll', '');
   var ids = Object.keys(J.leagues).filter(function (k) { var L = J.leagues[k]; return L.races.length || L.articles.length || L.id === J.S.id; });
   var order = Object.keys(J.SERIES); ids.sort(function (a, b) { return order.indexOf(a) - order.indexOf(b); });

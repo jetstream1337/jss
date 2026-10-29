@@ -94,7 +94,7 @@ ipcMain.handle('media:del', (_e, key) => { const f = path.join(MEDIA(), safeName
 
 // ---- the app's own files (used to build the public website) ----
 ipcMain.handle('app:readFile', (_e, name) => {
-  if (!['index.html', 'core.js', 'views.js', 'style.css'].includes(name)) throw new Error('Not allowed');
+  if (!['index.html', 'core.js', 'art.js', 'views.js', 'style.css'].includes(name)) throw new Error('Not allowed');
   return fs.readFileSync(path.join(SRC, name), 'utf8');
 });
 ipcMain.handle('app:openExternal', (_e, url) => { if (/^https?:\/\//i.test(url)) shell.openExternal(url); return true; });

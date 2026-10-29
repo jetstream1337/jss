@@ -1,7 +1,7 @@
 {
   "name": "jss-commissioner",
   "productName": "JSS Commissioner",
-  "version": "1.2.0",
+  "version": "2.0.0",
   "description": "Commissioner app for Jet's Sim Series, a NASCAR Racing 2003 league. Publishes the league website to GitHub Pages.",
   "main": "main.js",
   "author": "Jet's Sim Series",

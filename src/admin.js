@@ -246,13 +246,14 @@ J.reactToArticle = async function (id, quiet) {
   delete reacting[id];
 };
 J.acts.reactArticle = function (el) { J.reactToArticle(el.dataset.id); };
+J.acts.runNewsroom = function () { garageRun('news'); };
 
 /* ---------- Garage tools ---------- */
 var gBusy = '';
 async function garageRun(kind) {
   var S = J.S; if (gBusy) return; if (!J.ai.hasKey()) { J.toast('Add your ' + J.ai.name() + ' key in Settings first.', true); return; }
   var nx = J.nextRound(S), pre = nx && J.sessionsFor(S, nx.id).length;
-  if (!S.races.length && !pre) { J.toast('Import a race, practice or qualifying first.', true); return; }
+  if (!S.races.length && !pre && kind !== 'news') { J.toast('Import a race, practice or qualifying first.', true); return; }
   if (kind === 'outlooks' && !S.races.length) { J.toast('Outlook commentary needs at least one race. Practice and qualifying already show in the Race Outlook.', true); return; }
   gBusy = kind; J.refresh();
   try {
@@ -261,6 +262,7 @@ async function garageRun(kind) {
       var facts = pre ? J.ai.sessionFacts(S, nx.id) + (race ? '\n\nLAST RACE, for context:\n' + J.ai.raceFacts(S, race) : '') : J.ai.raceFacts(S, race) + (nx ? '\nNext race: ' + nx.name + ' at ' + (nx.track || 'TBD') + ' (' + J.TYPES[nx.type].toLowerCase() + ').' : '');
       await J.ai.threads(S, { facts: facts, focus: [], ref: { type: 'week', id: race ? race.id : nx.id }, task: pre ? 'The next race has NOT been run yet. Write 5 to 7 threads of pre-race chatter: practice and qualifying takes, predictions, fantasy picks, hype, someone worried about their driver, a rumor. Never say who won the next race.' : 'It is the middle of the week between races. Write 5 to 7 threads of the usual chatter: hot takes about the standings, predictions for the next race, someone still mad about last week, a fantasy lineup argument, a rumor, one person asking a dumb question and getting roasted. Not everything is about the last race.' });
     }
+    if (kind === 'news') { var made = await J.ai.newsCycle(S, { phase: 'week' }); J.driftFans(S); J.save({ render: false }); J.toast(made.length + (made.length === 1 ? ' new story' : ' new stories') + ' from the newsroom.'); gBusy = ''; J.refresh(); return; }
     if ((kind === 'refresh' || kind === 'outlooks') && S.races.length) await J.ai.outlooks(S);
     J.driftFans(S); J.save({ render: false }); J.toast('The Garage is refreshed.');
   } catch (e) { J.toast(e.message, true); }
@@ -275,7 +277,7 @@ J.routes.garagetools = function (S) {
   var drivers = J.roster(S);
   return J.phead('Garage Tools', 'Keep the fan chat and outlooks fresh')
     + (!hasKey ? '<div class="warn" style="margin:0 0 18px">These need an AI key (Gemini is free). Add it in <a href="#/settings"><b>Settings</b></a>.</div>' : '')
-    + '<section class="panel"><h3>Refresh</h3><p class="sub">Race imports do this for you. Use these between races or when the Garage feels stale.</p><div class="row" style="margin-top:0">' + b('refresh', 'Refresh the Garage') + b('talk', 'New fan chatter only') + b('outlooks', 'New outlook commentary only') + '</div></section>'
+    + '<section class="panel"><h3>Refresh</h3><p class="sub">Race imports do this for you. Use these between races or when the Garage feels stale.</p><div class="row" style="margin-top:0">' + b('refresh', 'Refresh the Garage') + b('talk', 'New fan chatter only') + b('outlooks', 'New outlook commentary only') + b('news', 'Run the newsroom') + '</div><p class="fine">Run the newsroom writes 2 or 3 new stories across the outlets about the week: what is coming up, the cut line, rumors.</p></section>'
     + '<section class="panel"><h3>Fan accounts</h3><p class="sub">' + J.plural(S.fans.length, 'account') + ': ' + ages.teen + ' teens, ' + ages.young + ' young adults, ' + ages.adult + ' adults, ' + ages.oldhead + ' old-heads. ' + st.good + ' back a driver, ' + st.bad + ' are haters, ' + st.none + ' are neutral.</p>'
     + '<div class="row" style="margin-top:0"><button class="btn ghost sm" data-act="fansFill"' + (drivers.length ? '' : ' disabled') + '>Add more fans</button><button class="btn danger sm" data-act="fansReset"' + (S.fans.length ? '' : ' disabled') + '>Replace all fans</button></div></section>'
     + '<section class="panel"><h3>Nudge a reputation</h3><p class="sub">Something happened that the app did not see? Move a driver\'s reputation yourself. Fans react to big swings over time.</p>'
@@ -298,6 +300,7 @@ function modelSel(id, cur) { var known = MODELS.some(function (m) { return m[0] 
 J.routes.settings = function () {
   var s = J.settings, P = J.publisher, url = P ? P.publicUrl() : '', prov = J.ai.provider();
   return J.phead('Settings', 'AI writing, the public website and how the app behaves')
+    + '<section class="panel"><h3>Appearance</h3><p class="sub">For this app on this computer. Visitors pick their own on the website\'s Settings tab.</p><div class="seg big" role="radiogroup" aria-label="Theme">' + [['dark', 'Dark'], ['light', 'Light'], ['auto', 'Match my computer']].map(function (x) { return '<button data-act="setTheme" data-v="' + x[0] + '" class="' + (J.themePref() === x[0] ? 'on' : '') + '">' + x[1] + '</button>'; }).join('') + '</div></section>'
     + '<section class="panel"><h3>AI writing</h3><p class="sub">Writes the news, the fan chatter in The Garage and the outlook commentary.</p>'
     + '<div class="seg big" role="radiogroup" aria-label="AI service"><button data-act="setProv" data-v="gemini" class="' + (prov === 'gemini' ? 'on' : '') + '">Gemini (free)</button><button data-act="setProv" data-v="claude" class="' + (prov === 'claude' ? 'on' : '') + '">Claude (paid)</button></div>'
     + (prov === 'gemini'
@@ -307,7 +310,8 @@ J.routes.settings = function () {
       : '<p class="sub" style="margin-top:12px">The best writing. You pay Anthropic for what you use: roughly 10 to 15 cents per imported race. Get a key at <b>console.anthropic.com</b> under API Keys (needs credit added under Billing).</p>'
         + '<div class="fgrid"><div class="field wide"><label for="sKey">Claude API key</label><div class="inl"><input id="sKey" type="password" autocomplete="off" spellcheck="false" value="' + esc(s.apiKey) + '" placeholder="sk-ant-..." style="flex:1"><button class="btn ghost sm" data-act="showSecret" data-for="sKey">Show</button><button class="btn sm" data-act="testKey">Test key</button></div></div>'
         + '<div class="field"><label for="sWriter">Model for news stories</label>' + modelSel('sWriter', s.writerModel) + '</div><div class="field"><label for="sChat">Model for fan chatter and outlooks</label>' + modelSel('sChat', s.chatterModel) + '</div></div>')
-    + '<label class="check"><input type="checkbox" id="sAuto"' + (s.autoCoverage !== false ? ' checked' : '') + '> After each race import, have the AI write the recap and fan reactions automatically</label>'
+    + '<label class="check"><input type="checkbox" id="sAuto"' + (s.autoCoverage !== false ? ' checked' : '') + '> After each import, have the AI write the recap and fan reactions automatically</label>'
+    + '<label class="check"><input type="checkbox" id="sNews"' + (s.autoNews !== false ? ' checked' : '') + '> Newsroom: the outlets also write their own stories after each import (previews, analysis, silly season rumors)</label>'
     + '<div class="row"><button class="btn sm" data-act="saveAi">Save</button></div><div id="keyMsg" class="msg" hidden></div></section>'
     + '<section class="panel"><h3>Public website</h3><p class="sub">Every change you make here goes up to your free GitHub Pages site on its own. Visitors see it about 1 to 2 minutes later (GitHub takes a moment to update the site).</p>'
     + (url ? '<div class="urlbox"><span>Your site:</span><b id="pubUrl">' + esc(url) + '</b><button class="btn ghost sm" data-act="copyUrl">Copy link</button><button class="btn ghost sm" data-act="openUrl">Open</button></div>' : '')
@@ -335,7 +339,9 @@ function readAi() {
   if (g('sGKey')) { var k = g('sGKey').value.trim(); if (k !== s.geminiKey) { s.geminiKey = k; s.geminiModel = ''; s.geminiList = []; } }
   if (g('sGModel')) s.geminiModel = g('sGModel').value;
   if (g('sAuto')) s.autoCoverage = g('sAuto').checked;
+  if (g('sNews')) s.autoNews = g('sNews').checked;
 }
+J.acts.setTheme = function (el) { J.setTheme(el.dataset.v); J.refresh(); };
 J.acts.setProv = async function (el) { readAi(); J.settings.aiProvider = el.dataset.v; await J.saveSettings(); J.refresh(); };
 J.acts.saveAi = async function () { readAi(); await J.saveSettings(); boxMsg('keyMsg', 'Saved.'); };
 J.acts.testKey = async function () {

@@ -72,17 +72,27 @@ If GitHub ever needs the token replaced (they expire), make a new one the same w
 | **Races** | Rename, change the date, change how points are scored, or remove a race. Practice and qualifying you imported are listed here too. |
 | **Edit Schedule** | Race names, tracks and **track types** (the track type is what the Race Outlook uses). |
 | **League** | League name, playoff size and cut-off race, the note on the home page, backups. |
-| **Garage Tools** | Refresh fan chatter between races, add or replace fan accounts, nudge a driver's reputation, delete posts. |
-| **Settings** | AI key (Gemini free or Claude paid), website connection. |
+| **Garage Tools** | Refresh fan chatter between races, **Run the newsroom** for fresh stories midweek, add or replace fan accounts, nudge a driver's reputation, delete posts. |
+| **Settings** | Dark or light look for the app, AI key (Gemini free or Claude paid), whether the newsroom writes its own stories, website connection. |
 | **Preview public site** | See exactly what visitors see. |
 
-The **Series** box in the sidebar switches between Cup, Xfinity and Truck. Each one is its own league with its own schedule, standings, news and fans. Visitors get the same box on the website once more than one series has races.
+The **Series** box in the sidebar switches between Cup, O'Reilly Auto Parts and Truck. Each one is its own league with its own schedule, standings, news and fans. Visitors get the same box on the website once more than one series has races.
 
 **Videos:** clips up to 40 MB go on the website. Bigger ones stay in the app and the site shows a still frame from them. You can paste a YouTube link under a big clip and the site will link to it.
 
 **Backups:** League page, **Download backup**. It holds every series, story, fan and photo. It never holds your AI key or GitHub token, so it is safe to keep anywhere.
 
 **Where your data lives:** on your PC, in the app's data folder (**File** menu, **Open data folder**). Your AI key and GitHub token are stored encrypted by Windows.
+
+---
+
+## What visitors see
+
+- **Dark by default.** Black with the JSS yellow, red and blue. Every page has its own banner and emblem.
+- **A Settings tab** where each visitor can switch to light mode, or have it follow their phone or computer. It is saved on their device only.
+- **Standings** show **+/- Cut**: how many points each driver is above or below the Chase cut line, with a red line where the cut falls, an "On the bubble" box, and a **Chase grid** tab that shows the field as if it were set today.
+- **The Garage** has about 140 fan accounts with realistic handles, 10 media personalities (reporter, YouTuber, analyst, radio host, insider, stats account, podcast, streamer, ex-crew chief, memes), quote posts and polls.
+- **News** comes from three outlets, each with its own logo. After every import the newsroom writes previews, analysis and silly season rumors on its own (you can turn this off in Settings).
 
 ---
 

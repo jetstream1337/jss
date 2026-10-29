@@ -134,65 +134,85 @@ AI.test = async function () {
   var t = await AI.call({ system: 'Reply with the single word OK.', user: 'ping', maxTokens: 20 }); return /ok/i.test(t);
 };
 
-/* ---------- fan roster: realistic usernames, ages, stances ---------- */
-var FIRSTS = {
-  teen: ['jace', 'kaden', 'mila', 'brynn', 'colt', 'aiden', 'rylee', 'maddox', 'kenzie', 'tyson', 'hayden', 'cam', 'jaxon', 'lexi'],
-  young: ['Tyler', 'Brandon', 'Kayla', 'Dylan', 'Jordan', 'Chelsea', 'Cody', 'Mitch', 'Alyssa', 'Trent', 'Derek', 'Hannah', 'Ricky', 'Morgan'],
-  adult: ['Greg', 'Donna', 'Mike', 'Tammy', 'Steve', 'Rob', 'Kelly', 'Jason', 'Heather', 'Scott', 'Dave', 'Brian', 'Lisa', 'Chad'],
-  oldhead: ['Don', 'Ron', 'Bill', 'Gary', 'Larry', 'Earl', 'Wayne', 'Carl', 'Janet', 'Ray', 'Dale', 'Jim', 'Bobby', 'Linda']
+/* ---------- fan roster: realistic usernames, ages, stances ----------
+   Real people rarely put their full name on social media. Display names here are first names, nicknames,
+   initials, inside jokes, a car number or the handle itself. Handles are racing words, numbers and reddit-style
+   auto names, never first + last name. */
+var FIRST = {
+  teen: ['jace', 'kaden', 'mila', 'brynn', 'colt', 'aiden', 'rylee', 'maddox', 'kenzie', 'tyson', 'hayden', 'cam', 'jaxon', 'lexi', 'bentley', 'kash', 'aubree', 'easton', 'paisley', 'ryder'],
+  young: ['Tyler', 'Brandon', 'Kayla', 'Dylan', 'Jordan', 'Chelsea', 'Cody', 'Mitch', 'Alyssa', 'Trent', 'Derek', 'Hannah', 'Ricky', 'Morgan', 'Austin', 'Brittany', 'Colby', 'Tanner', 'Jess', 'Zach', 'Kyle', 'Dakota'],
+  adult: ['Greg', 'Donna', 'Mike', 'Tammy', 'Steve', 'Rob', 'Kelly', 'Jason', 'Heather', 'Scott', 'Dave', 'Brian', 'Lisa', 'Chad', 'Shawn', 'Travis', 'Amy', 'Wes', 'Darren', 'Jen', 'Troy', 'Missy'],
+  oldhead: ['Don', 'Ron', 'Bill', 'Gary', 'Larry', 'Earl', 'Wayne', 'Carl', 'Janet', 'Dale', 'Jim', 'Bobby', 'Linda', 'Harold', 'Junior', 'Buck', 'Darlene', 'Roy', 'Glenn', 'Shirley']
 };
-var SURN = ['Hutchins', 'Pruitt', 'Maddox', 'Tillman', 'Beasley', 'Garrison', 'Wickham', 'Dunbar', 'Keller', 'Stroud', 'Pickett', 'Haskins', 'Mabry', 'Lindqvist', 'Okafor', 'Reyes', 'Novak', 'Brennan', 'Castillo', 'Hawkins'];
-var ADJ = ['slow', 'dirty', 'loose', 'tight', 'late', 'sketchy', 'salty', 'lapped', 'green', 'cold', 'lucky', 'wrecked', 'tired', 'wild'];
-var NOUN = ['pitcrew', 'restart', 'apron', 'draft', 'tires', 'fuel', 'splitter', 'pack', 'wall', 'groove', 'spotter', 'caution', 'bumper', 'stage'];
-var TRACKS = ['Talladega', 'Bristol', 'Darlington', 'Martinsville', 'Daytona', 'Rockingham', 'Dover', 'Pocono', 'Charlotte'];
-var JOBS = ['Weekend', 'Backyard', 'Garage', 'GrillMaster', 'Couch', 'Sunday'];
-var COLORS = ['#0a1f44', '#1f4fb4', '#e3202c', '#b88a00', '#2c7a4b', '#6b3fa0', '#0f6e80', '#9a4a1a', '#5a6784', '#b03060'];
+var RACE_N = ['lugnut', 'splitter', 'apron', 'draft', 'restart', 'caution', 'pitroad', 'spotter', 'trackbar', 'wedge', 'tirerub', 'stickers', 'scuffs', 'bumpdraft', 'yellowline', 'backstretch', 'frontstretch', 'infield', 'hauler', 'loosewheel', 'bigone', 'overtime', 'stage2', 'checkers', 'pacecar', 'pitbox', 'catchcan', 'roundofwedge', 'fuelmileage', 'twotires', 'outsidelane', 'tandem', 'freightrain', 'dogbox', 'pylon'];
+var RACE_ADJ = ['loose', 'tight', 'sketchy', 'salty', 'lapped', 'wrecked', 'late', 'cursed', 'washed', 'mid', 'cooked_tire', 'greenflag', 'unhinged', 'tired', 'pole', 'stagewin', 'lucky_dog'];
+var TRACKS = ['Talladega', 'Bristol', 'Darlington', 'Martinsville', 'Daytona', 'Rockingham', 'Dover', 'Pocono', 'Charlotte', 'Wilkesboro', 'Richmond', 'Atlanta', 'Phoenix', 'Michigan'];
+var RD_A = ['Spicy', 'Fluffy', 'Ok', 'Ill', 'Low', 'Fast', 'Quiet', 'Broad', 'Loud', 'Strict', 'Bright', 'Nervous', 'Rare', 'Former', 'Sad', 'Polite', 'Tough', 'Electrical', 'Federal', 'Massive', 'Visual', 'Practical'];
+var RD_N = ['Lugnut', 'Mechanic', 'Spray', 'Tie', 'Engine', 'Garage', 'Hammer', 'Tire', 'Bumper', 'Wrench', 'Gasket', 'Throttle', 'Chassis', 'Antelope', 'Pickle', 'Banana', 'Sandwich', 'Shift', 'Pin', 'Exhaust'];
+var EMO = ['🏁', '🏎️', '🔧', '🛞', '⚡', '🍺', '🔥', '🦅', '🐐', '☕'];
+var COLORS = ['#ffc20e', '#e3202c', '#2f6fff', '#22c55e', '#a855f7', '#06b6d4', '#f97316', '#ec4899', '#94a3b8', '#eab308', '#14b8a6', '#ef4444'];
 var QUIRKS = {
-  teen: ['types in all lowercase with almost no punctuation', 'posts like a reaction image: ultra short', 'stan-account energy for their driver', 'uses a skull emoji now and then', 'gets dramatic fast', 'says "bro" and "fr" sparingly'],
-  young: ['sarcastic, group-chat humor', 'has a fantasy lineup and a bet riding on it', 'complains about the broadcast and strategy calls', 'swears mildly (damn, hell, shit)', 'quote-tweet energy, loves a dunk', 'posts hungover on race day'],
-  adult: ['dad energy, watches with their kid or their own dad', 'obsessed with pit strategy and fuel mileage', 'grumbles about officiating, dry humor', 'writes full sentences and signs off with a shrug', 'mentions work on Monday or the grill', 'tries to be the reasonable one'],
-  oldhead: ['nostalgic: compares everything to the old days', 'complains the cars all look the same and there are too many cautions', 'types sloppy: ellipses, random CAPS, missing punctuation', 'sometimes signs off with their first initial, like "- D"', 'grudge against the points format', 'loves the sport and will defend it to the end']
+  teen: ['types in all lowercase with almost no punctuation', 'communicates in short reactions and the odd 💀 or 😭', 'stan-account energy, makes edits of their driver', 'says "chat" and "bro thinks" like a streamer', 'gets dramatic fast, then forgets about it', 'one-liners like "not him again" or "be so for real"'],
+  young: ['sarcastic, group-chat humor', 'has a fantasy lineup and a bet slip riding on it', 'complains about the broadcast and strategy calls', 'swears mildly (damn, hell, shit)', 'quote-posts with one word or "L take"', 'replies "this aged badly" when someone is wrong', 'starts harsh takes with "respectfully"', 'posts hungover on race day'],
+  adult: ['dad energy, watches with their kid or their own dad', 'explains pit strategy and fuel mileage nobody asked about', 'grumbles about officiating, dry humor', 'writes full sentences and signs off with a shrug', 'mentions work on Monday or the grill', 'tries to be the reasonable one', 'posts "unpopular opinion:" then a popular opinion', 'tags the reporter asking for clarification'],
+  oldhead: ['nostalgic: compares everything to the old days', 'complains the cars all look the same and there are too many cautions', 'types sloppy: ellipses, random CAPS, missing punctuation', 'Facebook-comment energy, sometimes signs off with an initial', 'thinks the playoff format ruined everything', 'loves the sport and will defend it to the end']
 };
 function weighted(rand, items, w) { var t = w.reduce(function (a, b) { return a + b; }, 0), r = rand() * t; for (var i = 0; i < items.length; i++) { r -= w[i]; if (r <= 0) return items[i]; } return items[items.length - 1]; }
-function clean(h) { return String(h).replace(/[^A-Za-z0-9_.]/g, '').slice(0, 24); }
-function handleFor(age, level, drv, rand, first) {
+function clean(h) { h = String(h).replace(/[^A-Za-z0-9_\-]/g, ''); return h.length > 21 ? '' : h; }
+function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+function handleFor(age, level, drv, rand, first, platform) {
+  var P = function (a) { return J.pick(rand, a); }, n2 = 10 + Math.floor(rand() * 89), yy = P(['07', '08', '09', '10', '11', '98', '99', '01', '03', '05']);
   var L = J.lastName(drv ? drv.name : '').replace(/[^A-Za-z]/g, ''), l = L.toLowerCase(), c = (drv && drv.car) || '';
-  var n = 10 + Math.floor(rand() * 89), P = function (a) { return J.pick(rand, a); };
-  if (drv && level === 2) return P([L + 'Nation', L + '_Army', 'all_in_on_' + c, c + '_forever', L + 'Szn', 'team' + L, l + '_truther']);
-  if (drv && level === -2) return P(['AnybodyBut' + L, L + 'IsDone', 'fire' + L, 'cant_stand_' + l, 'NotA' + L + 'Guy']);
-  if (drv && level === -1 && rand() < 0.5) return P([L + 'Fumbles', l + '_overrated', 'no' + l + 'please']);
-  if (drv && level === 1 && rand() < 0.4) return P([first + '_' + c + 'fan', l + 'fan' + n, c + 'Guy' + n]);
-  var cap = function (s) { return s.charAt(0).toUpperCase() + s.slice(1); };
-  if (age === 'teen') return P([P(ADJ) + P(NOUN) + P(['07', '08', '09', '10']), first + '.edits', 'lil' + first, P(NOUN) + '_' + n, first + 'racing' + P(['08', '09', '07']), 'its' + cap(first)]);
-  if (age === 'young') return P([P(ADJ) + '_' + P(NOUN), P(NOUN) + n, 'lap' + n + P(NOUN), cap(P(ADJ)) + cap(P(NOUN)) + n, first.toLowerCase() + '_on_the_apron', first + P(SURN).slice(0, 3) + n]);
-  if (age === 'adult') return P([P(JOBS) + P(['Wrench', 'CrewChief', 'Racer', 'Spotter']) + first, first + P(SURN) + n, 'Dad' + cap(P(NOUN)), first + '_' + P(TRACKS).toLowerCase() + n, P(SURN) + 'Racing' + n]);
-  return P([first + P(SURN), P(TRACKS) + first, 'OldSchool' + first, first + '_' + (1948 + Math.floor(rand() * 18)), first + P(SURN).slice(0, 1) + '1957', 'Rt' + (1 + Math.floor(rand() * 90)) + 'Racer']);
+  if (platform === 'forum' && rand() < 0.45) return P(RD_A) + P(['-', '_']) + P(RD_N) + P(['-', '_']) + (1000 + Math.floor(rand() * 8999));
+  if (drv && level === 2) return P([L + 'Nation', 'team' + l, l + 'szn', c + 'szn', l + 'stan' + yy, 'ride_or_die_' + c, 'no' + c + 'enjoyer', L + 'Brigade']);
+  if (drv && level === -2) return P(['anyonebut' + c, l + 'isoverrated', 'not' + c + 'again', l + '_hater_acct', 'Fade' + L]);
+  if (drv && level === -1 && rand() < 0.4) return P([l + '_overrated', 'no' + l + 'please', l + 'fumbles']);
+  if (drv && level === 1 && rand() < 0.35) return P([c + '_til_i_die', l + 'fan' + n2, 'the' + c + 'guy', l + 'brainrot']);
+  var rn = P(RACE_N), ra = P(RACE_ADJ);
+  if (age === 'teen') return P([P(['', 'its', 'the', 'lil']) + rn + P(['szn', '_', 'x', 'edits', 'clips', 'fr', 'zz']), rn + yy, ra + rn + P(['', 'hours']), first + P(['.edits', 'zone', '_racing', 'tv']), 'pitroad' + P(['princess', 'prince', 'menace'])]);
+  if (age === 'young') return P([ra + '_' + rn, rn + '_enjoyer', 'pushin_the_' + P(['draft', 'apron', 'limit', 'tandem', 'pack']), 'not_your_spotter', 'certified_' + P(['caution', 'restart', 'playoff', 'stage', 'debris']) + '_hater', cap(rn) + n2, 'Fantasy' + cap(rn) + n2, rn + 'brain', first.toLowerCase() + '_on_the_' + P(['apron', 'wall', 'draft', 'box'])]);
+  if (age === 'adult') return P(['Sunday' + P(['Grill', 'Couch', 'Garage']) + P(['Dad', 'Guy', 'Mom', 'King']), cap(rn) + first, 'TwoTire' + first, 'Section' + (100 + Math.floor(rand() * 220)) + 'Seats', 'Turn' + P(['1', '2', '3', '4']) + P(['Grandstand', 'Fence', 'Camper']), first + '_' + P(TRACKS).toLowerCase() + n2, 'CrewChief' + first]);
+  return P(['OldSchool' + P(['Oval', 'Racing', 'Fan']), P(TRACKS) + P(['Forever', 'Fan', 'Regular']) + (rand() < 0.5 ? n2 : ''), 'BiasPly' + first, 'Carburetor' + P(['Era', 'Days', 'Kid']), (1968 + Math.floor(rand() * 27)) + P(TRACKS), first + '_from_' + P(TRACKS), 'Rt' + (1 + Math.floor(rand() * 90)) + 'Racer']);
 }
-function displayName(age, handle, rand, f) {
-  var s = J.pick(rand, SURN); f = f.charAt(0).toUpperCase() + f.slice(1);
-  if (age === 'teen') return rand() < 0.5 ? f.toLowerCase() : handle;
-  if (age === 'young') return rand() < 0.5 ? f + ' ' + s.charAt(0) : handle.replace(/[_.]/g, ' ');
-  if (age === 'adult') return f + ' ' + s.charAt(0) + '.';
-  return f + ' ' + s;
+var JOKE_USED = {};
+function displayName(age, handle, rand, first, drv, level) {
+  var nm = displayName0(age, handle, rand, first, drv, level);
+  if (/^(certified hater|spotter hours|caution clock victim|Dad of 3)/.test(nm)) { if (JOKE_USED[nm]) return cap(first); JOKE_USED[nm] = 1; }
+  return nm;
+}
+function displayName0(age, handle, rand, first, drv, level) {
+  var P = function (a) { return J.pick(rand, a); }, f = cap(first), c = drv && level > 0 ? drv.car : '', r = rand();
+  var em = rand() < (age === 'teen' ? 0.5 : age === 'young' ? 0.3 : 0.15) ? ' ' + P(EMO) : '';
+  if (age === 'teen') return r < 0.35 ? first + em : r < 0.55 ? handle.replace(/[_.]/g, ' ') : r < 0.75 && c ? first + ' | #' + c : P([first.slice(0, 3), first + ' ✨', first + 'ie', 'its ' + first]);
+  if (age === 'young') return r < 0.35 ? f + em : r < 0.5 && c ? f + ' | #' + c : r < 0.65 ? f.charAt(0) + P(['J', 'T', 'M', 'K', 'B']) : r < 0.8 ? P(['Big ' + f.charAt(0), f + ' (fantasy commish)', 'certified hater', 'spotter hours', 'caution clock victim', f + ' on the apron']) : handle;
+  if (age === 'adult') return r < 0.4 ? f + em : r < 0.55 ? P(['Big ' + f, 'Coach ' + f, f + ' the Grill Sgt']) : r < 0.7 && c ? f + ' | #' + c : r < 0.85 ? P(['Dad of 3' + em, f + ' (Turn 3)', 'Two Tire ' + f]) : f.charAt(0) + '.' + P(['W.', 'R.', 'K.', 'D.']);
+  return r < 0.45 ? f : r < 0.65 ? P(['Uncle ' + f, f + ' from ' + P(TRACKS), 'Ol\' ' + f]) : r < 0.8 ? f + ' (since \'' + (68 + Math.floor(rand() * 27)) + ')' : f + ' ' + P(['G', 'W', 'H', 'R', 'B']);
+}
+function makeFan(S, ds, rand, used, keep) {
+  var age = keep ? keep.age : weighted(rand, ['teen', 'young', 'adult', 'oldhead'], [16, 36, 30, 18]);
+  var platform = keep ? keep.platform : (rand() < (age === 'teen' ? 0.9 : age === 'oldhead' ? 0.5 : 0.62) ? 'x' : 'forum');
+  var drv = null, level = 0;
+  if (keep) { if (keep.stance && keep.stance.driver) { drv = ds.find(function (d) { return d.key === keep.stance.driver; }) || null; level = keep.stance.level; } }
+  else if (rand() < 0.68) { drv = weighted(rand, ds, ds.map(function (d, i) { return i < 3 ? 5 : i < 8 ? 3 : i < 20 ? 1.5 : 1; })); level = weighted(rand, [2, 1, -1, -2], [22, 40, 26, 12]); }
+  for (var tries = 0; tries < 30; tries++) {
+    var first = J.pick(rand, FIRST[age]), h = clean(handleFor(age, level, drv, rand, first, platform));
+    if (h.length < 4 || used[h.toLowerCase()]) continue;
+    used[h.toLowerCase()] = 1;
+    var f = keep || { id: 'f' + (S.fans.length + 1) + J.uid('').slice(-3), age: age, platform: platform, stance: drv ? { driver: drv.key, level: level, seen: (S.rep[drv.key] ? S.rep[drv.key].events.length : 0) } : { driver: null, level: 0, seen: 0 } };
+    f.handle = h; f.name = displayName(age, h, rand, first, drv, level); f.v = 2;
+    f.color = J.pick(rand, COLORS); f.quirks = J.shuffle(QUIRKS[age], rand).slice(0, 2).join('; ');
+    f.followers = Math.round(Math.pow(rand(), 3) * (age === 'oldhead' ? 900 : 4200)) + 12;
+    return f;
+  }
+  return null;
 }
 AI.ensureFans = function (S) {
   var ds = J.roster(S); if (!ds.length) return false;
-  var target = Math.min(58, Math.max(36, ds.length + 12)), rand = J.rng('fans' + S.id + S.fans.length), used = {}, guard = 0;
-  var usedName = {}; S.fans.forEach(function (f) { used[f.handle.toLowerCase()] = 1; usedName[String(f.name).toLowerCase()] = 1; });
-  while (S.fans.length < target && guard++ < 500) {
-    var age = weighted(rand, ['teen', 'young', 'adult', 'oldhead'], [12, 34, 32, 22]);
-    var platform = rand() < (age === 'teen' ? 0.9 : age === 'oldhead' ? 0.45 : 0.62) ? 'x' : 'forum';
-    var hasStance = rand() < 0.66, drv = null, level = 0;
-    if (hasStance) {
-      drv = weighted(rand, ds, ds.map(function (d, i) { return i < 3 ? 5 : i < 8 ? 3 : 1; }));
-      level = weighted(rand, [2, 1, -1, -2], [22, 40, 26, 12]);
-    }
-    var first = J.pick(rand, FIRSTS[age]);
-    var h = clean(handleFor(age, level, drv, rand, first)); if (h.length < 4 || used[h.toLowerCase()]) continue;
-    var dn = displayName(age, h, rand, first); if (usedName[dn.toLowerCase()]) dn = h; used[h.toLowerCase()] = 1; usedName[dn.toLowerCase()] = 1;
-    var q = J.shuffle(QUIRKS[age], rand).slice(0, 2);
-    S.fans.push({ id: 'f' + (S.fans.length + 1) + J.uid('').slice(-3), handle: h, name: dn, platform: platform, age: age, color: J.pick(rand, COLORS), quirks: q.join('; '), stance: drv ? { driver: drv.key, level: level, seen: (S.rep[drv.key] ? S.rep[drv.key].events.length : 0) } : { driver: null, level: 0, seen: 0 } });
-  }
+  var target = Math.min(170, Math.max(140, ds.length + 100)), rand = J.rng('fans2' + S.id + S.fans.length + ':' + S.races.length), used = {};
+  JOKE_USED = {}; S.fans.forEach(function (f) { if (f.v === 2) { used[String(f.handle).toLowerCase()] = 1; JOKE_USED[f.name] = 1; } });
+  S.fans.forEach(function (f) { if (f.v !== 2) makeFan(S, ds, rand, used, f); }); // older accounts get modern handles and names, same id and stance
+  var guard = 0;
+  while (S.fans.length < target && guard++ < 600) { var f = makeFan(S, ds, rand, used, null); if (f) S.fans.push(f); }
   return true;
 };
 
@@ -248,58 +268,69 @@ function repText(S) {
 }
 function personaLine(S, f) {
   var st = f.stance || {}, nm = st.driver ? ((J.roster(S).find(function (d) { return d.key === st.driver; }) || {}).name || st.driver) : null;
-  return f.id + ' | ' + (f.platform === 'forum' ? 'u/' : '@') + f.handle + ' | ' + f.platform + ' | ' + f.age + ' | ' + (nm && st.level ? J.STANCE[st.level] + ' of ' + nm : 'no strong driver') + ' | ' + f.quirks;
+  return f.id + ' | ' + (f.platform === 'forum' ? 'u/' : '@') + f.handle + ' | shown as "' + f.name + '" | ' + f.platform + ' | ' + f.age + ' | ' + (nm && st.level ? J.STANCE[st.level] + ' of ' + nm : 'no strong driver') + ' | ' + f.quirks;
 }
 
 /* ---------- Garage: threads ---------- */
-var FAN_STYLE = 'HOW REAL NASCAR FANS ACTUALLY WRITE\n'
-  + 'You are ghostwriting ordinary people typing about a race. Nobody should be able to tell an AI wrote it.\n\n'
-  + 'Voices by age:\n'
-  + '- Teens (13-19): lowercase, quick, barely punctuated. Driver stan culture, edits, ratio jokes. Slang in small doses (bro, fr, ngl, lowkey). Often 3 to 12 words. Easily dramatic. An occasional skull emoji.\n'
-  + '- Young adults (20-34): sarcastic, group-chat humor, quote-tweet energy. Fantasy lineups, betting slips, hangovers, complaints about the broadcast. Mild swearing (damn, hell, ass, shit). They call out dumb strategy.\n'
-  + '- Adults (35-55): measured but stubborn. Dad energy, watching with their kid or their own dad, the grill, work on Monday. Talk fuel mileage, tire wear, pit stops, officiating. Dry humor. Full sentences.\n'
-  + '- Old-heads (56+): nostalgic and grumpy. The cars all look the same, too many cautions, "back when" comparisons, grudges against the points format. Sloppy typing: ellipses, random CAPS, missing punctuation, sign-offs with their first initial. Still love the sport and defend it.\n'
-  + 'Forum posts (reddit style) run longer, can have a title, and people add corrections ("it was lap 21, not 22"), sarcasm, "this", "came here to say this". Upvote-bait takes get pushback.\n\n'
-  + 'Stance (shown next to the username on the site, so every post must be consistent with it):\n'
-  + '- superfan: blind loyalty, defends everything, denies the obvious, brings their driver up even off topic.\n'
-  + '- fan: supportive, can admit a mistake.\n'
-  + '- hater: dry and snarky, enjoys the driver having a bad day, credits them grudgingly.\n'
-  + '- superhater: relentless, celebrates every setback, picks fights with that driver\'s fans.\n'
-  + 'Haters rip the DRIVING and the results. Never someone\'s family, looks, health or real life. No slurs, no threats, no harassment.\n\n'
-  + 'Rules that matter:\n'
-  + '1. Real arguments. At least two threads need people disagreeing, and at least one reply chain needs two people going back and forth three or more times. Fans of a driver and haters of that same driver should collide.\n'
-  + '2. Use specifics from the FACTS (positions, laps led, who got loose, points gaps). Never invent results, lap numbers or events.\n'
-  + '3. Wildly uneven lengths. Some replies are 1 to 4 words ("this", "lmao no", "sure Jan"). A few run 3 to 4 sentences.\n'
-  + '4. Never open two posts the same way. Never reuse a phrase. Do not echo the headline.\n'
-  + '5. Banned cliches: cooking, cooked, no crumbs, masterclass, chef\'s kiss, no notes, hot potato, buckle up, hold my beer, let\'s go, W driver, rent free, this is the way, "chaos? yes". Almost no exclamation marks unless an angry old-head or a teen would. Zero or one emoji per post. Hashtags almost never. No em dashes.\n'
-  + '6. Typos and sloppy grammar are fine where the persona would make them. Not everyone is witty. Some people just say something boring.\n'
-  + '7. Not every post is about the winner. Some are about a wreck, the broadcast, an unrelated driver, their own bad day, fantasy, a tire.\n'
-  + '8. Prominent accounts keep their own voice: Ray Calloway (reporter: factual, short, breaks quotes and facts), Tommy Bishop (YouTuber: loud, big opinions, plugs his next video), Dana Whitfield (analyst: numbers, tire falloff, polite but pointed), Big Lou Marchetti (radio host: old school, tells a story, mildly grumpy). Fans reply to them, argue with them and quote them.\n'
+var FAN_STYLE = 'YOU ARE WRITING REAL-LOOKING NASCAR SOCIAL MEDIA (X/Twitter and the r/NASCAR subreddit) FOR A SIM-RACING LEAGUE SITE.\n'
+  + 'It has to pass as real posts from real people in the mid 2020s. If it reads like a brand account, a press release or an AI, it fails.\n\n'
+  + 'HOW PEOPLE ACTUALLY POST NOW\n'
+  + '- Most posts are short and lowercase-leaning. Many are one line. Punctuation is optional. Nobody writes a tidy paragraph on X unless they are an analyst or mad.\n'
+  + '- Real reply culture: dunks, one-word replies ("ratio", "nah", "L", "real", "source?", "this", "LMAO"), people misreading the post, people answering a question nobody asked, someone posting a stat to end the argument, someone saying "this aged badly" a week later, someone tagging @ an account.\n'
+  + '- Modern phrasing in small doses, matched to age: "be so for real", "bro thinks", "not him again", "respectfully", "lowkey", "chat is this real", "the way he...", "it\'s giving", "touch grass", "ain\'t no way", "I\'m crying", "W"/"L" as a one-word verdict. Never stack more than one per post. Older people do NOT talk like this.\n'
+  + '- Emoji: teens and young adults use 💀 😭 🫡 🤡 📉 🐐 🔥 sometimes (max one or two, and many posts have none). Adults rarely. Old-heads use 👍 or none.\n'
+  + '- Quote posts: someone quotes an earlier post with their own short take on top ("quote": index). Polls: big accounts and some fans post polls ("poll": 2 to 4 short options). Use one or two of each across the whole batch, not every thread.\n'
+  + '- Reddit (forum) is different: posts have a title, comments are longer and nerdier, people say "Edit: ...", "Came here to say this", correct each other on facts, and the top comment is usually a joke. Reddit users never use display names or emoji much.\n\n'
+  + 'VOICES BY AGE\n'
+  + '- Teens: lowercase, fast, stan culture, edits, dramatic for one post then on to the next thing. 2 to 12 words.\n'
+  + '- 20s to early 30s: sarcastic group-chat humor, DFS lineups and bet slips, complaining about the broadcast and pit calls, mild swearing (damn, hell, ass, shit).\n'
+  + '- 35 to 55: full sentences, strategy talk (two tires vs four, fuel windows, track position), dad jokes, Monday-at-work energy, tries to be the reasonable one.\n'
+  + '- Old-heads: Facebook-comment energy, random CAPS, ellipses..., "back in my day", hates the playoff format, still loves the sport.\n\n'
+  + 'STANCE (shown as a green or red tag by each username, so every post must match it)\n'
+  + '- superfan: blind loyalty, defends everything, brings their driver up even off topic.  - fan: supportive, can admit a bad day.\n'
+  + '- hater: dry and snarky, enjoys their bad days, gives grudging credit.  - superhater: relentless, celebrates every setback, picks fights with that driver\'s fans.\n'
+  + 'Haters rip the DRIVING and the RESULTS only. Never anyone\'s family, looks, health, politics or private life. No slurs, no threats, no harassment.\n\n'
+  + 'RULES\n'
+  + '1. Real arguments. Several threads need disagreement, and at least one reply chain goes back and forth 3+ times between the same two people. Fans and haters of the same driver collide.\n'
+  + '2. Only use facts you are given (positions, laps led, gaps, points, practice and qualifying times). Never invent results, lap numbers, wrecks or quotes.\n'
+  + '3. Wildly uneven lengths. Lots of 1 to 6 word replies. A few longer posts.\n'
+  + '4. Never open two posts the same way. No repeated jokes or phrases, including from the RECENT POSTS list. Do not echo the headline.\n'
+  + '5. Banned, they read as AI: cooking/cooked, no crumbs, masterclass, chef\'s kiss, no notes, buckle up, hold my beer, rent free, this is the way, "let\'s gooo", "absolute scenes", "what a race folks", hashtags (except a rare #NASCAR from an old-head), em dashes, "folks", "y\'all ready".\n'
+  + '6. Typos and bad grammar are fine where the person would make them. Not everyone is funny. Some posts are boring or just wrong.\n'
+  + '7. Spread it out: not everything is about the winner. Mid-pack drivers, the broadcast, fantasy, a bad pit call, someone\'s own bad day, a random hot take.\n'
+  + '8. Prominent accounts keep their own voice (listed below) and get big reactions. Fans reply to them, argue with them, quote them and @ them.\n'
   + 'This is a simulated sim-racing league. Everything stays on the racing.';
-var THREAD_SCHEMA = 'Return ONLY JSON: {"threads":[{"platform":"x" or "forum","title":"forum threads only","posts":[{"by":"<persona id or ray|tommy|dana|lou>","text":"...","replyTo":null or <index of an earlier post in this thread>}]}]}\nThe first post of every thread has replyTo null. Every other post replies to an earlier post by index.';
+var THREAD_SCHEMA = 'Return ONLY JSON: {"threads":[{"platform":"x" or "forum","title":"forum threads only","posts":[{"by":"<persona id or figure id>","text":"...","replyTo":null or <index of an earlier post in this thread>,"quote":<optional index of an earlier post this one quote-posts>,"poll":<optional ["option","option"]>}]}]}\nThe first post of every thread has replyTo null. Every other post replies to an earlier post by index. A quote post usually has replyTo null only when it is the first post of a new thread quoting nothing; inside a thread give it replyTo AND quote.';
 
+function figureLines() { return Object.keys(J.FIGURES).map(function (k) { var f = J.FIGURES[k]; return k + ' = ' + f.name + ' ' + f.handle + ' (' + f.badge.toLowerCase() + '): ' + f.voice; }).join('\n'); }
 AI.threads = async function (S, o) {
   AI.ensureFans(S); if (!S.fans.length) throw new Error('Import a race, practice or qualifying first so there are drivers for the fans to talk about.');
-  var rand = J.rng('pick' + Date.now()), ds = J.agg(S.races);
+  var rand = J.rng('pick' + Date.now());
   var focus = {}; (o.focus || []).forEach(function (n) { var d = J.findDriver(S, n); if (d) focus[d.key] = 1; });
   var fans = S.fans.slice(), pri = fans.filter(function (f) { return f.stance && focus[f.stance.driver]; }), rest = J.shuffle(fans.filter(function (f) { return !(f.stance && focus[f.stance.driver]); }), rand);
-  var chosen = J.shuffle(pri, rand).slice(0, 14).concat(rest).slice(0, 28);
-  var recent = S.posts.slice(-14).map(function (p) { return '- ' + p.text.slice(0, 110); }).join('\n');
+  var chosen = J.shuffle(pri, rand).slice(0, 14).concat(rest).slice(0, 34);
+  var recent = S.posts.slice(-20).map(function (p) { return '- ' + p.text.slice(0, 100); }).join('\n');
   var lastRace = S.races[S.races.length - 1], extra = [];
   if (lastRace) {
     var shown = {}; J.raceInfo(lastRace).rows.slice(0, 15).forEach(function (r) { shown[J.driverKey(r.driver)] = 1; });
     var want = {}; chosen.forEach(function (f) { if (f.stance && f.stance.driver && !shown[f.stance.driver]) want[f.stance.driver] = 1; });
     lastRace.rows.forEach(function (r) { var k = J.driverKey(r.driver); if (want[k]) extra.push(r.driver + ' finished P' + r.position + ' (started P' + (r.start || '?') + (J.isDnf(r) ? ', ' + r.status : '') + (r.interval && /(\d+)\s*l/i.test(r.interval) ? ', ' + (function (n) { return n + (n === '1' ? ' lap' : ' laps'); })(r.interval.match(/(\d+)\s*l/i)[1]) + ' down' : '') + ')'); });
   }
+  var cp = J.chasePicture(S), cutTxt = cp && cp.lastIn && cp.firstOut ? S.chase.name + ' cut line right now: ' + cp.lastIn.name + ' is the last driver in on points, ' + cp.firstOut.name + ' the first out, ' + Math.abs(cp.lastIn.pts - cp.firstOut.pts) + ' points apart.' : '';
+  var heads = S.articles.slice(0, 5).map(function (a) { return '"' + a.headline + '" (' + (J.OUTLETS[a.outlet] || J.OUTLETS.wire).name + ')'; });
   var user = 'LEAGUE: ' + S.league.name + ' (' + S.series.label + '), ' + J.seasonYear(S) + ' season. Races run: ' + S.races.length + ' of ' + Math.max(S.schedule.length, S.races.length) + '.\n\n'
-    + 'FACTS (use only these):\n' + o.facts + (extra.length ? '\nOther drivers the fans below follow, last race: ' + extra.join('; ') + '.' : '') + '\n\n' + (o.story ? 'THE STORY EVERYONE IS REACTING TO: "' + o.story.headline + '" - ' + (o.story.dek || '') + '\n\n' : '')
+    + 'FACTS (use only these):\n' + o.facts + (extra.length ? '\nOther drivers the fans below follow, last race: ' + extra.join('; ') + '.' : '') + (cutTxt ? '\n' + cutTxt : '') + '\n\n'
+    + (o.story ? 'THE STORY EVERYONE IS REACTING TO: "' + o.story.headline + '" - ' + (o.story.dek || '') + '\n\n' : '')
+    + (heads.length ? 'LATEST HEADLINES ON THE SITE (people may react to or argue with these): ' + heads.join('; ') + '\n\n' : '')
     + 'DRIVER REPUTATION (0-100, higher = more liked): ' + repText(S) + '\n\n'
-    + (recent ? 'RECENT POSTS ALREADY ON THE SITE (do not repeat their wording or jokes):\n' + recent + '\n\n' : '')
-    + 'FANS YOU MAY WRITE AS (id | handle | platform | age | stance | quirks):\n' + chosen.map(function (f) { return personaLine(S, f); }).join('\n') + '\n\n'
-    + 'PROMINENT ACCOUNTS: ' + Object.keys(J.FIGURES).map(function (k) { return k + ' = ' + J.FIGURES[k].name + ' (' + J.FIGURES[k].badge.toLowerCase() + ')'; }).join('; ') + '\n\n'
-    + 'TASK: ' + (o.task || 'Write 6 to 8 threads reacting to the facts and the story.') + ' About two thirds should be platform "x" (3 to 6 posts each), the rest "forum" (4 to 8 posts with comment chains). Use at least 14 different people. Use each prominent account at least once. Every fan\'s stance must show in how they talk about that driver.\n\n' + THREAD_SCHEMA;
-  var res = await AI.json({ system: FAN_STYLE, user: user, role: 'chatter', maxTokens: 8000 });
-  return AI.applyThreads(S, res, o.ref);
+    + (recent ? 'RECENT POSTS ALREADY ON THE SITE (do not repeat their wording, jokes or openers):\n' + recent + '\n\n' : '')
+    + 'FANS YOU MAY WRITE AS (id | handle | display name | platform | age | stance | quirks):\n' + chosen.map(function (f) { return personaLine(S, f); }).join('\n') + '\n\n'
+    + 'PROMINENT ACCOUNTS (id = name handle (role): voice):\n' + figureLines() + '\n\n'
+    + 'TASK: ' + (o.task || 'Write 7 to 9 threads reacting to the facts and the story.') + ' About two thirds should be platform "x" (3 to 7 posts each), the rest "forum" (5 to 9 posts with comment chains). Use at least 18 different fans and at least 5 different prominent accounts. Include one or two quote posts and one poll somewhere. Every fan\'s stance must show in how they talk about that driver.\n\n' + THREAD_SCHEMA;
+  var res = await AI.json({ system: FAN_STYLE, user: user, role: 'chatter', maxTokens: 9000 });
+  var n = AI.applyThreads(S, res, o.ref);
+  if (!n) throw new Error(AI.name() + ' did not write any usable fan posts. Try again.');
+  return n;
 };
 AI.applyThreads = function (S, res, ref) {
   var now = Date.now(), added = 0, ok = {}; S.fans.forEach(function (f) { ok[f.id] = f; });
@@ -309,12 +340,16 @@ AI.applyThreads = function (S, res, ref) {
       var by = null, text = String(p.text || '').trim(); if (!text) return;
       if (J.FIGURES[p.by]) by = { type: 'figure', id: p.by }; else if (ok[p.by]) by = { type: 'fan', id: p.by }; else return;
       var parent = null; if (pi > 0) { var pr = p.replyTo; parent = (typeof pr === 'number' && ids[pr]) ? ids[pr] : (ids[0] || null); } else if (ids.length) return;
-      text = text.slice(0, plat === 'forum' ? 1400 : 560); clock += (1 + Math.floor(Math.random() * 6)) * 60000; if (clock > now) clock = now - Math.floor(Math.random() * 40000);
+      text = text.replace(/\s+[—–]\s+/g, ', ').slice(0, plat === 'forum' ? 1400 : 560);
+      clock += (1 + Math.floor(Math.random() * 6)) * 60000; if (clock > now) clock = now - Math.floor(Math.random() * 40000);
       var id = J.uid('p'); ids[pi] = id;
-      S.posts.push({ id: id, thread: tid, parent: parent, platform: plat, title: pi === 0 && plat === 'forum' ? String(th.title || '').slice(0, 140) : '', by: by, text: text, ts: clock, ref: ref || null }); added++;
+      var post = { id: id, thread: tid, parent: parent, platform: plat, title: pi === 0 && plat === 'forum' ? String(th.title || '').slice(0, 140) : '', by: by, text: text, ts: clock, ref: ref || null };
+      if (typeof p.quote === 'number' && ids[p.quote] && ids[p.quote] !== id) post.quote = ids[p.quote];
+      if (Array.isArray(p.poll) && p.poll.length >= 2) post.poll = p.poll.slice(0, 4).map(function (x) { return String(x).slice(0, 40); });
+      S.posts.push(post); added++;
     });
   });
-  var ths = J.threadsOf(S); if (ths.length > 70) { var keep = {}; ths.slice(0, 70).forEach(function (t) { keep[t.id] = 1; }); S.posts = S.posts.filter(function (p) { return keep[p.thread]; }); }
+  var ths = J.threadsOf(S); if (ths.length > 90) { var keep = {}; ths.slice(0, 90).forEach(function (t) { keep[t.id] = 1; }); S.posts = S.posts.filter(function (p) { return keep[p.thread]; }); }
   return added;
 };
 
@@ -367,6 +402,47 @@ AI.applyArticle = function (S, res, o) {
   return art;
 };
 
+/* ---------- the newsroom: outlets write their own stories each race week ----------
+   One request writes 2 or 3 stories at once (saves the free daily allowance). phase: 'post' (after a race),
+   'pre' (after practice or qualifying), 'week' (commissioner pressed the button). */
+var DESK = {
+  wire: 'Checkered Wire (race coverage): previews, recaps, points-race news. Straight news voice. 350 to 550 words.',
+  silly: 'Silly Season Daily (contracts, rides, sponsors, crew chiefs, rumors): with no commissioner input you MAY invent league-fiction rumors, but only about rides, contracts, sponsors, crew chief or team moves, always framed as unconfirmed ("per sources", "is said to be", "nothing is signed"), one storyline per story, and continue an earlier rumor from RECENT HEADLINES when there is one instead of starting a new one. Never personal life, money figures, legal trouble or health. 300 to 450 words.',
+  notes: 'Pit Notes (analysis and features): one angle the data supports (momentum, cut-line math, a track-type trend, a rivalry, a slump), argued with numbers. A few "## " subheads allowed. 450 to 650 words.'
+};
+AI.newsCycle = async function (S, o) {
+  o = o || {}; var phase = o.phase || 'week', parts = [], plan;
+  if (!J.roster(S).length) throw new Error('The newsroom needs drivers to write about. Import a race, practice or qualifying first.');
+  var nx = J.nextRound(S), race = o.race || (phase === 'post' ? S.races[S.races.length - 1] : null);
+  if (phase === 'post') plan = ['notes', 'silly'];
+  else if (phase === 'pre') plan = ['wire', S.races.length ? 'notes' : 'silly'];
+  else plan = S.races.length ? ['wire', 'notes', 'silly'] : ['wire', 'silly'];
+  parts.push('LEAGUE STANDINGS NOW: ' + (standingsText(S, 16) || 'no races run yet') + '.');
+  var cp = J.chasePicture(S);
+  if (cp && cp.lastIn && cp.firstOut) parts.push(S.chase.name.toUpperCase() + ' PICTURE: top ' + cp.size + ' make it after race ' + cp.cutRace + ' (' + (cp.decided ? 'field is set' : cp.left + ' races left before the cut') + '). ' + (cp.winners ? cp.winners + ' race winner(s) locked in. ' : '') + 'Last in on points: ' + cp.lastIn.name + ' (' + cp.lastIn.pts + '). First out: ' + cp.firstOut.name + ' (' + cp.firstOut.pts + ').');
+  if (race) parts.push('LATEST RACE:\n' + AI.raceFacts(S, race));
+  var preSid = o.sid || (nx && J.sessionsFor(S, nx.id).length ? nx.id : '');
+  if (nx) parts.push(preSid ? 'NEXT RACE (has NOT been run):\n' + AI.sessionFacts(S, preSid) : 'NEXT RACE (has NOT been run): ' + nx.name + (nx.track ? ' at ' + nx.track : '') + ' (' + J.TYPES[nx.type].toLowerCase() + ')' + (nx.date ? ', ' + nx.date : '') + '.');
+  var ro = nx ? J.raceOutlook(S) : null;
+  if (ro && ro.favorites) parts.push('MODEL WIN ODDS FOR THE NEXT RACE (from the site\'s simulator; quote as "the model" if you use them): ' + ro.rows.slice(0, 6).map(function (r) { return r.name + ' ' + Math.round(r.win * 100) + '%'; }).join(', ') + '.');
+  parts.push('DRIVER REPUTATION (0-100): ' + repText(S));
+  var recent = S.articles.slice(0, 14).map(function (a) { return '- [' + (J.OUTLETS[a.outlet] || J.OUTLETS.wire).name + '] ' + a.headline; });
+  if (recent.length) parts.push('RECENT HEADLINES (do not repeat these angles; continue storylines instead):\n' + recent.join('\n'));
+  parts.push('WRITE ' + plan.length + ' STORIES, one per outlet, in this order: ' + plan.map(function (k) { return J.OUTLETS[k].name; }).join(', ') + '.\n' + plan.map(function (k) { return '- ' + DESK[k]; }).join('\n')
+    + (phase === 'pre' || (phase === 'week' && nx) ? '\nThe next race has NOT happened. Previews may predict, never report a result.' : '')
+    + '\n\nReturn ONLY JSON: {"articles":[{"outlet":"wire|silly|notes","headline":"...","dek":"one sentence","body":"paragraphs separated by a blank line","tags":["Driver Name"]}]}');
+  var sys = 'You are the editors of three fictional outlets covering "' + S.league.name + '", a SIMULATED ' + S.series.label + ' league run in NASCAR Racing 2003. The drivers are the league\'s sim drivers. Everything is fiction for a sim-racing fan site; keep it on racing and the league. Nothing about anyone\'s real-world personal life, politics, family, health, legal matters or money.\n\n' + NEWS_RULES + ' Headlines read like real motorsport headlines: specific, no puns stacked on puns, no colons-and-questions template. Each story has a different angle and different drivers where possible. No quotes from drivers in these stories.';
+  var res = await AI.json({ system: sys, user: parts.join('\n\n'), role: 'writer', maxTokens: 9000 });
+  var made = [];
+  (res.articles || []).slice(0, 3).forEach(function (a, i) {
+    var outlet = J.OUTLETS[a.outlet] ? a.outlet : plan[i] || 'notes';
+    if (!a || !a.headline || !a.body) return;
+    try { var art = AI.applyArticle(S, { article: a, interviews: [], reputation: [] }, { outlet: outlet, raceId: phase === 'post' && race ? race.id : '', preSid: phase !== 'post' && preSid ? preSid : '', media: [] }); art.desk = true; art.ts -= (i + 1) * 300000; made.push(art); } catch (e) { /* skip a bad one */ }
+  });
+  if (!made.length) throw new Error(AI.name() + ' did not write any usable stories. Try again.');
+  return made;
+};
+
 /* ---------- outlook commentary (numbers come from the engine, words from Claude) ---------- */
 AI.outlooks = async function (S) {
   var co = J.chaseOutlook(S), ro = J.raceOutlook(S), so = J.seasonOutlook(S); if (!co) throw new Error('Not enough results yet for outlooks.');
@@ -395,6 +471,10 @@ AI.coverage = async function (S, race, step) {
   var art = null, fail = 0;
   step('recap', 'run');
   try { art = await AI.article(S, { outlet: 'wire', race: race, headline: '', notes: '' }); step('recap', 'ok', art.headline); } catch (e) { fail++; step('recap', 'err', e.message); }
+  if (J.settings.autoNews !== false) {
+    step('news', 'run');
+    try { var made = await AI.newsCycle(S, { phase: 'post', race: race }); step('news', 'ok', made.length + (made.length === 1 ? ' story' : ' stories')); } catch (e) { fail++; step('news', 'err', e.message); }
+  }
   var info = J.raceInfo(race), focus = [info.winner.driver]; if (info.mover) focus.push(info.mover.row.driver); if (info.poleRow) focus.push(info.poleRow.driver);
   step('fans', 'run');
   try { var n = await AI.threads(S, { facts: AI.raceFacts(S, race), story: art, focus: focus, ref: art ? { type: 'article', id: art.id } : { type: 'race', id: race.id } }); step('fans', 'ok', n + ' posts'); } catch (e) { fail++; step('fans', 'err', e.message); }

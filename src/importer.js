@@ -129,7 +129,7 @@ var imp = null;          // { source, file, meta, sessions?, rows?, form, edit:{
 J.importType = 'race';   // race | qualifying | practice | happy
 J.coverageRun = null;    // { title, steps:[{id,label,state,detail}], done, fails }
 var TYPES = [['race', 'Race results'], ['qualifying', 'Qualifying'], ['practice', 'Practice'], ['happy', 'Happy Hour']];
-var STEP_LABELS = { recap: 'Race recap article (Checkered Wire)', fans: 'Fan reactions in The Garage', hype: 'Fans hyping up the race in The Garage', outlooks: 'Chase, Race and Season outlook commentary', drift: 'Fans changing sides' };
+var STEP_LABELS = { recap: 'Race recap article (Checkered Wire)', news: 'Newsroom stories (Pit Notes, Silly Season Daily)', prenews: 'Race preview stories from the newsroom', fans: 'Fan reactions in The Garage', hype: 'Fans hyping up the race in The Garage', outlooks: 'Chase, Race and Season outlook commentary', drift: 'Fans changing sides' };
 function typeLabel(t) { return t === 'race' ? 'Race' : J.SESSIONS[t]; }
 
 function coverageHtml() {
@@ -149,16 +149,17 @@ function stepFn(c) { return function (name, state, detail) { var s = c.steps.fin
 function finishRun(c, fails) { c.done = true; c.fails = fails; J.save({ render: J.route().name !== 'import' && J.route().name !== 'studio' }); paintCoverage(); J.toast(fails ? 'Finished with ' + J.plural(fails, 'problem') + '.' : 'Done. It is on the site.', !!fails); }
 
 J.runCoverage = async function (race) {
-  var S = J.S, c = startRun('Race coverage: ' + race.name, 'race', ['recap', 'fans', 'outlooks', 'drift']); if (!c) return;
+  var S = J.S, c = startRun('Race coverage: ' + race.name, 'race', ['recap'].concat(J.settings.autoNews !== false ? ['news'] : []).concat(['fans', 'outlooks', 'drift'])); if (!c) return;
   var fails = await J.ai.coverage(S, race, stepFn(c));
   if (fails && !S.articles.some(function (a) { return a.raceId === race.id; })) S.articles.unshift(J.autoRecap(S, race));
   finishRun(c, fails);
 };
 J.runSessionCoverage = async function (sess) {
   var S = J.S, round = S.schedule.find(function (r) { return r.id === sess.sid; }) || { name: sess.name };
-  var steps = ['hype'].concat(S.races.length ? ['outlooks'] : []).concat(['drift']);
+  var steps = (J.settings.autoNews !== false && sess.type !== 'practice' || (J.settings.autoNews !== false && !J.sessionOf(S, sess.sid, 'qualifying')) ? ['prenews'] : []).concat(['hype']).concat(S.races.length ? ['outlooks'] : []).concat(['drift']);
   var c = startRun(J.SESSIONS[sess.type] + ' coverage: ' + round.name, 'session', steps); if (!c) return;
   var step = stepFn(c), fails = 0, top = sess.rows.slice(0, 3).map(function (r) { return r.driver; });
+  if (steps.indexOf('prenews') >= 0) { step('prenews', 'run'); try { var made = await J.ai.newsCycle(S, { phase: 'pre', sid: sess.sid }); step('prenews', 'ok', made.length + (made.length === 1 ? ' story' : ' stories')); } catch (e) { fails++; step('prenews', 'err', e.message); } }
   step('hype', 'run');
   try {
     var n = await J.ai.threads(S, { facts: J.ai.sessionFacts(S, sess.sid), focus: top, ref: { type: 'session', id: sess.id }, task: 'The race has NOT happened yet. ' + J.SESSIONS[sess.type] + ' just finished. Write 5 to 7 threads of pre-race talk: reactions to who was fast and who was slow, hype and predictions for the race, someone mad about where their driver ended up, a fantasy or betting pick, a "practice speed means nothing" argument, a media figure with an observation. Never say who won the race.' });
