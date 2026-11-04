@@ -20,7 +20,7 @@ You need a free GitHub account. GitHub builds the Windows installer for you, and
 4. Open the **jss-app** folder on your PC, select **everything inside it** (the `src`, `build` and `.github` folders and all the files), and drag it all onto the GitHub page. Click **Commit changes**.
    - If you do not see the `.github` folder, in File Explorer click **View**, then **Show**, then **Hidden items**. It must be uploaded too, because it holds the build instructions.
 5. Click the **Actions** tab at the top of your repository. You will see **Build the Windows app** running (yellow dot). Wait about 5 minutes for a green check.
-6. Click that run, scroll down to **Artifacts**, and click **JSS-Commissioner-Setup**. A zip downloads. Open it and run **JSS-Commissioner-Setup-2.1.0.exe**.
+6. Click that run, scroll down to **Artifacts**, and click **JSS-Commissioner-Setup**. A zip downloads. Open it and run **JSS-Commissioner-Setup-2.1.1.exe**.
 7. Windows will probably say **"Windows protected your PC"** because the app is not from a big company. Click **More info**, then **Run anyway**. Install it like any other program. A **JSS Commissioner** shortcut appears on your desktop.
 
 > **Prefer not to use GitHub for the installer?** Install Node.js from nodejs.org, open the jss-app folder, type `cmd` in the address bar and press Enter, then type `npm install` and then `npm start`. The app opens. Use `npm run dist` to make the installer yourself (it lands in the `dist` folder).
@@ -69,7 +69,7 @@ If GitHub ever needs the token replaced (they expire), make a new one the same w
 |---|---|
 | **Import Results** | Pick **Race results**, **Qualifying**, **Practice** or **Happy Hour**. Drop the NR2003 standings file from `exports_imports`, paste a list, or use a **screenshot** of the results screen (needs the AI key; check the names it read). Race results update the standings and the AI writes the recap. Practice and qualifying never touch the standings; they put the drivers in the field, get the fans hyping the race, show on the site and feed the Race Outlook. |
 | **Story Studio** | Drop race screenshots or replay clips, write a headline and what happened. For hype stories, pick any upcoming race under **Preview: before a race**. The AI writes a preview that never makes up a result, and the story is dated the morning of that race. Race recaps are dated that race night. Pick an outlet: **Checkered Wire** (race coverage), **Silly Season Daily** (contracts and rumors) or **Pit Notes** (analysis). The AI writes it, you edit, then publish. |
-| **Races** | Rename, change the date, change how points are scored, or remove a race. Practice and qualifying you imported are listed here too. |
+| **Races** | Rename, change the date (its stories and fan posts move with it), change how points are scored, or remove a race. Practice and qualifying you imported are listed here too. |
 | **Edit Schedule** | Race names, tracks and **track types** (the track type is what the Race Outlook uses). |
 | **League** | League name, playoff size and cut-off race, the note on the home page, backups. |
 | **Garage Tools** | Refresh fan chatter between races, **Run the newsroom** for fresh stories (pick a race to get previews dated that race morning, or "This week"), see and change silly season storylines, add or replace fan accounts, nudge a driver's reputation, delete posts. |

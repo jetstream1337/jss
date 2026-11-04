@@ -159,10 +159,10 @@ J.runSessionCoverage = async function (sess) {
   var steps = (J.settings.autoNews !== false && sess.type !== 'practice' || (J.settings.autoNews !== false && !J.sessionOf(S, sess.sid, 'qualifying')) ? ['prenews'] : []).concat(['hype']).concat(S.races.length ? ['outlooks'] : []).concat(['drift']);
   var c = startRun(J.SESSIONS[sess.type] + ' coverage: ' + round.name, 'session', steps); if (!c) return;
   var step = stepFn(c), fails = 0, top = sess.rows.slice(0, 3).map(function (r) { return r.driver; });
-  if (steps.indexOf('prenews') >= 0) { step('prenews', 'run'); try { var made = await J.ai.newsCycle(S, { phase: 'pre', sid: sess.sid }); step('prenews', 'ok', made.length + (made.length === 1 ? ' story' : ' stories')); } catch (e) { fails++; step('prenews', 'err', e.message); } }
+  if (steps.indexOf('prenews') >= 0) { step('prenews', 'run'); try { var again = S.articles.some(function (a) { return a.desk && a.preSid === sess.sid; }), st = J.dated(S) ? J.sessionTime(S, sess) : 0; var made = await J.ai.newsCycle(S, { phase: 'pre', sid: sess.sid, only: again ? ['wire'] : null, at: st ? st + 40 * 60000 : 0 }); step('prenews', 'ok', made.length + (made.length === 1 ? ' story' : ' stories')); } catch (e) { fails++; step('prenews', 'err', e.message); } }
   step('hype', 'run');
   try {
-    var n = await J.ai.threads(S, { facts: J.ai.sessionFacts(S, sess.sid), focus: top, ref: { type: 'session', id: sess.id }, task: 'The race has NOT happened yet. ' + J.SESSIONS[sess.type] + ' just finished. Write 5 to 7 threads of pre-race talk: reactions to who was fast and who was slow, hype and predictions for the race, someone mad about where their driver ended up, a fantasy or betting pick, a "practice speed means nothing" argument, a media figure with an observation. Never say who won the race.' });
+    var n = await J.ai.threads(S, { facts: J.ai.sessionFacts(S, sess.sid), focus: top, ref: { type: 'session', id: sess.id }, at: J.dated(S) ? J.sessionTime(S, sess) + 12 * 60000 : 0, task: 'The race has NOT happened yet. ' + J.SESSIONS[sess.type] + ' just finished. Write 5 to 7 threads of pre-race talk: reactions to who was fast and who was slow, hype and predictions for the race, someone mad about where their driver ended up, a fantasy or betting pick, a "practice speed means nothing" argument, a media figure with an observation. Never say who won the race.' });
     step('hype', 'ok', n + ' posts');
   } catch (e) { fails++; step('hype', 'err', e.message); }
   if (S.races.length) { step('outlooks', 'run'); try { await J.ai.outlooks(S); step('outlooks', 'ok'); } catch (e) { fails++; step('outlooks', 'err', e.message); } }
@@ -215,7 +215,7 @@ function defaultRound(S, track, type) {
 }
 function setupForm(track, date) {
   var S = J.S, round = defaultRound(S, track, J.importType);
-  imp.form = { round: round ? round.id : '', name: round ? round.name : (track || 'Race'), track: round ? (round.track || track || '') : (track || ''), date: date || J.todayISO(), mode: (S.races[S.races.length - 1] || {}).mode || 'nascar', bonus: false, custom: '' };
+  imp.form = { round: round ? round.id : '', name: round ? round.name : (track || 'Race'), track: round ? (round.track || track || '') : (track || ''), date: (round && /^\d{4}-\d{2}-\d{2}$/.test(round.date || '') ? round.date : '') || date || J.todayISO(), mode: (S.races[S.races.length - 1] || {}).mode || 'nascar', bonus: false, custom: '' };
   imp.edit = {}; imp.del = {};
 }
 function loadText(text, name) {
@@ -345,6 +345,7 @@ document.addEventListener('change', function (e) {
   if (t.classList && t.classList.contains('nmin')) { var v = t.value.trim(); if (v) imp.edit[J.importType + t.dataset.ri] = v; renderPreview(); return; }
   if (!t.id || !/^imp(Round|Name|Track|Date|Scoring|Bonus|Custom)$/.test(t.id)) return;
   if (t.id === 'impRound' && $('impName')) { var r = J.S.schedule.find(function (x) { return x.id === t.value; }); if (r) { $('impName').value = r.name; if (r.track) $('impTrack').value = r.track; } }
+  if (t.id === 'impRound' && $('impDate')) { var rd = J.S.schedule.find(function (x) { return x.id === t.value; }); if (rd && /^\d{4}-\d{2}-\d{2}$/.test(rd.date || '')) $('impDate').value = rd.date; }
   readForm(); renderPreview();
 });
 J.acts.impType = function (el) {
@@ -394,6 +395,7 @@ J.acts.impConfirm = function () {
   if (!race.meta.pole && race.sid) { var q = J.sessionOf(S, race.sid, 'qualifying'); if (q && q.rows[0]) race.meta.pole = q.rows[0].driver; }
   S.races.push(race);
   S.races.sort(function (a, b) { return String(a.date).localeCompare(String(b.date)); });
+  if (race.sid) J.alignRound(S, race.sid);
   imp = null;
   var info = J.raceInfo(race);
   J.repApply(S, info.winner.driver, 2, 'Won ' + race.name, 'track', race.id);

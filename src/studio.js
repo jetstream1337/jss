@@ -162,7 +162,7 @@ async function saveItems(S, raceId, publish) {
     if (it.posterBlob) await J.store.putMedia(it.id + ':poster', it.posterBlob);
     J.blobs[it.id] = it.preview; if (it.posterPreview) J.blobs[it.id + ':poster'] = it.posterPreview;
     var link = /^https?:\/\//i.test(it.link || '') ? it.link : '';
-    S.media.push({ id: it.id, type: it.type, name: it.name, caption: it.caption || '', raceId: raceId || '', ts: Date.now(), url: '', poster: '', published: !!publish, size: it.size || 0, link: link, big: it.type === 'video' && it.size > VIDEO_PUBLISH_MAX });
+    S.media.push({ id: it.id, type: it.type, name: it.name, caption: it.caption || '', raceId: raceId || '', ts: J.leagueNow(S), url: '', poster: '', published: !!publish, size: it.size || 0, link: link, big: it.type === 'video' && it.size > VIDEO_PUBLISH_MAX });
     ids.push(it.id);
   }
   return ids;
@@ -182,7 +182,7 @@ J.acts.stPublish = async function () {
   var reps = (d.reputation || []).filter(function (_, i) { var c = document.querySelector('[data-rp="' + i + '"]'); return !c || c.checked; });
   var preSid = /^pre:/.test(st.raceId) ? st.raceId.slice(4) : '', raceId = preSid ? '' : st.raceId, ids = await saveItems(S, raceId, st.highlights);
   var race = S.races.find(function (r) { return r.id === raceId; }) || null;
-  var ts = preSid ? J.storyTime(S, 'preview', { sid: preSid }) : race ? J.storyTime(S, st.outlet === 'silly' ? 'silly' : 'recap', { race: race }) + 15 * 60000 : Date.now();
+  var ts = preSid ? J.storyTime(S, 'preview', { sid: preSid }) : race ? J.storyTime(S, st.outlet === 'silly' ? 'silly' : 'recap', { race: race }) + 15 * 60000 : J.leagueNow(S);
   var art = J.ai.applyArticle(S, { article: a, interviews: ivs, reputation: reps }, { outlet: st.outlet, raceId: raceId, preSid: preSid, media: ids, ts: ts });
   if (d.manual) { art.author = 'Commissioner'; }
   var react = st.react && J.ai.hasKey();

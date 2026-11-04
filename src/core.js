@@ -122,6 +122,7 @@ J.normalize = function (S) {
   S.ai = S.ai || {};
   S.announcement = S.announcement || { text: '', date: '' };
   S.updatedAt = S.updatedAt || Date.now();
+  if (!(S.clock >= 2)) J.migrateClock(S);
   return S;
 };
 
@@ -187,8 +188,104 @@ J.storyTime = function (S, kind, o) {
   else if (kind === 'analysis') t = J.atLocal(day, 24 + 10, 15) + (o.slot || 0) * 53 * 60000;
   else if (kind === 'silly') t = J.atLocal(day, 48 + 14, 5) + (o.slot || 0) * 61 * 60000;
   else t = J.atLocal(day, 22, 30) + (o.slot || 0) * 30 * 60000;
-  if (kind !== 'preview' && t > now) t = now - (o.slot || 0) * 60000;
   return t;
+};
+
+/* ---------- league calendar ----------
+   When the schedule has dates, everything (stories, fan posts, practice and qualifying) is dated on the league's own
+   calendar, so the newest race weekend is always on top even when the league's dates are months away from real time. */
+var ISO = /^\d{4}-\d{2}-\d{2}$/;
+J.dated = function (S) { return S.schedule.some(function (x) { return ISO.test(x.date || ''); }) || S.races.some(function (r) { return ISO.test(r.date || ''); }); };
+J.SESSION_CLOCK = { practice: [-1, 14, 0], happy: [-1, 16, 30], qualifying: [-1, 18, 30] };
+J.sessionTime = function (S, x) {
+  var day = J.roundDate(S, x.sid) || (ISO.test(x.date || '') ? x.date : ''); if (!day) return x.ts || Date.now();
+  var c = J.SESSION_CLOCK[x.type] || J.SESSION_CLOCK.practice; return J.atLocal(day, 24 * c[0] + c[1], c[2]);
+};
+// the moment the league is "at": just after the newest thing that has happened, never past the next race morning
+J.leagueNow = function (S) {
+  if (!J.dated(S)) return Date.now();
+  var nx = J.nextRound(S), nd = nx && J.roundDate(S, nx.id), cap = nd ? J.atLocal(nd, 12, 0) : Infinity, t = 0;
+  var see = function (ts) { if (ts && ts <= cap && ts > t) t = ts; };
+  S.articles.forEach(function (a) { see(a.ts); }); S.posts.forEach(function (p) { see(p.ts); });
+  S.sessions.forEach(function (x) { see(J.sessionTime(S, x)); });
+  S.races.forEach(function (r) { if (ISO.test(r.date || '')) see(J.atLocal(r.date, 21, 30)); });
+  if (!t) { var first = S.schedule.find(function (x) { return ISO.test(x.date || ''); }); t = first ? J.atLocal(first.date, -72 + 12, 0) : Date.now(); }
+  return Math.min(t + 60000, cap === Infinity ? t + 60000 : cap);
+};
+// a midweek moment between the last race and the next one (for "this week" news)
+J.weekTime = function (S) {
+  var now = J.leagueNow(S); if (!J.dated(S)) return now;
+  var last = S.races[S.races.length - 1], mid = last && ISO.test(last.date || '') ? J.atLocal(last.date, 72 + 11, 0) : 0;
+  var nx = J.nextRound(S), nd = nx && J.roundDate(S, nx.id), cap = nd ? J.atLocal(nd, -24 + 9, 0) : Infinity;
+  return Math.max(now, Math.min(mid, cap));
+};
+
+// One-time move of things written before the league calendar existed (dated by the real clock) onto the league calendar.
+// Practice/qualifying imports and race recaps are the anchors: their real import time and their league time are both known.
+J.migrateClock = function (S) {
+  if (S.clock >= 2) return false; S.clock = 2;
+  if (!J.dated(S)) return false;
+  var A = [];
+  S.sessions.forEach(function (x) { if (x.ts) A.push({ r: x.ts, l: J.sessionTime(S, x) }); });
+  S.races.forEach(function (race) {
+    if (!ISO.test(race.date || '')) return; var l = J.storyTime(S, 'recap', { race: race });
+    var recaps = S.articles.filter(function (a) { return a.raceId === race.id && !a.desk && !a.preSid && a.ts > l + 2 * 864e5; }).sort(function (a, b) { return a.ts - b.ts; });
+    if (recaps.length) A.push({ r: recaps[0].ts, l: l });
+  });
+  if (!A.length) return false;
+  A.sort(function (a, b) { return a.r - b.r; });
+  var M = []; A.forEach(function (x) { if (!M.length || x.l > M[M.length - 1].l) M.push(x); });
+  var realStart = M[0].r - 2 * 864e5;
+  var nx = J.nextRound(S), nd = nx && J.roundDate(S, nx.id), cap = nd ? J.atLocal(nd, 8, 0) : Infinity;
+  var map = function (r) {
+    if (!r || r < realStart) return r;
+    var i = 0; while (i < M.length - 1 && M[i + 1].r <= r) i++;
+    var a = M[i], d = r - a.r;
+    if (d < 0) return a.l + Math.max(d, -3 * 864e5);
+    var b = M[i + 1];
+    if (!b) return Math.min(a.l + d, Math.max(a.l + 60000, cap));
+    var gap = b.l - a.l, rgap = b.r - a.r;
+    return a.l + (rgap <= gap ? d : d * gap / rgap);
+  };
+  var n = 0, fix = function (o) { var t = map(o.ts); if (t !== o.ts) { o.ts = t; n++; } };
+  S.articles.forEach(fix); S.posts.forEach(fix); S.media.forEach(fix); S.interviews.forEach(fix);
+  (S.silly || []).forEach(function (x) { (x.history || []).forEach(fix); });
+  var sids = {}; S.races.forEach(function (r) { if (r.sid) sids[r.sid] = 1; }); S.sessions.forEach(function (x) { if (x.sid) sids[x.sid] = 1; });
+  S.schedule.forEach(function (r) { if (sids[r.id]) J.alignRound(S, r.id); });
+  return n;
+};
+
+// Put everything about one race weekend at the right moment on the league calendar (after a date changes, or after the
+// race is imported with a different date than the previews used). Fan posts move with the story or session they react to.
+J.alignRound = function (S, sid) {
+  var day = J.roundDate(S, sid); if (!day) return 0;
+  var race = S.races.find(function (r) { return r.sid === sid; }), moved = {}, n = 0;
+  var set = function (a, t) { if (a.ts !== t) { moved[a.id] = t - a.ts; a.ts = t; n++; } };
+  var byNew = function (a, b) { return b.ts - a.ts; };
+  S.articles.filter(function (a) { return a.preSid === sid && !a.week; }).sort(byNew).forEach(function (a, i) { set(a, J.storyTime(S, 'preview', { sid: sid }) - i * 20 * 60000); });
+  if (race) {
+    var mine = S.articles.filter(function (a) { return a.raceId === race.id && !a.preSid; }).sort(function (a, b) { return a.ts - b.ts; }), k = { own: 0, notes: 0, silly: 0 };
+    mine.forEach(function (a) {
+      if (!a.desk) set(a, J.storyTime(S, 'recap', { race: race }) + (k.own++) * 15 * 60000);
+      else if (a.outlet === 'silly') set(a, J.storyTime(S, 'silly', { race: race, slot: k.silly++ }));
+      else set(a, J.storyTime(S, 'analysis', { race: race, slot: k.notes++ }));
+    });
+    S.media.forEach(function (m) { if (m.raceId === race.id) m.ts = J.storyTime(S, 'recap', { race: race }) + 20 * 60000; });
+  }
+  var sess = {}; S.sessions.forEach(function (x) { if (x.sid === sid) sess[x.id] = x; });
+  var clamp = function (d, lo, hi) { return Math.max(lo, Math.min(hi, d)); };
+  var arts = {}; S.articles.forEach(function (a) { arts[a.id] = a; });
+  var threads = {}; S.posts.forEach(function (p) { (threads[p.thread] = threads[p.thread] || []).push(p); });
+  Object.keys(threads).forEach(function (t) {
+    var ps = threads[t].sort(function (a, b) { return a.ts - b.ts; }), ref = ps[0].ref, base = null, start = ps[0].ts;
+    if (ref && ref.type === 'article' && moved[ref.id] != null) base = arts[ref.id].ts + clamp(start - (arts[ref.id].ts - moved[ref.id]), 60000, 30 * 3600000);
+    else if (ref && ref.type === 'session' && sess[ref.id]) { var st = J.sessionTime(S, sess[ref.id]); if (Math.abs(start - st) > 20 * 3600000 || start < st) base = st + 10 * 60000 + (start % 3600000) / 3; }
+    else if (ref && ref.type === 'race' && race && ref.id === race.id) base = J.storyTime(S, 'recap', { race: race }) + 5 * 60000;
+    if (base == null) return;
+    var shift = base - start; ps.forEach(function (p) { p.ts += shift; }); n++;
+  });
+  S.interviews.forEach(function (iv) { if (arts[iv.ref] && moved[iv.ref] != null) iv.ts = arts[iv.ref].ts; });
+  return n;
 };
 
 /* ---------- silly season calendar (modeled on real NASCAR) ----------

@@ -397,6 +397,7 @@ var THREAD_SCHEMA = 'Return ONLY JSON: {"threads":[{"platform":"x" or "forum","t
 
 function figureLines() { return Object.keys(J.FIGURES).map(function (k) { var f = J.FIGURES[k]; return k + ' = ' + f.name + ' ' + f.handle + ' (' + f.badge.toLowerCase() + '): ' + f.voice; }).join('\n'); }
 AI.threads = async function (S, o) {
+  if (!o.at && J.dated(S)) o.at = J.leagueNow(S) + 2 * 60000;
   AI.ensureFans(S); if (!S.fans.length) throw new Error('Import a race, practice or qualifying first so there are drivers for the fans to talk about.');
   var rand = J.rng('pick' + Date.now());
   var focus = {}; (o.focus || []).forEach(function (n) { var d = J.findDriver(S, n); if (d) focus[d.key] = 1; });
@@ -423,18 +424,18 @@ AI.threads = async function (S, o) {
     + (worn ? worn + '\n\n' : '')
     + 'FANS YOU MAY WRITE AS (id | handle | display name | platform | age | stance | quirks):\n' + chosen.map(function (f) { return personaLine(S, f); }).join('\n') + '\n\n'
     + 'PROMINENT ACCOUNTS (id = name handle (role): voice):\n' + figureLines() + '\n\n'
-    + 'TASK: ' + (o.task || 'Write 7 to 9 threads reacting to the facts and the story.') + ' About two thirds should be platform "x" (3 to 7 posts each), the rest "forum" (5 to 9 posts with comment chains). Use at least 18 different fans and at least 5 different prominent accounts. Include one or two quote posts and one poll somewhere. Every fan\'s stance must show in how they talk about that driver. Give each thread a different angle; use these for this batch, one per thread: ' + angles.join('; ') + '.\n\n' + THREAD_SCHEMA;
+    + 'TASK: ' + (o.task || 'Write 7 to 9 threads reacting to the facts and the story.') + ' About two thirds should be platform "x" (3 to 7 posts each), the rest "forum" (5 to 9 posts with comment chains). Use at least 18 different fans and at least 5 different prominent accounts. Include one or two quote posts and one poll somewhere. Every fan\'s stance must show in how they talk about that driver. ' + (o.race ? 'Give each thread a different angle ON THIS RACE (the angle is flavor; the subject is still what happened in this race): ' : 'Give each thread a different angle; use these for this batch, one per thread: ') + angles.join('; ') + '.\n\n' + THREAD_SCHEMA;
   var res = await AI.json({ system: fanStyle(rand), user: user, role: 'chatter', maxTokens: 9000 });
   var n = AI.applyThreads(S, res, o.ref, o.at);
   if (!n) throw new Error(AI.name() + ' did not write any usable fan posts. Try again.');
   return n;
 };
 AI.applyThreads = function (S, res, ref, at) {
-  var now = Date.now(), added = 0, dropped = 0, ok = {}, pool = simPool(S); S.fans.forEach(function (f) { ok[f.id] = f; });
+  var now = Date.now(), added = 0, dropped = 0, ok = {}, pool = simPool(S), fresh = []; S.fans.forEach(function (f) { ok[f.id] = f; });
   (res.threads || []).forEach(function (th, ti) {
     var plat = th.platform === 'forum' ? 'forum' : 'x', tid = J.uid('t'), ids = [], clock;
     clock = at ? at + (3 + ti * (4 + Math.floor(Math.random() * 11))) * 60000 : now - (2 + ti * (3 + Math.floor(Math.random() * 9))) * 60000;
-    var limit = at && at > now ? Infinity : now;
+    var limit = at ? Infinity : now;
     (th.posts || []).forEach(function (p, pi) {
       var by = null, text = String(p.text || '').trim(); if (!text) return;
       if (J.FIGURES[p.by]) by = { type: 'figure', id: p.by }; else if (ok[p.by]) by = { type: 'fan', id: p.by }; else return;
@@ -448,11 +449,11 @@ AI.applyThreads = function (S, res, ref, at) {
       var post = { id: id, thread: tid, parent: parent, platform: plat, title: pi === 0 && plat === 'forum' ? String(th.title || '').slice(0, 140) : '', by: by, text: text, ts: clock, ref: ref || null };
       if (typeof p.quote === 'number' && ids[p.quote] && ids[p.quote] !== id) post.quote = ids[p.quote];
       if (Array.isArray(p.poll) && p.poll.length >= 2) post.poll = p.poll.slice(0, 4).map(function (x) { return String(x).slice(0, 40); });
-      S.posts.push(post); added++;
+      S.posts.push(post); added++; if (fresh.indexOf(tid) < 0) fresh.push(tid);
     });
   });
   AI.lastDropped = dropped;
-  var ths = J.threadsOf(S); if (ths.length > 90) { var keep = {}; ths.slice(0, 90).forEach(function (t) { keep[t.id] = 1; }); S.posts = S.posts.filter(function (p) { return keep[p.thread]; }); }
+  var ths = J.threadsOf(S); if (ths.length > 110) { var keep = {}; ths.slice(0, 110).forEach(function (t) { keep[t.id] = 1; }); fresh.forEach(function (t) { keep[t] = 1; }); S.posts = S.posts.filter(function (p) { return keep[p.thread]; }); } // never trim what was just written
   return added;
 };
 
@@ -542,7 +543,8 @@ AI.newsCycle = async function (S, o) {
   if (!J.roster(S).length) throw new Error('The newsroom needs drivers to write about. Import a race, practice or qualifying first.');
   var nx = J.nextRound(S), race = o.race || (phase === 'post' ? S.races[S.races.length - 1] : null);
   var sp = J.sillyPhase(S), roll = J.rng('silly' + S.races.length + ':' + S.articles.length + ':' + phase)(), wantSilly = o.silly === true || (o.silly !== false && roll < sp.rate);
-  if (phase === 'post') plan = wantSilly ? ['notes', 'silly'] : ['notes'];
+  if (o.only) plan = o.only.slice();
+  else if (phase === 'post') plan = wantSilly ? ['notes', 'silly'] : ['notes'];
   else if (phase === 'pre') plan = ['wire'].concat(S.races.length ? ['notes'] : []).concat(wantSilly ? ['silly'] : []).slice(0, 2);
   else plan = (S.races.length ? ['wire', 'notes'] : ['wire']).concat(wantSilly ? ['silly'] : []);
   var target = o.sid ? S.schedule.find(function (x) { return x.id === o.sid; }) : nx;
@@ -558,6 +560,8 @@ AI.newsCycle = async function (S, o) {
   if (ro && ro.favorites) parts.push('MODEL WIN ODDS FOR THE NEXT RACE (from the site\'s simulator; quote as "the model" if you use them): ' + ro.rows.slice(0, 6).map(function (r) { return r.name + ' ' + Math.round(r.win * 100) + '%'; }).join(', ') + '.');
   parts.push('DRIVER REPUTATION (0-100): ' + repText(S));
   if (plan.indexOf('silly') >= 0) parts.push(sillyBlock(S));
+  var roundArts = S.articles.filter(function (a) { return (preSid && a.preSid === preSid) || (race && a.raceId === race.id); });
+  if (roundArts.length) parts.push('ALREADY PUBLISHED FOR THIS RACE WEEKEND (do NOT write these stories again; find a different angle, a different driver, or news that is new since):\n' + roundArts.map(function (a) { return '- [' + (J.OUTLETS[a.outlet] || J.OUTLETS.wire).name + '] ' + a.headline + (a.dek ? ': ' + a.dek : ''); }).join('\n'));
   var recent = S.articles.slice(0, 16).map(function (a) { return '- [' + (J.OUTLETS[a.outlet] || J.OUTLETS.wire).name + '] ' + a.headline; });
   if (recent.length) parts.push('RECENT HEADLINES (do not repeat these angles or headline shapes; continue storylines instead):\n' + recent.join('\n'));
   var worn = wornText(S); if (worn) parts.push(worn);
@@ -571,14 +575,20 @@ AI.newsCycle = async function (S, o) {
     var outlet = J.OUTLETS[a.outlet] ? a.outlet : plan[i] || 'notes';
     if (!a || !a.headline || !a.body) return;
     var kind = phase === 'post' ? (outlet === 'silly' ? 'silly' : 'analysis') : phase === 'pre' || o.sid ? 'preview' : 'now';
-    var ts = kind === 'now' ? Date.now() - (i + 1) * 300000 : J.storyTime(S, kind, { race: phase === 'post' ? race : null, sid: preSid, slot: i });
+    if (sameStory(a.headline, S.articles)) return; // the same story again: skip it
+    var ts = o.at ? o.at + i * 35 * 60000 : kind === 'now' ? J.weekTime(S) + i * 47 * 60000 : J.storyTime(S, kind, { race: phase === 'post' ? race : null, sid: preSid, slot: i });
     try {
       var art = AI.applyArticle(S, { article: a, interviews: [], reputation: [] }, { outlet: outlet, raceId: phase === 'post' && race ? race.id : '', preSid: preSid, media: [], ts: ts });
-      art.desk = true; if (outlet === 'silly') AI.applyStoryline(S, a.storyline, art); made.push(art);
+      art.desk = true; if (kind === 'now') art.week = true; if (outlet === 'silly') AI.applyStoryline(S, a.storyline, art); made.push(art);
     } catch (e) { /* skip a bad one */ }
   });
   if (!made.length) throw new Error(AI.name() + ' did not write any usable stories. Try again.');
   return made;
+};
+function headWords(h) { return String(h || '').toLowerCase().replace(/[^a-z0-9' ]+/g, ' ').split(/\s+/).filter(function (w) { return w && !STOPW[w]; }); }
+function sameStory(h, arts) {
+  var a = headWords(h); if (a.length < 3) return false;
+  return arts.slice(0, 40).some(function (x) { var b = headWords(x.headline), hit = a.filter(function (w) { return b.indexOf(w) >= 0; }).length; return hit / Math.max(a.length, b.length) >= 0.7; });
 };
 
 /* ---------- outlook commentary (numbers come from the engine, words from Claude) ---------- */
@@ -617,7 +627,7 @@ AI.coverage = async function (S, race, step) {
   }
   var info = J.raceInfo(race), focus = [info.winner.driver]; if (info.mover) focus.push(info.mover.row.driver); if (info.poleRow) focus.push(info.poleRow.driver);
   step('fans', 'run');
-  try { var n = await AI.threads(S, { facts: AI.raceFacts(S, race), story: art, focus: focus, at: art ? art.ts : J.storyTime(S, 'recap', { race: race }), ref: art ? { type: 'article', id: art.id } : { type: 'race', id: race.id } }); step('fans', 'ok', n + ' posts'); } catch (e) { fail++; step('fans', 'err', e.message); }
+  try { var n = await AI.threads(S, { facts: AI.raceFacts(S, race), story: art, focus: focus, race: true, at: art ? art.ts : J.storyTime(S, 'recap', { race: race }), ref: art ? { type: 'article', id: art.id } : { type: 'race', id: race.id }, task: 'The ' + race.name + ' just ended. Write 7 to 9 threads of fans and accounts reacting to THIS race, right after the checkered flag. Nearly every thread is about what actually happened in it, using the real names and finishing spots from FACTS: the winner and how they won, the drivers who ran up front, who got wrecked or had problems, a big mover, someone furious about where their driver finished, what the result does to the points and the ' + S.chase.name + ' cut line. People name the drivers and the finishing positions. At most one thread looks ahead to next week.' }); step('fans', 'ok', n + ' posts'); } catch (e) { fail++; step('fans', 'err', e.message); }
   step('outlooks', 'run');
   try { await AI.outlooks(S); step('outlooks', 'ok'); } catch (e) { fail++; step('outlooks', 'err', e.message); }
   var ch = J.driftFans(S); step('drift', 'ok', ch.length ? ch.length + ' fans changed sides' : 'no one switched');

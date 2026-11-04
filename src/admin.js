@@ -90,7 +90,7 @@ document.addEventListener('change', function (e) {
   var t = e.target, f = t.dataset && t.dataset.race; if (!f) return;
   var S = J.S, r = S.races.find(function (x) { return x.id === t.dataset.id; }); if (!r) return;
   if (f === 'name') r.name = t.value.trim() || r.name;
-  else if (f === 'date') { r.date = t.value; S.races.sort(function (a, b) { return String(a.date).localeCompare(String(b.date)); }); }
+  else if (f === 'date') { r.date = t.value; S.races.sort(function (a, b) { return String(a.date).localeCompare(String(b.date)); }); if (r.sid) J.alignRound(S, r.sid); }
   else if (f === 'mode' || f === 'custom') { r[f] = t.value; J.rescoreRace(r); J.toast('Points recalculated for ' + r.name + '.'); }
   J.save({ render: f === 'mode' });
 });
@@ -239,7 +239,7 @@ J.reactToArticle = async function (id, quiet) {
     var nx = J.nextRound(S), preSid = a.preSid || '';
     var race = preSid ? null : (S.races.find(function (r) { return r.id === a.raceId; }) || S.races[S.races.length - 1]);
     var facts = (preSid ? J.ai.sessionFacts(S, preSid) + '\n' : race ? J.ai.raceFacts(S, race) + '\n' : '') + 'THE ARTICLE (' + J.OUTLETS[a.outlet].name + '):\n' + a.headline + '\n' + (a.dek || '') + '\n' + a.body.slice(0, 3500);
-    var n = await J.ai.threads(S, { facts: facts, story: a, focus: a.tags || [], at: a.ts, ref: { type: 'article', id: a.id }, task: 'Write 4 to 6 threads reacting to THIS article. People quote it, argue with it, call it fake news, add context, or bring up something it left out. Keep every fact consistent with the article and the race data.' });
+    var n = await J.ai.threads(S, { facts: facts, story: a, focus: a.tags || [], at: a.ts, race: !!(race && a.raceId === race.id), ref: { type: 'article', id: a.id }, task: 'Write 4 to 6 threads reacting to THIS article. People quote it, argue with it, call it fake news, add context, or bring up something it left out. Keep every fact consistent with the article and the race data.' });
     J.driftFans(S); J.save({ render: J.route().name === 'news' || J.route().name === 'garage' });
     J.toast(n + ' fan posts added.');
   } catch (e) { J.toast('Fan reactions failed: ' + e.message, true); }
