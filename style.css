@@ -285,6 +285,17 @@ tr.cutline span{display:inline-block;margin-left:14px;background:var(--red);colo
 .acard h4{font:italic 800 22px/1.02 var(--display);font-stretch:76%}
 .acard p{margin:0;color:var(--muted);font-size:15px}
 .athumb{aspect-ratio:16/9;overflow:hidden;background:var(--s2);margin:-16px -16px 6px}
+.sboard .card-b{display:grid;gap:0;padding-top:6px}
+.srum{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:10px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.srum:last-of-type{border-bottom:0}
+.srum-t a,.srum-t{font-weight:600}
+.srum-t a:hover{color:var(--yel-ink)}
+.srum-t small{display:block;color:var(--muted);font-size:13px;font-weight:400}
+.srum-s{display:flex;align-items:center;gap:10px}
+.meter{display:inline-flex;gap:3px}
+.meter i{width:16px;height:6px;border-radius:1px;background:var(--s3);transform:skew(-14deg)}
+.meter i.on{background:var(--yel)}
+.meter i.dead{background:color-mix(in srgb,var(--red) 45%,transparent)}
 .crumb{margin-bottom:12px;font-weight:600;color:var(--blue-ink)}
 .article{background:var(--s1);border:1px solid var(--line);border-radius:6px;padding:28px clamp(18px,5vw,56px) 24px;max-width:860px;margin:0 auto 24px;position:relative;overflow:hidden}
 .article::before{content:'';position:absolute;left:0;top:0;right:0;height:5px;background:var(--oc,var(--blue))}

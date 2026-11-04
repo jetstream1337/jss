@@ -13,13 +13,15 @@ J.uid = function (p) { return (p || '') + Date.now().toString(36) + Math.random(
 J.todayISO = function () { var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
 J.fmtDate = function (s) { if (!s) return ''; var d = new Date(/^\d{4}-\d{2}-\d{2}$/.test(s) ? s + 'T12:00:00' : s); return isNaN(d) ? String(s) : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); };
 J.fmtStamp = function (ts) { var d = new Date(ts); return isNaN(d) ? '' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ', ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }); };
+J.localDay = function (ts) { var d = new Date(ts); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
 J.ago = function (ts) {
+  if (ts > Date.now() + 60000) return J.fmtDate(J.localDay(ts)); // dated ahead (a preview for an upcoming race)
   var s = Math.max(0, (Date.now() - ts) / 1000);
   if (s < 60) return 'now';
   if (s < 3600) return Math.floor(s / 60) + 'm';
   if (s < 86400) return Math.floor(s / 3600) + 'h';
   if (s < 86400 * 7) return Math.floor(s / 86400) + 'd';
-  return J.fmtDate(new Date(ts).toISOString().slice(0, 10));
+  return J.fmtDate(J.localDay(ts));
 };
 J.agoText = function (ts) { var a = J.ago(ts); return a === 'now' ? 'just now' : /^\d+[mhd]$/.test(a) ? a + ' ago' : 'on ' + a; };
 J.hash = function (s) { s = String(s); var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
@@ -114,7 +116,7 @@ J.normalize = function (S) {
   S.schedule.forEach(function (r, i) { if (!r.id) r.id = 's' + Date.now().toString(36) + i; if (!r.type) r.type = J.guessType(r.track || r.name); });
   S.races = Array.isArray(S.races) ? S.races : [];
   S.races.forEach(function (r, i) { if (!r.id) r.id = 'r' + i; r.meta = r.meta || {}; r.rows = r.rows || []; });
-  ['articles', 'posts', 'fans', 'media', 'interviews', 'sessions'].forEach(function (k) { S[k] = Array.isArray(S[k]) ? S[k] : []; });
+  ['articles', 'posts', 'fans', 'media', 'interviews', 'sessions', 'silly'].forEach(function (k) { S[k] = Array.isArray(S[k]) ? S[k] : []; });
   S.sessions.forEach(function (x) { x.rows = x.rows || []; x.meta = x.meta || {}; });
   S.rep = S.rep || {};
   S.ai = S.ai || {};
@@ -166,6 +168,49 @@ J.pointsFor = function (S, pos, n) {
   if (mode === 'custom' && last.custom) { var a = last.custom.split(',').map(function (x) { return Number(x.trim()); }); return isFinite(a[pos - 1]) ? a[pos - 1] : 0; }
   return J.nascarPts(pos);
 };
+/* ---------- story dates: news is dated to the race it is about ----------
+   preview: race day 9 AM. recap: race night. analysis: the next day. silly season: midweek. Never later than now
+   for things that already happened; previews may be dated ahead (the commissioner asked for that). */
+J.roundDate = function (S, sid) {
+  var race = S.races.find(function (r) { return sid && r.sid === sid; }), r = S.schedule.find(function (x) { return x.id === sid; });
+  var d = (race && race.date) || (r && r.date) || ''; return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : '';
+};
+J.atLocal = function (day, h, m) { var d = new Date(day + 'T00:00:00'); d.setHours(h, m || 0, 0, 0); return d.getTime(); };
+J.storyTime = function (S, kind, o) {
+  o = o || {}; var now = Date.now(), day = '';
+  if (o.race && /^\d{4}-\d{2}-\d{2}$/.test(o.race.date || '')) day = o.race.date;
+  else if (o.sid) day = J.roundDate(S, o.sid);
+  if (!day) return now - (o.slot || 0) * 60000;
+  var t;
+  if (kind === 'preview') t = J.atLocal(day, 9, 0) - (o.slot || 0) * 47 * 60000;
+  else if (kind === 'recap') t = J.atLocal(day, 21, 40);
+  else if (kind === 'analysis') t = J.atLocal(day, 24 + 10, 15) + (o.slot || 0) * 53 * 60000;
+  else if (kind === 'silly') t = J.atLocal(day, 48 + 14, 5) + (o.slot || 0) * 61 * 60000;
+  else t = J.atLocal(day, 22, 30) + (o.slot || 0) * 30 * 60000;
+  if (kind !== 'preview' && t > now) t = now - (o.slot || 0) * 60000;
+  return t;
+};
+
+/* ---------- silly season calendar (modeled on real NASCAR) ----------
+   Real NASCAR: almost nothing about next year is announced in the first weeks; spring brings whispers about drivers in
+   contract years and some extensions; most of next year's lineups are confirmed from early summer up to the playoffs
+   (usually midweek, or at a Friday press conference at the track); teams go quiet during the title fight; crew chief
+   swaps, number changes and sponsor reveals land in the offseason. Same shape here, scaled to this league's schedule. */
+J.SILLY_STAGES = ['whisper', 'rumor', 'talks', 'close', 'confirmed', 'dead'];
+J.SILLY_LABEL = { whisper: 'Whisper', rumor: 'Rumor', talks: 'In talks', close: 'Close to a deal', confirmed: 'Confirmed', dead: 'Fell through' };
+J.sillyPhase = function (S) {
+  var total = Math.max(S.schedule.length, S.races.length) || 1, run = S.races.length, cut = Math.min(S.chase.regularRaces, total);
+  var P = function (id, label, rate, maxStage, guide) { return { id: id, label: label, rate: rate, maxStage: maxStage, guide: guide, run: run, total: total, cut: cut }; };
+  if (run === 0) return P('preseason', 'Preseason', 0.5, 'confirmed', 'The season has not started. Next year is not on anyone\'s mind yet. Allowed: final sponsor and paint scheme reveals for THIS season, a late crew chief pairing, a part-time schedule being finalized. No rumors about next season\'s rides yet.');
+  if (run >= total) return P('offseason', 'Offseason', 0.95, 'confirmed', 'The season is over. This is when real teams announce crew chief swaps, car number changes, new sponsors and the last open seats. Rumors from the season can now be confirmed or fall through. Announcements are matter-of-fact team releases.');
+  if (run >= total - 1) return P('finale', 'Championship week', 0.2, 'close', 'Championship week. Teams hold announcements so they do not step on the title fight. At most a quiet note about an open seat or a team "expected to announce after the season". No new big rumors, no confirmations.');
+  if (run >= cut) return P('playoffs', 'Playoffs', 0.55, 'confirmed', 'The playoffs. Most lineups for next year are already set. What is left: the last open seats, drivers eliminated from ' + S.chase.name + ' linked to new rides, crew chief changes whispered (but usually announced after the season), sponsors renewing. Teams keep it low-key while the title is decided.');
+  if (run / total < 0.2) return P('early', 'Early season', 0.3, 'rumor', 'Early season. In real NASCAR teams almost never announce next year this early. Allowed: whispers about drivers in a contract year, a sponsor adding races THIS season, a lower-series prospect getting test laps. Everything about next season is speculation; nothing is confirmed.');
+  if (run < cut * 0.55) return P('spring', 'Spring', 0.6, 'talks', 'Spring. Rumor season heats up. Drivers in contract years get asked about it every week; established drivers sometimes sign extensions; teams start "talks". Big moves are rumors or talks, not announcements yet.');
+  return P('summer', 'Peak silly season', 0.9, 'confirmed', 'Peak silly season, the stretch before the field for ' + S.chase.name + ' is set. In real NASCAR this is when most of next year is confirmed: extensions, team switches, retirements, promotions from the lower series. Earlier rumors can now be confirmed or fall apart. Announcements come midweek or at a Friday press conference at the track.');
+};
+J.sillyActive = function (S) { return (S.silly || []).filter(function (x) { return x.stage !== 'confirmed' && x.stage !== 'dead'; }); };
+
 /* ---------- practice / qualifying / happy hour ---------- */
 J.SESSIONS = { practice: 'Practice', qualifying: 'Qualifying', happy: 'Happy Hour' };
 J.SESSION_ORDER = ['practice', 'qualifying', 'happy'];
@@ -428,7 +473,7 @@ J.autoRecap = function (S, race) {
   if (info.mover && info.mover.gain >= 8) paras.push(info.mover.row.driver + ' was the biggest mover, gaining ' + info.mover.gain + ' spots from P' + info.mover.row.start + ' to P' + info.mover.row.position + '.');
   if (info.poleRow) paras.push('Pole sitter ' + info.poleRow.driver + ' finished P' + info.poleRow.position + (J.isDnf(info.poleRow) ? ' (' + info.poleRow.status + ')' : '') + '.');
   if (L) paras.push(L.name + ' leads the championship with ' + L.pts + ' points' + (R ? ', ' + (L.pts - R.pts) + ' ahead of ' + R.name : '') + '.');
-  return { id: J.uid('a'), outlet: 'wire', auto: true, headline: w.driver + ' wins ' + race.name, dek: 'Official finish, points and how the championship looks after the race.', body: paras.join('\n\n'), author: J.OUTLETS.wire.staff[0], ts: Date.now(), raceId: race.id, tags: [w.driver], media: [] };
+  return { id: J.uid('a'), outlet: 'wire', auto: true, headline: w.driver + ' wins ' + race.name, dek: 'Official finish, points and how the championship looks after the race.', body: paras.join('\n\n'), author: J.OUTLETS.wire.staff[0], ts: J.storyTime(S, 'recap', { race: race }) - 10 * 60000, raceId: race.id, tags: [w.driver], media: [] };
 };
 
 /* ---------- what actually gets published ---------- */

@@ -8,7 +8,7 @@ J.ui = { repAll: false, repWorst: false, feedFilter: 'all', newsFilter: 'all' };
 var NAMES = {};
 function refreshNames(S) { NAMES = {}; J.roster(S).forEach(function (d) { NAMES[d.key] = d.name; }); }
 function pct(x) { if (x <= 0) return '0%'; if (x < 0.01) return '<1%'; if (x > 0.99) return '>99%'; return Math.round(x * 100) + '%'; }
-function plural(n, w) { return n + ' ' + w + (n === 1 ? '' : 's'); }
+function plural(n, w) { return n + ' ' + (n === 1 ? w : /[^aeiou]y$/.test(w) ? w.slice(0, -1) + 'ies' : w + 's'); }
 function empty(t, s, extra) { return '<div class="empty"><b>' + esc(t) + '</b><span>' + esc(s || '') + '</span>' + (extra || '') + '</div>'; }
 function phead(title, sub, actions) {
   var r = J.route().name, a = J.pageArt(r);
@@ -227,9 +227,20 @@ J.routes.news = function (S, args) {
   var head = phead('News', 'Three outlets cover the league: race coverage, silly season and analysis.') + chips;
   if (!list.length) return head + empty('No stories here yet', J.MODE === 'admin' ? 'Import a race or write one in Story Studio.' : 'Check back after the next race.');
   var first = list[0], rest = list.slice(1);
-  return head + '<a class="feat' + (thumbOf(S, first) ? '' : ' nothumb') + ' ol-' + esc(first.outlet) + '" href="#/news/' + esc(first.id) + '">' + (thumbOf(S, first) ? '<div class="fthumb">' + thumbOf(S, first) + '</div>' : '') + '<div>' + outletTag(first) + '<h2>' + esc(first.headline) + '</h2><p>' + esc(first.dek || '') + '</p><small>' + esc(first.author || '') + ' / ' + esc(J.fmtStamp(first.ts)) + '</small></div></a>'
+  var board = (f === 'all' || f === 'silly') ? sillyBoard(S) : '';
+  return head + board + '<a class="feat' + (thumbOf(S, first) ? '' : ' nothumb') + ' ol-' + esc(first.outlet) + '" href="#/news/' + esc(first.id) + '">' + (thumbOf(S, first) ? '<div class="fthumb">' + thumbOf(S, first) + '</div>' : '') + '<div>' + outletTag(first) + '<h2>' + esc(first.headline) + '</h2><p>' + esc(first.dek || '') + '</p><small>' + esc(first.author || '') + ' / ' + esc(J.fmtStamp(first.ts)) + '</small></div></a>'
     + '<div class="ngrid">' + rest.map(function (a) { return '<a class="acard" href="#/news/' + esc(a.id) + '">' + (thumbOf(S, a) ? '<div class="athumb">' + thumbOf(S, a) + '</div>' : '') + outletTag(a) + '<h4>' + esc(a.headline) + '</h4><p>' + esc(a.dek || '') + '</p><small>' + esc(J.fmtStamp(a.ts)) + '</small></a>'; }).join('') + '</div>';
 };
+function sillyBoard(S) {
+  var all = (S.silly || []).slice().sort(function (a, b) { var la = a.history[a.history.length - 1], lb = b.history[b.history.length - 1]; return (lb ? lb.ts : 0) - (la ? la.ts : 0); }).slice(0, 8);
+  if (!all.length) return '';
+  var cls = { whisper: '', rumor: 'y', talks: 'y', close: 'b', confirmed: 'g', dead: 'r' };
+  return '<section class="card sboard"><div class="card-h"><h3>Silly season board</h3><small class="dim">' + esc(J.sillyPhase(S).label) + '</small></div><div class="card-b">' + all.map(function (x) {
+    var last = x.history[x.history.length - 1], idx = J.SILLY_STAGES.indexOf(x.stage);
+    return '<div class="srum"><div class="srum-t">' + (last ? '<a href="#/news/' + esc(last.art) + '">' + esc(x.title) + '</a>' : esc(x.title)) + '<small>' + J.plural(x.history.length, 'report') + (last ? ', latest ' + esc(J.agoText(last.ts)) : '') + '</small></div>'
+      + '<div class="srum-s"><span class="meter" aria-hidden="true">' + [0, 1, 2, 3, 4].map(function (i) { return '<i class="' + (x.stage === 'dead' ? 'dead' : i <= idx ? 'on' : '') + '"></i>'; }).join('') + '</span><span class="chip ' + cls[x.stage] + '">' + esc(J.SILLY_LABEL[x.stage]) + '</span></div></div>';
+  }).join('') + '<p class="fine">League fiction. Rumors move from a whisper to confirmed (or fall through) over several reports.</p></div></section>';
+}
 J.nav.push({ id: 'news', label: 'News' });
 J.acts.newsFilter = function (el) { J.ui.newsFilter = el.dataset.v; J.refresh(); };
 
