@@ -164,10 +164,10 @@ var RD_N = ['Lugnut', 'Mechanic', 'Spray', 'Tie', 'Engine', 'Garage', 'Hammer', 
 var EMO = ['🏁', '🏎️', '🔧', '🛞', '⚡', '🍺', '🔥', '🦅', '🐐', '☕'];
 var COLORS = ['#ffc20e', '#e3202c', '#2f6fff', '#22c55e', '#a855f7', '#06b6d4', '#f97316', '#ec4899', '#94a3b8', '#eab308', '#14b8a6', '#ef4444'];
 var QUIRKS = {
-  teen: ['types in all lowercase with almost no punctuation', 'communicates in short reactions and the odd 💀 or 😭', 'stan-account energy, makes edits of their driver', 'says "chat" and "bro thinks" like a streamer', 'gets dramatic fast, then forgets about it', 'one-liners like "not him again" or "be so for real"'],
-  young: ['sarcastic, group-chat humor', 'has a fantasy lineup and a bet slip riding on it', 'complains about the broadcast and strategy calls', 'swears mildly (damn, hell, shit)', 'quote-posts with one word or "L take"', 'replies "this aged badly" when someone is wrong', 'starts harsh takes with "respectfully"', 'posts hungover on race day'],
-  adult: ['dad energy, watches with their kid or their own dad', 'explains pit strategy and fuel mileage nobody asked about', 'grumbles about officiating, dry humor', 'writes full sentences and signs off with a shrug', 'mentions work on Monday or the grill', 'tries to be the reasonable one', 'posts "unpopular opinion:" then a popular opinion', 'tags the reporter asking for clarification'],
-  oldhead: ['nostalgic: compares everything to the old days', 'complains the cars all look the same and there are too many cautions', 'types sloppy: ellipses, random CAPS, missing punctuation', 'Facebook-comment energy, sometimes signs off with an initial', 'thinks the playoff format ruined everything', 'loves the sport and will defend it to the end']
+  teen: ['types in lowercase with almost no punctuation', 'reacts fast and short, sometimes just an emoji', 'stan-account energy for their driver, makes edits', 'borrows streamer and meme slang', 'gets dramatic, then forgets about it a post later', 'replies to big accounts hoping to get noticed'],
+  young: ['sarcastic group-chat humor', 'has a fantasy lineup and a bet slip riding on it', 'complains about the broadcast and strategy calls', 'swears mildly', 'loves dunking on bad takes with a quote post', 'brings receipts from old posts when someone is wrong', 'posts hungover on race day', 'treats every race like a fantasy draft'],
+  adult: ['dad energy, watches with their kid or their own dad', 'explains pit strategy and fuel mileage nobody asked about', 'grumbles about officiating, dry humor', 'writes full sentences with a shrug at the end', 'mentions work, the grill or a long week', 'tries to be the reasonable one and gets dunked on', 'opens takes like they are controversial when they are not', 'asks the reporter accounts for clarification'],
+  oldhead: ['nostalgic: compares everything to the old days', 'thinks there are too many cautions and the cars look the same', 'types sloppy: ellipses, random CAPS, missing punctuation', 'Facebook-comment energy, signs off with an initial now and then', 'thinks the playoff format ruined everything', 'loves the sport and will defend it to the end']
 };
 function weighted(rand, items, w) { var t = w.reduce(function (a, b) { return a + b; }, 0), r = rand() * t; for (var i = 0; i < items.length; i++) { r -= w[i]; if (r <= 0) return items[i]; } return items[items.length - 1]; }
 function clean(h) { h = String(h).replace(/[^A-Za-z0-9_\-]/g, ''); return h.length > 21 ? '' : h; }
@@ -212,7 +212,7 @@ function makeFan(S, ds, rand, used, keep) {
     used[h.toLowerCase()] = 1;
     var f = keep || { id: 'f' + (S.fans.length + 1) + J.uid('').slice(-3), age: age, platform: platform, stance: drv ? { driver: drv.key, level: level, seen: (S.rep[drv.key] ? S.rep[drv.key].events.length : 0) } : { driver: null, level: 0, seen: 0 } };
     f.handle = h; f.name = displayName(age, h, rand, first, drv, level); f.v = 2;
-    f.color = J.pick(rand, COLORS); f.quirks = J.shuffle(QUIRKS[age], rand).slice(0, 2).join('; ');
+    f.color = J.pick(rand, COLORS); f.quirks = J.shuffle(QUIRKS[age], rand).slice(0, 2).join('; '); f.qv = 2;
     f.followers = Math.round(Math.pow(rand(), 3) * (age === 'oldhead' ? 900 : 4200)) + 12;
     return f;
   }
@@ -223,13 +223,14 @@ AI.ensureFans = function (S) {
   var target = Math.min(170, Math.max(140, ds.length + 100)), rand = J.rng('fans2' + S.id + S.fans.length + ':' + S.races.length), used = {};
   JOKE_USED = {}; S.fans.forEach(function (f) { if (f.v === 2) { used[String(f.handle).toLowerCase()] = 1; JOKE_USED[f.name] = 1; } });
   S.fans.forEach(function (f) { if (f.v !== 2) makeFan(S, ds, rand, used, f); }); // older accounts get modern handles and names, same id and stance
+  S.fans.forEach(function (f) { if (f.qv !== 2 && QUIRKS[f.age]) { f.quirks = J.shuffle(QUIRKS[f.age], rand).slice(0, 2).join('; '); f.qv = 2; } }); // quirks used to name catchphrases, which got repeated
   var guard = 0;
   while (S.fans.length < target && guard++ < 600) { var f = makeFan(S, ds, rand, used, null); if (f) S.fans.push(f); }
   return true;
 };
 
 /* ---------- context builders ---------- */
-function standingsText(S, n) { return J.agg(S.races).slice(0, n || 10).map(function (d, i) { return (i + 1) + '. ' + d.name + ' ' + d.pts + ' pts' + (d.wins ? ' (' + d.wins + (d.wins === 1 ? ' win' : ' wins') + ')' : ''); }).join('; '); }
+function standingsText(S, n, races) { return J.agg(races || S.races).slice(0, n || 10).map(function (d, i) { return (i + 1) + '. ' + d.name + ' ' + d.pts + ' pts' + (d.wins ? ' (' + d.wins + (d.wins === 1 ? ' win' : ' wins') + ')' : ''); }).join('; '); }
 AI.raceFacts = function (S, race) {
   var info = J.raceInfo(race), m = race.meta || {}, lines = [];
   var total = Math.max(S.schedule.length, S.races.length), idx = S.races.indexOf(race) + 1;
@@ -254,10 +255,28 @@ AI.sessionFacts = function (S, sid) {
     lines.push(J.SESSIONS[x.type] + (x.meta && x.meta.weather ? ' (weather ' + x.meta.weather + ')' : '') + ', ' + rows.length + ' cars: ' + rows.slice(0, 20).map(function (q) { return q.position + ' #' + (q.car || '?') + ' ' + q.driver + (q.time ? ' ' + q.time : ''); }).join('; ') + (rows.length > 20 ? '; ... last: ' + rows.slice(-3).map(function (q) { return q.position + ' ' + q.driver; }).join(', ') : '') + '.');
     if (x.type === 'qualifying' && rows[0]) lines.push('Pole sitter: ' + rows[0].driver + (rows[0].time ? ' (' + rows[0].time + ')' : '') + '.' + (rows[1] ? ' Outside pole: ' + rows[1].driver + '.' : ''));
   });
-  if (S.races.length) lines.push('Points standings going in: ' + standingsText(S, 10) + '.');
-  else lines.push('This is the first race of the season, so there are no points yet.');
+  var before = racesBefore(S, sid), ran = S.races.some(function (x) { return x.sid === sid; });
+  if (ran) lines.push('(This preview is written as of the morning of the race, so it must not know or hint at how the race turned out.)');
+  if (before.length) {
+    lines.push('Points standings going in: ' + standingsText(S, 10, before) + '.');
+    var T = r.type || J.guessType(r.track || r.name), form = J.agg(before).map(function (d) { var h = d.hist.filter(function (x) { var rc = S.races.find(function (q) { return q.id === x.raceId; }); return rc && J.raceType(S, rc) === T; }); return { n: d.name, c: h.length, avg: h.length ? h.reduce(function (a, b) { return a + b.pos; }, 0) / h.length : 99 }; }).filter(function (x) { return x.c; }).sort(function (a, b) { return a.avg - b.avg; }).slice(0, 6);
+    if (form.length) lines.push('Best average finish at ' + (J.TYPES[T] || '').toLowerCase() + ' tracks so far: ' + form.map(function (x) { return x.n + ' ' + x.avg.toFixed(1) + ' (' + x.c + ')'; }).join(', ') + '.');
+    var prevAt = before.filter(function (x) { return r.track && x.track === r.track; }).pop();
+    if (prevAt) lines.push('Last time here (' + prevAt.name + '): won by ' + J.raceInfo(prevAt).winner.driver + '.');
+    var last = before[before.length - 1]; if (last) lines.push('Previous race: ' + last.name + ', won by ' + J.raceInfo(last).winner.driver + '.');
+  } else lines.push('This is the first race of the season, so there are no points yet.');
   return lines.join('\n');
 };
+function racesBefore(S, sid) {
+  var idx = S.schedule.findIndex(function (x) { return x.id === sid; }), r = S.schedule[idx], day = J.roundDate(S, sid);
+  return S.races.filter(function (x) {
+    if (x.sid === sid) return false;
+    var j = S.schedule.findIndex(function (q) { return q.id === x.sid; });
+    if (idx >= 0 && j >= 0) return j < idx;
+    return day && x.date ? x.date < day : true;
+  });
+}
+AI.racesBefore = racesBefore;
 /* Read a results table off one or more screenshots. Returns {session, track, rows:[...]} */
 AI.readScreenshot = async function (S, images, typeHint) {
   var names = J.roster(S).map(function (d) { return d.name + (d.car ? ' #' + d.car : ''); }).slice(0, 80);
@@ -283,13 +302,75 @@ function personaLine(S, f) {
   return f.id + ' | ' + (f.platform === 'forum' ? 'u/' : '@') + f.handle + ' | shown as "' + f.name + '" | ' + f.platform + ' | ' + f.age + ' | ' + (nm && st.level ? J.STANCE[st.level] + ' of ' + nm : 'no strong driver') + ' | ' + f.quirks;
 }
 
+/* ---------- repetition control ----------
+   Reads what is already on the site and lists phrases and openers that have been used too often, so every prompt can
+   ban them. Driver names, track names and plain grammar ("in the", "of the") are ignored. */
+var STOPW = {}; ('a an the and or but if of to in on at by for with from as is are was were be been being it its this that these those he she they we you i me my our your his her their them him us not no so too very just than then there here what which who whom when where why how all any both each few more most other some such only own same can will would should could do does did done has have had having up down out off over under again once about into through during before after above below between also yet still really get got gonna its im dont cant thats hes shes theyre youre').split(' ').forEach(function (w) { STOPW[w] = 1; });
+function words(t) { return String(t || '').toLowerCase().replace(/https?:\S+/g, ' ').replace(/[‘’]/g, "'").replace(/[^a-z0-9' ]+/g, ' ').split(/\s+/).filter(Boolean); }
+AI.wornOut = function (S, extraTexts) {
+  var nameW = {}; J.roster(S).forEach(function (d) { words(d.name).forEach(function (w) { nameW[w] = 1; }); });
+  S.schedule.forEach(function (r) { words(r.name + ' ' + r.track).forEach(function (w) { nameW[w] = 1; }); });
+  Object.keys(J.FIGURES).forEach(function (k) { words(J.FIGURES[k].name).forEach(function (w) { nameW[w] = 1; }); });
+  var texts = S.posts.slice(-260).map(function (p) { return p.text; })
+    .concat(S.articles.slice(0, 30).map(function (a) { return a.headline + '. ' + (a.dek || '') + '. ' + a.body; }))
+    .concat(['chase', 'race', 'season'].map(function (k) { return S.ai[k] ? S.ai[k].headline + '. ' + S.ai[k].summary + ' ' + Object.keys(S.ai[k].notes || {}).map(function (x) { return S.ai[k].notes[x]; }).join(' ') : ''; }))
+    .concat(extraTexts || []);
+  var cnt = {}, openers = {};
+  texts.forEach(function (t) {
+    var w = words(t), seen = {};
+    for (var n = 2; n <= 5; n++) for (var i = 0; i + n <= w.length; i++) {
+      var g = w.slice(i, i + n); if (g.every(function (x) { return STOPW[x] || nameW[x] || /^\d+$/.test(x); })) continue;
+      if (g.some(function (x) { return nameW[x]; })) continue;
+      var real = g.filter(function (x) { return !STOPW[x]; }).length; if (n === 2 && real < 2) continue;
+      var k = g.join(' '); if (!seen[k]) { seen[k] = 1; cnt[k] = (cnt[k] || 0) + 1; }
+    }
+    if (w.length >= 3) { var o = w.slice(0, 2).join(' '); openers[o] = (openers[o] || 0) + 1; }
+  });
+  var keep = Object.keys(cnt).filter(function (k) { var n = k.split(' ').length; return cnt[k] >= (n === 2 ? 6 : n === 3 ? 3 : 2); });
+  keep = keep.filter(function (k) { return !keep.some(function (o) { return o !== k && o.indexOf(k) >= 0 && cnt[o] >= cnt[k] - 1; }); });
+  keep.sort(function (a, b) { return cnt[b] * b.split(' ').length - cnt[a] * a.split(' ').length; });
+  var op = Object.keys(openers).filter(function (k) { return openers[k] >= 3 && !k.split(' ').every(function (x) { return nameW[x]; }); }).sort(function (a, b) { return openers[b] - openers[a]; });
+  return { phrases: keep.slice(0, 45), openers: op.slice(0, 14) };
+};
+function wornText(S) {
+  var w = AI.wornOut(S); if (!w.phrases.length && !w.openers.length) return '';
+  return 'WORN OUT ON THIS SITE ALREADY (each has been used several times; do not use these phrases or close variants, find new words): ' + w.phrases.map(function (p) { return '"' + p + '"'; }).join(', ')
+    + (w.openers.length ? '\nOVERUSED WAYS TO START A POST (do not open with these): ' + w.openers.map(function (p) { return '"' + p + '..."'; }).join(', ') : '');
+}
+AI.wornText = wornText;
+/* near-duplicate check: same short reply over and over, or a long post that mostly repeats an earlier one */
+function shingles(t) { var w = words(t), out = {}; for (var i = 0; i + 3 <= w.length; i++) { var g = w.slice(i, i + 3); if (g.every(function (x) { return STOPW[x]; })) continue; out[g.join(' ')] = 1; } return out; }
+function tooSimilar(text, pool) {
+  var w = words(text), norm = w.join(' '); if (!norm) return true;
+  if (w.length <= 4) return pool.short[norm] >= 1;
+  var a = shingles(text), ak = Object.keys(a); if (!ak.length) return false;
+  for (var i = 0; i < pool.long.length; i++) { var b = pool.long[i], inter = 0; ak.forEach(function (k) { if (b[k]) inter++; }); if (inter >= 3 && inter / ak.length >= 0.6) return true; }
+  return false;
+}
+function simPool(S) {
+  var pool = { short: {}, long: [] };
+  S.posts.slice(-300).forEach(function (p) { addPool(pool, p.text); });
+  return pool;
+}
+function addPool(pool, text) { var w = words(text); if (w.length <= 4) { var k = w.join(' '); pool.short[k] = (pool.short[k] || 0) + 1; } else pool.long.push(shingles(text)); }
+
+/* rotating vocabulary: each batch gets a few slang words and reply types to draw from, so the same ones do not show up every time */
+var SLANG = ['lowkey', 'highkey', 'no shot', 'ain\'t no way', 'be so serious', 'it\'s giving', 'touch grass', 'I\'m crying', 'chat is this real', 'the way he', 'not him again', 'respectfully', 'mid', 'washed', 'fraud watch', 'he\'s HIM', 'down bad', 'say less', 'we been knew', 'the audacity', 'bffr', 'tweaking', 'cooked (sparingly)', 'he ate', 'peak', 'cinema', 'aura', 'unc', 'unserious', 'nah because', 'genuinely', 'insane behavior', 'invisible all day', 'free him', 'locked in', 'fumbled', 'menace', 'he\'s so back', 'it\'s over for him', 'built different'];
+var SHORT = ['ratio', 'nah', 'L', 'W', 'real', 'source?', 'this', 'LMAO', 'cope', 'lol', 'fair', 'and?', 'no', 'facts', 'who asked', 'huh', 'yikes', 'easy', 'ok and', 'bruh', 'sure', 'wrong', 'clip it', 'called it', 'meh', 'boring', 'stop', 'wait what', 'hm', 'yep', 'nope', '??', 'oof', 'agreed'];
+var ANGLES = ['a fantasy or DFS argument', 'the broadcast or a camera miss', 'a pit call being second-guessed', 'a driver in a slump', 'a mid-pack surprise', 'an officiating or rules gripe', 'a stat that starts a fight', 'who is best at this kind of track', 'a nostalgic comparison to the old days', 'the cut line math', 'a rumor from the insider', 'a meme format described in words', 'somebody\'s watch party or race-day setup', 'a crew chief decision', 'tire wear or fuel', 'a young driver getting hype', 'a hot take that gets dragged', 'a prediction for next week', 'a driver everybody forgot about', 'someone who only watched the last 10 laps', 'a ranking or tier list', 'someone asking an honest newbie question', 'a callback to a post that aged badly', 'a rivalry heating up'];
+function fanStyle(rand) {
+  var slang = J.shuffle(SLANG, rand).slice(0, 5), short = J.shuffle(SHORT, rand).slice(0, 7);
+  return FAN_STYLE.replace('{SLANG}', slang.map(function (x) { return '"' + x + '"'; }).join(', ')).replace('{SHORT}', short.map(function (x) { return '"' + x + '"'; }).join(', '));
+}
+
 /* ---------- Garage: threads ---------- */
 var FAN_STYLE = 'YOU ARE WRITING REAL-LOOKING NASCAR SOCIAL MEDIA (X/Twitter and the r/NASCAR subreddit) FOR A SIM-RACING LEAGUE SITE.\n'
   + 'It has to pass as real posts from real people in the mid 2020s. If it reads like a brand account, a press release or an AI, it fails.\n\n'
   + 'HOW PEOPLE ACTUALLY POST NOW\n'
   + '- Most posts are short and lowercase-leaning. Many are one line. Punctuation is optional. Nobody writes a tidy paragraph on X unless they are an analyst or mad.\n'
-  + '- Real reply culture: dunks, one-word replies ("ratio", "nah", "L", "real", "source?", "this", "LMAO"), people misreading the post, people answering a question nobody asked, someone posting a stat to end the argument, someone saying "this aged badly" a week later, someone tagging @ an account.\n'
-  + '- Modern phrasing in small doses, matched to age: "be so for real", "bro thinks", "not him again", "respectfully", "lowkey", "chat is this real", "the way he...", "it\'s giving", "touch grass", "ain\'t no way", "I\'m crying", "W"/"L" as a one-word verdict. Never stack more than one per post. Older people do NOT talk like this.\n'
+  + '- Real reply culture: dunks, very short replies, people misreading the post, people answering a question nobody asked, someone posting a stat to end the argument, someone digging up an old post, someone tagging @ an account. Short replies you can draw from in THIS batch (each at most once, and you can invent others): {SHORT}.\n'
+  + '- Modern slang in small doses, only from young people. Slang available for THIS batch (each at most once in the whole batch, many posts use none): {SLANG}. Older people do NOT talk like this.\n'
+  + '- VARIETY IS THE WHOLE JOB. No two posts may share a phrase of 3+ words. No two posts may start with the same two words. Do not reuse a joke structure. A person\'s quirk is a tendency, not a catchphrase: it should show in maybe one of their posts, phrased differently each time.\n'
   + '- Emoji: teens and young adults use 💀 😭 🫡 🤡 📉 🐐 🔥 sometimes (max one or two, and many posts have none). Adults rarely. Old-heads use 👍 or none.\n'
   + '- Quote posts: someone quotes an earlier post with their own short take on top ("quote": index). Polls: big accounts and some fans post polls ("poll": 2 to 4 short options). Use one or two of each across the whole batch, not every thread.\n'
   + '- Reddit (forum) is different: posts have a title, comments are longer and nerdier, people say "Edit: ...", "Came here to say this", correct each other on facts, and the top comment is usually a joke. Reddit users never use display names or emoji much.\n\n'
@@ -306,7 +387,7 @@ var FAN_STYLE = 'YOU ARE WRITING REAL-LOOKING NASCAR SOCIAL MEDIA (X/Twitter and
   + '1. Real arguments. Several threads need disagreement, and at least one reply chain goes back and forth 3+ times between the same two people. Fans and haters of the same driver collide.\n'
   + '2. Only use facts you are given (positions, laps led, gaps, points, practice and qualifying times). Never invent results, lap numbers, wrecks or quotes.\n'
   + '3. Wildly uneven lengths. Lots of 1 to 6 word replies. A few longer posts.\n'
-  + '4. Never open two posts the same way. No repeated jokes or phrases, including from the RECENT POSTS list. Do not echo the headline.\n'
+  + '4. Never open two posts the same way. No repeated jokes or phrases, including anything in the RECENT POSTS and WORN OUT lists. Do not echo the headline.\n'
   + '5. Banned, they read as AI: cooking/cooked, no crumbs, masterclass, chef\'s kiss, no notes, buckle up, hold my beer, rent free, this is the way, "let\'s gooo", "absolute scenes", "what a race folks", hashtags (except a rare #NASCAR from an old-head), em dashes, "folks", "y\'all ready".\n'
   + '6. Typos and bad grammar are fine where the person would make them. Not everyone is funny. Some posts are boring or just wrong.\n'
   + '7. Spread it out: not everything is about the winner. Mid-pack drivers, the broadcast, fantasy, a bad pit call, someone\'s own bad day, a random hot take.\n'
@@ -321,7 +402,9 @@ AI.threads = async function (S, o) {
   var focus = {}; (o.focus || []).forEach(function (n) { var d = J.findDriver(S, n); if (d) focus[d.key] = 1; });
   var fans = S.fans.slice(), pri = fans.filter(function (f) { return f.stance && focus[f.stance.driver]; }), rest = J.shuffle(fans.filter(function (f) { return !(f.stance && focus[f.stance.driver]); }), rand);
   var chosen = J.shuffle(pri, rand).slice(0, 14).concat(rest).slice(0, 34);
-  var recent = S.posts.slice(-20).map(function (p) { return '- ' + p.text.slice(0, 100); }).join('\n');
+  var recent = S.posts.slice(-30).map(function (p) { return '- ' + p.text.slice(0, 90); }).join('\n');
+  var angles = J.shuffle(ANGLES, rand).slice(0, 8), worn = wornText(S);
+  var rumors = J.sillyActive(S).slice(-5).map(function (x) { return x.title + ' (' + J.SILLY_LABEL[x.stage].toLowerCase() + ')'; });
   var lastRace = S.races[S.races.length - 1], extra = [];
   if (lastRace) {
     var shown = {}; J.raceInfo(lastRace).rows.slice(0, 15).forEach(function (r) { shown[J.driverKey(r.driver)] = 1; });
@@ -335,25 +418,32 @@ AI.threads = async function (S, o) {
     + (o.story ? 'THE STORY EVERYONE IS REACTING TO: "' + o.story.headline + '" - ' + (o.story.dek || '') + '\n\n' : '')
     + (heads.length ? 'LATEST HEADLINES ON THE SITE (people may react to or argue with these): ' + heads.join('; ') + '\n\n' : '')
     + 'DRIVER REPUTATION (0-100, higher = more liked): ' + repText(S) + '\n\n'
+    + (rumors.length ? 'SILLY SEASON STORYLINES PEOPLE ARE TALKING ABOUT (unconfirmed unless it says confirmed): ' + rumors.join('; ') + '\n\n' : '')
     + (recent ? 'RECENT POSTS ALREADY ON THE SITE (do not repeat their wording, jokes or openers):\n' + recent + '\n\n' : '')
+    + (worn ? worn + '\n\n' : '')
     + 'FANS YOU MAY WRITE AS (id | handle | display name | platform | age | stance | quirks):\n' + chosen.map(function (f) { return personaLine(S, f); }).join('\n') + '\n\n'
     + 'PROMINENT ACCOUNTS (id = name handle (role): voice):\n' + figureLines() + '\n\n'
-    + 'TASK: ' + (o.task || 'Write 7 to 9 threads reacting to the facts and the story.') + ' About two thirds should be platform "x" (3 to 7 posts each), the rest "forum" (5 to 9 posts with comment chains). Use at least 18 different fans and at least 5 different prominent accounts. Include one or two quote posts and one poll somewhere. Every fan\'s stance must show in how they talk about that driver.\n\n' + THREAD_SCHEMA;
-  var res = await AI.json({ system: FAN_STYLE, user: user, role: 'chatter', maxTokens: 9000 });
-  var n = AI.applyThreads(S, res, o.ref);
+    + 'TASK: ' + (o.task || 'Write 7 to 9 threads reacting to the facts and the story.') + ' About two thirds should be platform "x" (3 to 7 posts each), the rest "forum" (5 to 9 posts with comment chains). Use at least 18 different fans and at least 5 different prominent accounts. Include one or two quote posts and one poll somewhere. Every fan\'s stance must show in how they talk about that driver. Give each thread a different angle; use these for this batch, one per thread: ' + angles.join('; ') + '.\n\n' + THREAD_SCHEMA;
+  var res = await AI.json({ system: fanStyle(rand), user: user, role: 'chatter', maxTokens: 9000 });
+  var n = AI.applyThreads(S, res, o.ref, o.at);
   if (!n) throw new Error(AI.name() + ' did not write any usable fan posts. Try again.');
   return n;
 };
-AI.applyThreads = function (S, res, ref) {
-  var now = Date.now(), added = 0, ok = {}; S.fans.forEach(function (f) { ok[f.id] = f; });
+AI.applyThreads = function (S, res, ref, at) {
+  var now = Date.now(), added = 0, dropped = 0, ok = {}, pool = simPool(S); S.fans.forEach(function (f) { ok[f.id] = f; });
   (res.threads || []).forEach(function (th, ti) {
-    var plat = th.platform === 'forum' ? 'forum' : 'x', tid = J.uid('t'), t0 = now - (2 + ti * (3 + Math.floor(Math.random() * 9))) * 60000, ids = [], clock = t0;
+    var plat = th.platform === 'forum' ? 'forum' : 'x', tid = J.uid('t'), ids = [], clock;
+    clock = at ? at + (3 + ti * (4 + Math.floor(Math.random() * 11))) * 60000 : now - (2 + ti * (3 + Math.floor(Math.random() * 9))) * 60000;
+    var limit = at && at > now ? Infinity : now;
     (th.posts || []).forEach(function (p, pi) {
       var by = null, text = String(p.text || '').trim(); if (!text) return;
       if (J.FIGURES[p.by]) by = { type: 'figure', id: p.by }; else if (ok[p.by]) by = { type: 'fan', id: p.by }; else return;
       var parent = null; if (pi > 0) { var pr = p.replyTo; parent = (typeof pr === 'number' && ids[pr]) ? ids[pr] : (ids[0] || null); } else if (ids.length) return;
       text = text.replace(/\s+[—–]\s+/g, ', ').slice(0, plat === 'forum' ? 1400 : 560);
-      clock += (1 + Math.floor(Math.random() * 6)) * 60000; if (clock > now) clock = now - Math.floor(Math.random() * 40000);
+      if (tooSimilar(text, pool)) { dropped++; if (pi === 0) { ids = []; return; } ids[pi] = parent; return; } // repeat: skip it, its replies attach to its parent
+      addPool(pool, text);
+      clock += (1 + Math.floor(Math.random() * 6)) * 60000; if (clock > limit) clock = limit - Math.floor(Math.random() * 40000);
+      if (pi > 0 && !ids[0]) return; // thread opener was a repeat, drop the thread
       var id = J.uid('p'); ids[pi] = id;
       var post = { id: id, thread: tid, parent: parent, platform: plat, title: pi === 0 && plat === 'forum' ? String(th.title || '').slice(0, 140) : '', by: by, text: text, ts: clock, ref: ref || null };
       if (typeof p.quote === 'number' && ids[p.quote] && ids[p.quote] !== id) post.quote = ids[p.quote];
@@ -361,6 +451,7 @@ AI.applyThreads = function (S, res, ref) {
       S.posts.push(post); added++;
     });
   });
+  AI.lastDropped = dropped;
   var ths = J.threadsOf(S); if (ths.length > 90) { var keep = {}; ths.slice(0, 90).forEach(function (t) { keep[t.id] = 1; }); S.posts = S.posts.filter(function (p) { return keep[p.thread]; }); }
   return added;
 };
@@ -384,21 +475,23 @@ AI.articleDraft = async function (S, o) {
   var outlet = o.outlet || 'wire', race = o.race || null, parts = [];
   parts.push('LEAGUE STANDINGS NOW: ' + (standingsText(S, 12) || 'no races run yet') + '.');
   if (race) parts.push('RACE DATA:\n' + AI.raceFacts(S, race));
-  else if (o.preSid) parts.push('PRE-RACE DATA (this story is a PREVIEW written before the race):\n' + AI.sessionFacts(S, o.preSid));
+  else if (o.preSid) parts.push('PRE-RACE DATA (this story is a PREVIEW written the morning of the race):\n' + AI.sessionFacts(S, o.preSid));
+  if (outlet === 'silly') { var ph = J.sillyPhase(S), act = J.sillyActive(S); parts.push('WHERE THE SEASON IS (silly season calendar): ' + ph.label + '. ' + ph.guide + (act.length ? ' Storylines already running: ' + act.map(function (x) { return x.title + ' (' + J.SILLY_LABEL[x.stage].toLowerCase() + ')'; }).join('; ') + '.' : '')); }
   if (o.headline) parts.push('COMMISSIONER\'S WORKING HEADLINE (this is the topic; keep its meaning, you may sharpen the wording): ' + o.headline);
   if (o.notes) parts.push('COMMISSIONER\'S NOTES (facts you may use):\n' + o.notes);
   if (o.images && o.images.length) parts.push(o.images.length + ' image(s) are attached in this order: ' + o.images.map(function (im, i) { return (i + 1) + '=' + (im.label || 'untitled'); }).join(', ') + '. Add one caption per image in photoCaptions.');
   parts.push('DRIVER REPUTATION RIGHT NOW (0-100): ' + repText(S));
+  var worn = wornText(S); if (worn) parts.push(worn);
   parts.push('Write the story now. ' + (o.interviews === false ? 'Return an empty interviews array.' : 'Include 2 to 3 pit road interviews tied to the story.') + '\n\n' + NEWS_SCHEMA);
   return AI.json({ system: newsSystem(S, outlet), user: parts.join('\n\n'), images: o.images || [], role: 'writer', maxTokens: 5000 });
 };
 AI.article = async function (S, o) {
   var res = await AI.articleDraft(S, o), race = o.race || null;
-  return AI.applyArticle(S, res, { outlet: o.outlet || 'wire', raceId: race ? race.id : '', preSid: o.preSid || '', media: o.mediaIds || [], replaceAutoFor: race ? race.id : null });
+  return AI.applyArticle(S, res, { outlet: o.outlet || 'wire', raceId: race ? race.id : '', preSid: o.preSid || '', media: o.mediaIds || [], replaceAutoFor: race ? race.id : null, ts: o.ts });
 };
 AI.applyArticle = function (S, res, o) {
   var a = res.article || {}; if (!a.headline || !a.body) throw new Error(AI.name() + ' returned a story without a headline or body.');
-  var staff = (J.OUTLETS[o.outlet] || J.OUTLETS.wire).staff, now = Date.now();
+  var staff = (J.OUTLETS[o.outlet] || J.OUTLETS.wire).staff, now = o.ts || Date.now();
   var art = { id: J.uid('a'), outlet: o.outlet, headline: String(a.headline).slice(0, 160), dek: String(a.dek || '').slice(0, 260), body: String(a.body), author: staff[Math.floor(Math.random() * staff.length)], ts: now, raceId: o.raceId || '', preSid: o.preSid || '', tags: (a.tags || []).slice(0, 6).map(String), media: o.media || [] };
   if (o.replaceAutoFor) S.articles = S.articles.filter(function (x) { return !(x.auto && x.raceId === o.replaceAutoFor); });
   (a.photoCaptions || []).forEach(function (c, i) { var m = S.media.find(function (x) { return x.id === (o.media || [])[i]; }); if (m && c && !m.caption) m.caption = String(c).slice(0, 200); });
@@ -419,37 +512,70 @@ AI.applyArticle = function (S, res, o) {
    'pre' (after practice or qualifying), 'week' (commissioner pressed the button). */
 var DESK = {
   wire: 'Checkered Wire (race coverage): previews, recaps, points-race news. Straight news voice. 350 to 550 words.',
-  silly: 'Silly Season Daily (contracts, rides, sponsors, crew chiefs, rumors): with no commissioner input you MAY invent league-fiction rumors, but only about rides, contracts, sponsors, crew chief or team moves, always framed as unconfirmed ("per sources", "is said to be", "nothing is signed"), one storyline per story, and continue an earlier rumor from RECENT HEADLINES when there is one instead of starting a new one. Never personal life, money figures, legal trouble or health. 300 to 450 words.',
+  silly: 'Silly Season Daily (contracts, rides, sponsors, crew chiefs, rumors): league fiction about rides, contracts, sponsors, crew chiefs or team moves ONLY. Follow the SILLY SEASON CALENDAR below for what is realistic right now. One storyline per story. Prefer moving an existing storyline forward (or killing it) over starting a new one. Sourcing like "per sources", "is said to be", "nothing is signed" until a storyline is confirmed. Never personal life, money figures, legal trouble or health. 300 to 450 words.',
   notes: 'Pit Notes (analysis and features): one angle the data supports (momentum, cut-line math, a track-type trend, a rivalry, a slump), argued with numbers. A few "## " subheads allowed. 450 to 650 words.'
+};
+function sillyBlock(S) {
+  var ph = J.sillyPhase(S), all = (S.silly || []).slice(-10);
+  return 'SILLY SEASON CALENDAR: ' + ph.label + ' (race ' + ph.run + ' of ' + ph.total + '; field for ' + S.chase.name + ' set after race ' + ph.cut + '). ' + ph.guide + ' The furthest a storyline may go right now: "' + ph.maxStage + '".'
+    + '\nSTORYLINE STAGES in order: whisper, rumor, talks, close, confirmed (or dead if it falls through). A storyline moves one stage per story, two at most, and needs at least two earlier stories before it can be confirmed.'
+    + (all.length ? '\nSTORYLINES SO FAR (id | title | stage | stories so far | race it started):\n' + all.map(function (x) { return x.id + ' | ' + x.title + ' | ' + x.stage + ' | ' + x.history.length + ' | race ' + x.openedAt; }).join('\n') : '\nNo storylines yet.')
+    + '\nFor the Silly Season Daily story add "storyline":{"id":"existing id or new","title":"short label, e.g. Gibbs to the 22 for next season","drivers":["Full Name"],"stage":"..."}.';
+}
+var ORDER = J.SILLY_STAGES;
+AI.applyStoryline = function (S, sl, art) {
+  if (!sl || !sl.title && !sl.id) return null;
+  var ph = J.sillyPhase(S), cap = ORDER.indexOf(ph.maxStage), want = ORDER.indexOf(sl.stage); if (want < 0) want = 1;
+  var x = (S.silly || []).find(function (q) { return q.id === sl.id; });
+  if (!x) {
+    x = { id: J.uid('sl'), title: String(sl.title || art.headline).slice(0, 90), drivers: (sl.drivers || []).slice(0, 3).map(String), stage: 'whisper', openedAt: S.races.length, history: [] };
+    want = Math.min(want, 1); S.silly.push(x);
+  } else if (x.stage === 'confirmed' || x.stage === 'dead') return x;
+  var cur = ORDER.indexOf(x.stage), next = want;
+  if (next !== 5) { next = Math.min(next, cur + 2, cap); if (next === 4 && x.history.length < 2) next = 3; if (next < cur) next = cur; }
+  x.stage = ORDER[next]; x.history.push({ ts: art.ts, stage: x.stage, art: art.id }); art.storyline = x.id;
+  S.silly = S.silly.slice(-30);
+  return x;
 };
 AI.newsCycle = async function (S, o) {
   o = o || {}; var phase = o.phase || 'week', parts = [], plan;
   if (!J.roster(S).length) throw new Error('The newsroom needs drivers to write about. Import a race, practice or qualifying first.');
   var nx = J.nextRound(S), race = o.race || (phase === 'post' ? S.races[S.races.length - 1] : null);
-  if (phase === 'post') plan = ['notes', 'silly'];
-  else if (phase === 'pre') plan = ['wire', S.races.length ? 'notes' : 'silly'];
-  else plan = S.races.length ? ['wire', 'notes', 'silly'] : ['wire', 'silly'];
-  parts.push('LEAGUE STANDINGS NOW: ' + (standingsText(S, 16) || 'no races run yet') + '.');
+  var sp = J.sillyPhase(S), roll = J.rng('silly' + S.races.length + ':' + S.articles.length + ':' + phase)(), wantSilly = o.silly === true || (o.silly !== false && roll < sp.rate);
+  if (phase === 'post') plan = wantSilly ? ['notes', 'silly'] : ['notes'];
+  else if (phase === 'pre') plan = ['wire'].concat(S.races.length ? ['notes'] : []).concat(wantSilly ? ['silly'] : []).slice(0, 2);
+  else plan = (S.races.length ? ['wire', 'notes'] : ['wire']).concat(wantSilly ? ['silly'] : []);
+  var target = o.sid ? S.schedule.find(function (x) { return x.id === o.sid; }) : nx;
+  var before = target ? racesBefore(S, target.id) : S.races, ranTarget = target && S.races.some(function (x) { return x.sid === target.id; });
+  parts.push('LEAGUE STANDINGS' + (phase === 'post' ? ' NOW' : ' GOING IN') + ': ' + (standingsText(S, 16, phase === 'post' ? S.races : before) || 'no races run yet') + '.');
   var cp = J.chasePicture(S);
-  if (cp && cp.lastIn && cp.firstOut) parts.push(S.chase.name.toUpperCase() + ' PICTURE: top ' + cp.size + ' make it after race ' + cp.cutRace + ' (' + (cp.decided ? 'field is set' : cp.left + ' races left before the cut') + '). ' + (cp.winners ? cp.winners + ' race winner(s) locked in. ' : '') + 'Last in on points: ' + cp.lastIn.name + ' (' + cp.lastIn.pts + '). First out: ' + cp.firstOut.name + ' (' + cp.firstOut.pts + ').');
+  if (cp && cp.lastIn && cp.firstOut && !ranTarget) parts.push(S.chase.name.toUpperCase() + ' PICTURE: top ' + cp.size + ' make it after race ' + cp.cutRace + ' (' + (cp.decided ? 'field is set' : cp.left + ' races left before the cut') + '). ' + (cp.winners ? cp.winners + ' race winner(s) locked in. ' : '') + 'Last in on points: ' + cp.lastIn.name + ' (' + cp.lastIn.pts + '). First out: ' + cp.firstOut.name + ' (' + cp.firstOut.pts + ').');
   if (race) parts.push('LATEST RACE:\n' + AI.raceFacts(S, race));
-  var preSid = o.sid || (nx && J.sessionsFor(S, nx.id).length ? nx.id : '');
-  if (nx) parts.push(preSid ? 'NEXT RACE (has NOT been run):\n' + AI.sessionFacts(S, preSid) : 'NEXT RACE (has NOT been run): ' + nx.name + (nx.track ? ' at ' + nx.track : '') + ' (' + J.TYPES[nx.type].toLowerCase() + ')' + (nx.date ? ', ' + nx.date : '') + '.');
-  var ro = nx ? J.raceOutlook(S) : null;
+  var preSid = phase === 'post' ? '' : (o.sid || (nx ? nx.id : ''));
+  if (preSid) parts.push('THE RACE THESE STORIES PREVIEW (has NOT been run as of these stories):\n' + AI.sessionFacts(S, preSid));
+  else if (nx) parts.push('NEXT RACE (has NOT been run): ' + nx.name + (nx.track ? ' at ' + nx.track : '') + ' (' + J.TYPES[nx.type].toLowerCase() + ')' + (nx.date ? ', ' + nx.date : '') + '.');
+  var ro = nx && (!preSid || preSid === nx.id) ? J.raceOutlook(S) : null;
   if (ro && ro.favorites) parts.push('MODEL WIN ODDS FOR THE NEXT RACE (from the site\'s simulator; quote as "the model" if you use them): ' + ro.rows.slice(0, 6).map(function (r) { return r.name + ' ' + Math.round(r.win * 100) + '%'; }).join(', ') + '.');
   parts.push('DRIVER REPUTATION (0-100): ' + repText(S));
-  var recent = S.articles.slice(0, 14).map(function (a) { return '- [' + (J.OUTLETS[a.outlet] || J.OUTLETS.wire).name + '] ' + a.headline; });
-  if (recent.length) parts.push('RECENT HEADLINES (do not repeat these angles; continue storylines instead):\n' + recent.join('\n'));
-  parts.push('WRITE ' + plan.length + ' STORIES, one per outlet, in this order: ' + plan.map(function (k) { return J.OUTLETS[k].name; }).join(', ') + '.\n' + plan.map(function (k) { return '- ' + DESK[k]; }).join('\n')
-    + (phase === 'pre' || (phase === 'week' && nx) ? '\nThe next race has NOT happened. Previews may predict, never report a result.' : '')
-    + '\n\nReturn ONLY JSON: {"articles":[{"outlet":"wire|silly|notes","headline":"...","dek":"one sentence","body":"paragraphs separated by a blank line","tags":["Driver Name"]}]}');
-  var sys = 'You are the editors of three fictional outlets covering "' + S.league.name + '", a SIMULATED ' + S.series.label + ' league run in NASCAR Racing 2003. The drivers are the league\'s sim drivers. Everything is fiction for a sim-racing fan site; keep it on racing and the league. Nothing about anyone\'s real-world personal life, politics, family, health, legal matters or money.\n\n' + NEWS_RULES + ' Headlines read like real motorsport headlines: specific, no puns stacked on puns, no colons-and-questions template. Each story has a different angle and different drivers where possible. No quotes from drivers in these stories.';
+  if (plan.indexOf('silly') >= 0) parts.push(sillyBlock(S));
+  var recent = S.articles.slice(0, 16).map(function (a) { return '- [' + (J.OUTLETS[a.outlet] || J.OUTLETS.wire).name + '] ' + a.headline; });
+  if (recent.length) parts.push('RECENT HEADLINES (do not repeat these angles or headline shapes; continue storylines instead):\n' + recent.join('\n'));
+  var worn = wornText(S); if (worn) parts.push(worn);
+  parts.push('WRITE ' + plan.length + ' ' + (plan.length === 1 ? 'STORY' : 'STORIES, one per outlet, in this order') + ': ' + plan.map(function (k) { return J.OUTLETS[k].name; }).join(', ') + '.\n' + plan.map(function (k) { return '- ' + DESK[k]; }).join('\n')
+    + (phase !== 'post' ? '\nThe race being previewed has NOT happened. Previews may predict, never report a result.' : '')
+    + '\n\nReturn ONLY JSON: {"articles":[{"outlet":"wire|silly|notes","headline":"...","dek":"one sentence","body":"paragraphs separated by a blank line","tags":["Driver Name"],"storyline":{...only for Silly Season Daily...}}]}');
+  var sys = 'You are the editors of three fictional outlets covering "' + S.league.name + '", a SIMULATED ' + S.series.label + ' league run in NASCAR Racing 2003. The drivers are the league\'s sim drivers. Everything is fiction for a sim-racing fan site; keep it on racing and the league. Nothing about anyone\'s real-world personal life, politics, family, health, legal matters or money.\n\n' + NEWS_RULES + ' Headlines read like real motorsport headlines: specific, no puns stacked on puns, no colons-and-questions template. Each story has a different angle, different drivers where possible, and its own vocabulary: no shared phrases between the stories. No quotes from drivers in these stories.';
   var res = await AI.json({ system: sys, user: parts.join('\n\n'), role: 'writer', maxTokens: 9000 });
   var made = [];
   (res.articles || []).slice(0, 3).forEach(function (a, i) {
     var outlet = J.OUTLETS[a.outlet] ? a.outlet : plan[i] || 'notes';
     if (!a || !a.headline || !a.body) return;
-    try { var art = AI.applyArticle(S, { article: a, interviews: [], reputation: [] }, { outlet: outlet, raceId: phase === 'post' && race ? race.id : '', preSid: phase !== 'post' && preSid ? preSid : '', media: [] }); art.desk = true; art.ts -= (i + 1) * 300000; made.push(art); } catch (e) { /* skip a bad one */ }
+    var kind = phase === 'post' ? (outlet === 'silly' ? 'silly' : 'analysis') : phase === 'pre' || o.sid ? 'preview' : 'now';
+    var ts = kind === 'now' ? Date.now() - (i + 1) * 300000 : J.storyTime(S, kind, { race: phase === 'post' ? race : null, sid: preSid, slot: i });
+    try {
+      var art = AI.applyArticle(S, { article: a, interviews: [], reputation: [] }, { outlet: outlet, raceId: phase === 'post' && race ? race.id : '', preSid: preSid, media: [], ts: ts });
+      art.desk = true; if (outlet === 'silly') AI.applyStoryline(S, a.storyline, art); made.push(art);
+    } catch (e) { /* skip a bad one */ }
   });
   if (!made.length) throw new Error(AI.name() + ' did not write any usable stories. Try again.');
   return made;
@@ -465,6 +591,8 @@ AI.outlooks = async function (S) {
     + (ro && ro.favorites ? 'NEXT RACE: ' + ro.next.name + ' at ' + (ro.next.track || 'TBD') + ' (' + J.TYPES[ro.type].toLowerCase() + '). Win odds: ' + ro.rows.slice(0, 8).map(function (r) { return r.name + ' ' + p(r.win); }).join('; ') + '. Should run well: ' + ro.shouldRunWell.map(function (r) { return r.name; }).join(', ') + '. Dark horses: ' + (ro.darkHorses.map(function (r) { return r.name; }).join(', ') || 'none yet (not enough races at this kind of track)') + '. Not expected up front: ' + ro.notUpFront.map(function (r) { return r.name; }).join(', ') + '. Highest wreck risk: ' + ro.wreckRisk.map(function (r) { return r.name + ' ' + p(r.dnf); }).join(', ') + '.\n\n' : 'NEXT RACE: none left on the schedule.\n\n')
     + 'SEASON PROJECTION: ' + so.rows.slice(0, 12).map(function (r) { return r.name + ' projected P' + r.rankMed + ', ' + Math.round(r.projPts) + ' pts, title odds ' + p(r.champOdds); }).join('; ') + '\n\n'
     + 'DRIVER REPUTATION: ' + repText(S) + '\n\n'
+    + (S.ai.chase ? 'LAST TIME THEY SAID (say something new, do not reuse these words): ' + ['chase', 'race', 'season'].map(function (k) { return S.ai[k] ? S.ai[k].headline + ' / ' + S.ai[k].summary : ''; }).join(' | ') + '\n\n' : '')
+    + (wornText(S) ? wornText(S) + '\n\n' : '')
     + 'Write three short takes as three different people, grounded ONLY in the numbers above. Do not change any number. Return ONLY JSON: {"chase":{"headline":"short","summary":"2 to 3 sentences","notes":{"Full Name":"one sentence"}},"race":{...same shape...},"season":{...same shape...}}. Up to 6 notes each, only for drivers with something interesting to say (bubble drivers, surprises, hot or cold streaks). '
     + 'Voices: chase = Dana Whitfield, analyst (precise, numbers first, polite but pointed). race = Tommy Bishop, racing YouTuber (loud, confident, a real opinion, one joke max). season = Big Lou Marchetti, radio host (old school, a little grumpy, a short story or comparison). Plain language, no em dashes, no cliches like "buckle up".';
   var res = await AI.json({ system: 'You write short analyst commentary for a simulated NASCAR Racing 2003 league website. Everything is fiction about sim drivers. Stay on the racing.', user: user, role: 'chatter', maxTokens: 3500 });
@@ -482,14 +610,14 @@ AI.coverage = async function (S, race, step) {
   step = step || function () {};
   var art = null, fail = 0;
   step('recap', 'run');
-  try { art = await AI.article(S, { outlet: 'wire', race: race, headline: '', notes: '' }); step('recap', 'ok', art.headline); } catch (e) { fail++; step('recap', 'err', e.message); }
+  try { art = await AI.article(S, { outlet: 'wire', race: race, headline: '', notes: '', ts: J.storyTime(S, 'recap', { race: race }) }); step('recap', 'ok', art.headline); } catch (e) { fail++; step('recap', 'err', e.message); }
   if (J.settings.autoNews !== false) {
     step('news', 'run');
     try { var made = await AI.newsCycle(S, { phase: 'post', race: race }); step('news', 'ok', made.length + (made.length === 1 ? ' story' : ' stories')); } catch (e) { fail++; step('news', 'err', e.message); }
   }
   var info = J.raceInfo(race), focus = [info.winner.driver]; if (info.mover) focus.push(info.mover.row.driver); if (info.poleRow) focus.push(info.poleRow.driver);
   step('fans', 'run');
-  try { var n = await AI.threads(S, { facts: AI.raceFacts(S, race), story: art, focus: focus, ref: art ? { type: 'article', id: art.id } : { type: 'race', id: race.id } }); step('fans', 'ok', n + ' posts'); } catch (e) { fail++; step('fans', 'err', e.message); }
+  try { var n = await AI.threads(S, { facts: AI.raceFacts(S, race), story: art, focus: focus, at: art ? art.ts : J.storyTime(S, 'recap', { race: race }), ref: art ? { type: 'article', id: art.id } : { type: 'race', id: race.id } }); step('fans', 'ok', n + ' posts'); } catch (e) { fail++; step('fans', 'err', e.message); }
   step('outlooks', 'run');
   try { await AI.outlooks(S); step('outlooks', 'ok'); } catch (e) { fail++; step('outlooks', 'err', e.message); }
   var ch = J.driftFans(S); step('drift', 'ok', ch.length ? ch.length + ' fans changed sides' : 'no one switched');

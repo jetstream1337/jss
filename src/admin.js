@@ -236,10 +236,10 @@ J.reactToArticle = async function (id, quiet) {
   if (reacting[id]) return; reacting[id] = 1;
   if (!quiet) J.toast('The fans are reading the story. About 30 seconds.');
   try {
-    var nx = J.nextRound(S), preSid = a.preSid || ((!a.raceId && nx && J.sessionsFor(S, nx.id).length && (!S.races.length || a.ts > (S.races[S.races.length - 1].ts || 0))) ? nx.id : '');
+    var nx = J.nextRound(S), preSid = a.preSid || '';
     var race = preSid ? null : (S.races.find(function (r) { return r.id === a.raceId; }) || S.races[S.races.length - 1]);
     var facts = (preSid ? J.ai.sessionFacts(S, preSid) + '\n' : race ? J.ai.raceFacts(S, race) + '\n' : '') + 'THE ARTICLE (' + J.OUTLETS[a.outlet].name + '):\n' + a.headline + '\n' + (a.dek || '') + '\n' + a.body.slice(0, 3500);
-    var n = await J.ai.threads(S, { facts: facts, story: a, focus: a.tags || [], ref: { type: 'article', id: a.id }, task: 'Write 4 to 6 threads reacting to THIS article. People quote it, argue with it, call it fake news, add context, or bring up something it left out. Keep every fact consistent with the article and the race data.' });
+    var n = await J.ai.threads(S, { facts: facts, story: a, focus: a.tags || [], at: a.ts, ref: { type: 'article', id: a.id }, task: 'Write 4 to 6 threads reacting to THIS article. People quote it, argue with it, call it fake news, add context, or bring up something it left out. Keep every fact consistent with the article and the race data.' });
     J.driftFans(S); J.save({ render: J.route().name === 'news' || J.route().name === 'garage' });
     J.toast(n + ' fan posts added.');
   } catch (e) { J.toast('Fan reactions failed: ' + e.message, true); }
@@ -249,9 +249,15 @@ J.acts.reactArticle = function (el) { J.reactToArticle(el.dataset.id); };
 J.acts.runNewsroom = function () { garageRun('news'); };
 
 /* ---------- Garage tools ---------- */
+function sillyNote(S) {
+  var ph = J.sillyPhase(S), pct = Math.round(ph.rate * 100);
+  var how = { preseason: 'Only this season\'s sponsor and paint scheme news, no rumors about next year yet.', early: 'Real teams almost never announce next year this early, so it is whispers and rumors only.', spring: 'Rumors heat up and teams start talks, but no big announcements yet.', summer: 'The busiest stretch. This is when real teams confirm most of next year.', playoffs: 'Most rides are set. The last open seats and quiet crew chief whispers.', finale: 'Teams stay quiet so they do not step on the title fight.', offseason: 'Announcement season: crew chief swaps, new sponsors, the last open seats.' }[ph.id];
+  return '<p class="fine">Silly season right now: <b>' + esc(ph.label) + '</b>. ' + esc(how) + ' Each newsroom run has about a ' + pct + '% chance of a silly season story.</p>';
+}
 var gBusy = '';
 async function garageRun(kind) {
   var S = J.S; if (gBusy) return; if (!J.ai.hasKey()) { J.toast('Add your ' + J.ai.name() + ' key in Settings first.', true); return; }
+  var newsFor = ($('newsFor') || {}).value || ''; J.ui.newsFor = newsFor;
   var nx = J.nextRound(S), pre = nx && J.sessionsFor(S, nx.id).length;
   if (!S.races.length && !pre && kind !== 'news') { J.toast('Import a race, practice or qualifying first.', true); return; }
   if (kind === 'outlooks' && !S.races.length) { J.toast('Outlook commentary needs at least one race. Practice and qualifying already show in the Race Outlook.', true); return; }
@@ -262,7 +268,7 @@ async function garageRun(kind) {
       var facts = pre ? J.ai.sessionFacts(S, nx.id) + (race ? '\n\nLAST RACE, for context:\n' + J.ai.raceFacts(S, race) : '') : J.ai.raceFacts(S, race) + (nx ? '\nNext race: ' + nx.name + ' at ' + (nx.track || 'TBD') + ' (' + J.TYPES[nx.type].toLowerCase() + ').' : '');
       await J.ai.threads(S, { facts: facts, focus: [], ref: { type: 'week', id: race ? race.id : nx.id }, task: pre ? 'The next race has NOT been run yet. Write 5 to 7 threads of pre-race chatter: practice and qualifying takes, predictions, fantasy picks, hype, someone worried about their driver, a rumor. Never say who won the next race.' : 'It is the middle of the week between races. Write 5 to 7 threads of the usual chatter: hot takes about the standings, predictions for the next race, someone still mad about last week, a fantasy lineup argument, a rumor, one person asking a dumb question and getting roasted. Not everything is about the last race.' });
     }
-    if (kind === 'news') { var made = await J.ai.newsCycle(S, { phase: 'week' }); J.driftFans(S); J.save({ render: false }); J.toast(made.length + (made.length === 1 ? ' new story' : ' new stories') + ' from the newsroom.'); gBusy = ''; J.refresh(); return; }
+    if (kind === 'news') { var nsid = newsFor; var made = await J.ai.newsCycle(S, nsid ? { phase: 'pre', sid: nsid } : { phase: 'week' }); J.driftFans(S); J.save({ render: false }); J.toast(made.length + (made.length === 1 ? ' new story' : ' new stories') + ' from the newsroom.'); gBusy = ''; J.refresh(); return; }
     if ((kind === 'refresh' || kind === 'outlooks') && S.races.length) await J.ai.outlooks(S);
     J.driftFans(S); J.save({ render: false }); J.toast('The Garage is refreshed.');
   } catch (e) { J.toast(e.message, true); }
@@ -277,7 +283,10 @@ J.routes.garagetools = function (S) {
   var drivers = J.roster(S);
   return J.phead('Garage Tools', 'Keep the fan chat and outlooks fresh')
     + (!hasKey ? '<div class="warn" style="margin:0 0 18px">These need an AI key (Gemini is free). Add it in <a href="#/settings"><b>Settings</b></a>.</div>' : '')
-    + '<section class="panel"><h3>Refresh</h3><p class="sub">Race imports do this for you. Use these between races or when the Garage feels stale.</p><div class="row" style="margin-top:0">' + b('refresh', 'Refresh the Garage') + b('talk', 'New fan chatter only') + b('outlooks', 'New outlook commentary only') + b('news', 'Run the newsroom') + '</div><p class="fine">Run the newsroom writes 2 or 3 new stories across the outlets about the week: what is coming up, the cut line, rumors.</p></section>'
+    + '<section class="panel"><h3>Refresh</h3><p class="sub">Race imports do this for you. Use these between races or when the Garage feels stale.</p><div class="row" style="margin-top:0">' + b('refresh', 'Refresh the Garage') + b('talk', 'New fan chatter only') + b('outlooks', 'New outlook commentary only') + '</div></section>'
+    + '<section class="panel"><h3>Newsroom</h3><p class="sub">The outlets write 1 to 3 new stories. Pick a race to get previews dated the morning of that race, or "This week" for general news dated today. Silly season stories follow the real NASCAR calendar, so early in the season they are rare.</p>'
+    + '<div class="inl"><select id="newsFor" aria-label="Stories about"><option value="">This week (dated today)</option>' + S.schedule.filter(function (r) { return !S.races.some(function (x) { return x.sid === r.id; }); }).map(function (r) { var d = J.roundDate(S, r.id), nx = J.nextRound(S); return '<option value="' + esc(r.id) + '"' + ((J.ui.newsFor != null ? J.ui.newsFor === r.id : nx && nx.id === r.id) ? ' selected' : '') + '>Before ' + esc(r.name) + (d ? ' (' + esc(J.fmtDate(d)) + ')' : ' (no date set)') + '</option>'; }).join('') + '</select>' + b('news', 'Run the newsroom') + '</div>'
+    + sillyNote(S) + sillyAdmin(S) + '</section>'
     + '<section class="panel"><h3>Fan accounts</h3><p class="sub">' + J.plural(S.fans.length, 'account') + ': ' + ages.teen + ' teens, ' + ages.young + ' young adults, ' + ages.adult + ' adults, ' + ages.oldhead + ' old-heads. ' + st.good + ' back a driver, ' + st.bad + ' are haters, ' + st.none + ' are neutral.</p>'
     + '<div class="row" style="margin-top:0"><button class="btn ghost sm" data-act="fansFill"' + (drivers.length ? '' : ' disabled') + '>Add more fans</button><button class="btn danger sm" data-act="fansReset"' + (S.fans.length ? '' : ' disabled') + '>Replace all fans</button></div></section>'
     + '<section class="panel"><h3>Nudge a reputation</h3><p class="sub">Something happened that the app did not see? Move a driver\'s reputation yourself. Fans react to big swings over time.</p>'
@@ -287,6 +296,12 @@ J.routes.garagetools = function (S) {
     + '<section class="panel"><h3>Pit road quotes</h3>' + (S.interviews.length ? S.interviews.map(function (x) { return '<div class="mrow"><div style="flex:1"><b>' + esc(x.driver) + '</b><small>' + esc(x.quote) + '</small></div><button class="btn danger sm" data-act="ivDel" data-id="' + esc(x.id) + '">Delete</button></div>'; }).join('') : '<p class="dim">No quotes yet.</p>') + '</section>';
 };
 J.nav.push({ id: 'garagetools', label: 'Garage Tools', group: 'Commissioner', admin: true });
+function sillyAdmin(S) {
+  var all = (S.silly || []).slice().reverse(); if (!all.length) return '';
+  return '<h3 style="font-size:19px;margin-top:14px">Silly season storylines</h3>' + all.map(function (x) { return '<div class="mrow"><div><b>' + esc(x.title) + '</b><small>' + esc(J.SILLY_LABEL[x.stage]) + ', ' + J.plural(x.history.length, 'story') + ', started at race ' + x.openedAt + '</small></div><div class="inl"><select data-sl="' + esc(x.id) + '" aria-label="Stage">' + J.SILLY_STAGES.map(function (k) { return '<option value="' + k + '"' + (x.stage === k ? ' selected' : '') + '>' + J.SILLY_LABEL[k] + '</option>'; }).join('') + '</select><button class="btn danger sm" data-act="slDel" data-id="' + esc(x.id) + '">Remove</button></div></div>'; }).join('');
+}
+document.addEventListener('change', function (e) { var t = e.target; if (!t.dataset || !t.dataset.sl) return; var x = (J.S.silly || []).find(function (q) { return q.id === t.dataset.sl; }); if (x) { x.stage = t.value; J.save({ render: false }); J.toast('Storyline set to ' + J.SILLY_LABEL[x.stage].toLowerCase() + '.'); } });
+J.acts.slDel = function (el) { var S = J.S; S.silly = (S.silly || []).filter(function (x) { return x.id !== el.dataset.id; }); J.save(); };
 J.acts.fansFill = function () { var n = J.S.fans.length; J.ai.ensureFans(J.S); J.save(); J.toast((J.S.fans.length - n) + ' fans added.'); };
 J.acts.fansReset = function () { if (!confirm('Replace every fan account? Their posts are deleted too.')) return; var S = J.S; S.fans = []; S.posts = []; J.ai.ensureFans(S); J.save(); J.toast(S.fans.length + ' new fan accounts.'); };
 J.acts.repNudge = function () { var S = J.S, why = $('repWhy').value.trim() || 'Commissioner adjustment'; if (J.repApply(S, $('repDrv').value, Number($('repDelta').value), why, 'track', '')) { J.driftFans(S); J.save(); J.toast('Reputation updated.'); } };

@@ -20,7 +20,7 @@ You need a free GitHub account. GitHub builds the Windows installer for you, and
 4. Open the **jss-app** folder on your PC, select **everything inside it** (the `src`, `build` and `.github` folders and all the files), and drag it all onto the GitHub page. Click **Commit changes**.
    - If you do not see the `.github` folder, in File Explorer click **View**, then **Show**, then **Hidden items**. It must be uploaded too, because it holds the build instructions.
 5. Click the **Actions** tab at the top of your repository. You will see **Build the Windows app** running (yellow dot). Wait about 5 minutes for a green check.
-6. Click that run, scroll down to **Artifacts**, and click **JSS-Commissioner-Setup**. A zip downloads. Open it and run **JSS-Commissioner-Setup-1.0.0.exe**.
+6. Click that run, scroll down to **Artifacts**, and click **JSS-Commissioner-Setup**. A zip downloads. Open it and run **JSS-Commissioner-Setup-2.1.0.exe**.
 7. Windows will probably say **"Windows protected your PC"** because the app is not from a big company. Click **More info**, then **Run anyway**. Install it like any other program. A **JSS Commissioner** shortcut appears on your desktop.
 
 > **Prefer not to use GitHub for the installer?** Install Node.js from nodejs.org, open the jss-app folder, type `cmd` in the address bar and press Enter, then type `npm install` and then `npm start`. The app opens. Use `npm run dist` to make the installer yourself (it lands in the `dist` folder).
@@ -68,11 +68,11 @@ If GitHub ever needs the token replaced (they expire), make a new one the same w
 | Page | What it is for |
 |---|---|
 | **Import Results** | Pick **Race results**, **Qualifying**, **Practice** or **Happy Hour**. Drop the NR2003 standings file from `exports_imports`, paste a list, or use a **screenshot** of the results screen (needs the AI key; check the names it read). Race results update the standings and the AI writes the recap. Practice and qualifying never touch the standings; they put the drivers in the field, get the fans hyping the race, show on the site and feed the Race Outlook. |
-| **Story Studio** | Drop race screenshots or replay clips, write a headline and what happened. For hype stories before a race, pick **Before (race name)** in the race box so the AI writes a preview and never makes up a result. Pick an outlet: **Checkered Wire** (race coverage), **Silly Season Daily** (contracts and rumors) or **Pit Notes** (analysis). The AI writes it, you edit, then publish. |
+| **Story Studio** | Drop race screenshots or replay clips, write a headline and what happened. For hype stories, pick any upcoming race under **Preview: before a race**. The AI writes a preview that never makes up a result, and the story is dated the morning of that race. Race recaps are dated that race night. Pick an outlet: **Checkered Wire** (race coverage), **Silly Season Daily** (contracts and rumors) or **Pit Notes** (analysis). The AI writes it, you edit, then publish. |
 | **Races** | Rename, change the date, change how points are scored, or remove a race. Practice and qualifying you imported are listed here too. |
 | **Edit Schedule** | Race names, tracks and **track types** (the track type is what the Race Outlook uses). |
 | **League** | League name, playoff size and cut-off race, the note on the home page, backups. |
-| **Garage Tools** | Refresh fan chatter between races, **Run the newsroom** for fresh stories midweek, add or replace fan accounts, nudge a driver's reputation, delete posts. |
+| **Garage Tools** | Refresh fan chatter between races, **Run the newsroom** for fresh stories (pick a race to get previews dated that race morning, or "This week"), see and change silly season storylines, add or replace fan accounts, nudge a driver's reputation, delete posts. |
 | **Settings** | Dark or light look for the app, AI key (Gemini free or Claude paid), whether the newsroom writes its own stories, website connection. |
 | **Preview public site** | See exactly what visitors see. |
 
@@ -92,7 +92,9 @@ The **Series** box in the sidebar switches between Cup, O'Reilly Auto Parts and 
 - **A Settings tab** where each visitor can switch to light mode, or have it follow their phone or computer. It is saved on their device only.
 - **Standings** show **+/- Cut**: how many points each driver is above or below the Chase cut line, with a red line where the cut falls, an "On the bubble" box, and a **Chase grid** tab that shows the field as if it were set today.
 - **The Garage** has about 140 fan accounts with realistic handles, 10 media personalities (reporter, YouTuber, analyst, radio host, insider, stats account, podcast, streamer, ex-crew chief, memes), quote posts and polls.
-- **News** comes from three outlets, each with its own logo. After every import the newsroom writes previews, analysis and silly season rumors on its own (you can turn this off in Settings).
+- **News** comes from three outlets, each with its own logo. After every import the newsroom writes previews and analysis on its own (you can turn this off in Settings).
+- **Silly season follows the real NASCAR calendar.** Early in the year it is quiet whispers, rumors and talks build through spring, most deals get confirmed in summer before the playoffs, it goes quiet during championship week, and the offseason brings crew chief swaps and new sponsors. Each rumor moves step by step (whisper, rumor, talks, close to a deal, confirmed, or falls through), and the News page shows a **Silly season board** with where every storyline stands.
+- **The AI avoids repeating itself.** It keeps track of phrases fans and writers have worn out and is told not to use them again, and near-copies of earlier posts are thrown out.
 
 ---
 

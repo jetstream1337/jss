@@ -79,13 +79,21 @@ function draftHtml() {
 J.routes.studio = function (S) {
   var hasKey = J.ai && J.ai.hasKey(), races = S.races.slice().reverse(), done = {};
   S.races.forEach(function (r) { done[r.sid] = 1; });
-  var pre = S.schedule.filter(function (r) { return !done[r.id] && J.sessionsFor(S, r.id).length; });
   var nx = J.nextRound(S);
-  if (st.raceId === '' && !st._touchedRace) st.raceId = (nx && pre.indexOf(nx) >= 0) ? 'pre:' + nx.id : races[0] ? races[0].id : '';
+  if (st.raceId === '' && !st._touchedRace) st.raceId = nx ? 'pre:' + nx.id : races[0] ? races[0].id : '';
+  var dayOf = function (sid) { var d = J.roundDate(S, sid); return d ? J.fmtDate(d) : 'no date set'; };
+  var preOpt = function (r) { var v = 'pre:' + r.id, ss = J.sessionsFor(S, r.id); return '<option value="' + esc(v) + '"' + (v === st.raceId ? ' selected' : '') + '>Before ' + esc(r.name) + ' (' + dayOf(r.id) + (ss.length ? ', ' + ss.map(function (x) { return J.SESSIONS[x.type].toLowerCase(); }).join(' + ') + ' in' : '') + ')</option>'; };
+  var upcoming = S.schedule.filter(function (r) { return !done[r.id]; }), past = S.schedule.filter(function (r) { return done[r.id]; });
+  var opts = '<option value="">No specific race</option>'
+    + (upcoming.length ? '<optgroup label="Preview: before a race">' + upcoming.map(preOpt).join('') + '</optgroup>' : '')
+    + (races.length ? '<optgroup label="After a race">' + races.map(function (r) { return '<option value="' + esc(r.id) + '"' + (r.id === st.raceId ? ' selected' : '') + '>After ' + esc(r.name) + ' (' + (r.date ? esc(J.fmtDate(r.date)) : 'no date') + ')</option>'; }).join('') + '</optgroup>' : '')
+    + (past.length ? '<optgroup label="Preview of a race already run (written as of race morning)">' + past.map(preOpt).join('') + '</optgroup>' : '');
+  var selPre = /^pre:/.test(st.raceId) ? st.raceId.slice(4) : '', selRace = S.races.find(function (r) { return r.id === st.raceId; });
+  var dateNote = selPre ? (J.roundDate(S, selPre) ? 'Dated ' + J.fmtDate(J.roundDate(S, selPre)) + ', the morning of the race.' : 'This race has no date yet, so the story is dated today. Add one in Edit Schedule.') : selRace ? (selRace.date ? 'Dated ' + J.fmtDate(selRace.date) + ', race night.' : 'Dated today.') : 'Dated today.';
   return J.phead('Story Studio', 'Add race photos or video, write a headline, and the AI writes the story in the outlet\'s voice.')
     + '<section class="panel"><div class="fgrid">'
     + '<div class="field"><label for="stOutlet">Outlet</label><select id="stOutlet">' + Object.keys(J.OUTLETS).map(function (k) { return '<option value="' + k + '"' + (st.outlet === k ? ' selected' : '') + ' title="' + esc(J.OUTLETS[k].tag) + '">' + esc(J.OUTLETS[k].name) + ': ' + esc(J.OUTLETS[k].tag.toLowerCase()) + '</option>'; }).join('') + '</select></div>'
-    + '<div class="field"><label for="stRace">Race it is about</label><select id="stRace"><option value="">No specific race</option>' + pre.map(function (r) { var v = 'pre:' + r.id; return '<option value="' + esc(v) + '"' + (v === st.raceId ? ' selected' : '') + '>Before ' + esc(r.name) + ' (preview, ' + esc(J.sessionsFor(S, r.id).map(function (x) { return J.SESSIONS[x.type].toLowerCase(); }).join(' + ')) + ' in)</option>'; }).join('') + races.map(function (r) { return '<option value="' + esc(r.id) + '"' + (r.id === st.raceId ? ' selected' : '') + '>' + esc(r.name) + (r.date ? ' (' + esc(J.fmtDate(r.date)) + ')' : '') + '</option>'; }).join('') + '</select></div>'
+    + '<div class="field"><label for="stRace">Race it is about</label><select id="stRace">' + opts + '</select><small class="dim" style="display:block;margin-top:5px">' + esc(dateNote) + '</small></div>'
     + '<div class="field wide"><label for="stHead">Your headline</label><input id="stHead" value="' + esc(st.headline) + '" placeholder="Example: Blaney and Logano tangle in turn 3, Blaney furious"></div>'
     + '<div class="field wide"><label for="stNotes">What happened (optional, but the more you say the better the story)</label><textarea id="stNotes" placeholder="Lap 22, Logano got into the back of Blaney off turn 2. Blaney spun and lost 3 laps. Blaney waved at him under caution...">' + esc(st.notes) + '</textarea></div></div>'
     + '<div class="drop" id="sDrop"><strong>Drop photos or video here</strong><p>Screenshots or replay clips from NR2003. The AI looks at them while writing. Videos: the app pulls a few frames out for it to look at.</p><div class="row" style="justify-content:center"><button class="btn ghost" data-act="stPick">Choose photos or video</button></div><input type="file" id="stFile" accept="image/*,video/*" multiple hidden></div>'
@@ -113,7 +121,7 @@ document.addEventListener('input', function (e) {
   if (t.classList && t.classList.contains('vlink')) { var it = st.items.find(function (x) { return x.id === t.dataset.id; }); if (it) it.link = t.value.trim(); return; }
   if (/^st(Head|Notes)$/.test(t.id)) readForm();
 });
-document.addEventListener('change', function (e) { if (/^st(Outlet|Race|High|Ints|React)$/.test(e.target.id)) { if (e.target.id === 'stRace') st._touchedRace = true; readForm(); } });
+document.addEventListener('change', function (e) { if (/^st(Outlet|Race|High|Ints|React)$/.test(e.target.id)) { if (e.target.id === 'stRace') st._touchedRace = true; readForm(); if (e.target.id === 'stRace') J.refresh(); } });
 J.acts.stPick = function () { $('stFile').click(); };
 J.acts.stRemove = function (el) { st.items = st.items.filter(function (x) { return x.id !== el.dataset.id; }); paintItems(); };
 J.acts.stDiscard = function () { st.draft = null; $('stDraftSlot').innerHTML = ''; };
@@ -173,7 +181,9 @@ J.acts.stPublish = async function () {
   var ivs = (d.interviews || []).filter(function (_, i) { var c = document.querySelector('[data-iv="' + i + '"]'); return !c || c.checked; });
   var reps = (d.reputation || []).filter(function (_, i) { var c = document.querySelector('[data-rp="' + i + '"]'); return !c || c.checked; });
   var preSid = /^pre:/.test(st.raceId) ? st.raceId.slice(4) : '', raceId = preSid ? '' : st.raceId, ids = await saveItems(S, raceId, st.highlights);
-  var art = J.ai.applyArticle(S, { article: a, interviews: ivs, reputation: reps }, { outlet: st.outlet, raceId: raceId, preSid: preSid, media: ids });
+  var race = S.races.find(function (r) { return r.id === raceId; }) || null;
+  var ts = preSid ? J.storyTime(S, 'preview', { sid: preSid }) : race ? J.storyTime(S, st.outlet === 'silly' ? 'silly' : 'recap', { race: race }) + 15 * 60000 : Date.now();
+  var art = J.ai.applyArticle(S, { article: a, interviews: ivs, reputation: reps }, { outlet: st.outlet, raceId: raceId, preSid: preSid, media: ids, ts: ts });
   if (d.manual) { art.author = 'Commissioner'; }
   var react = st.react && J.ai.hasKey();
   st.items = []; st.draft = null; st.headline = ''; st.notes = '';
