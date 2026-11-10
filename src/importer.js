@@ -133,7 +133,7 @@ J.importType = 'race';   // race | qualifying | practice | happy
 J.coverageRun = null;    // { title, steps:[{id,label,state,detail}], done, fails }
 var TYPES = [['race', 'Race results'], ['qualifying', 'Qualifying'], ['practice', 'Practice'], ['happy', 'Happy Hour'], ['test', 'Preseason test']];
 var STEP_LABELS = { recap: 'Race recap article', news: 'Newsroom stories (analysis and silly season)', prenews: 'Preview stories from the newsroom', fans: 'Fan reactions in The Garage', hype: 'Fans hyping up the race in The Garage', outlooks: 'Chase, Race and Season outlook commentary', drift: 'Fans changing sides' };
-function typeLabel(t) { return t === 'race' ? 'Race' : J.SESSIONS[t]; }
+function typeLabel(t) { return t === 'race' ? 'Race' : t === 'test' ? 'Preseason test' : J.SESSIONS[t] || 'Results'; }
 
 function coverageHtml() {
   var c = J.coverageRun; if (!c) return '';
@@ -183,7 +183,7 @@ J.routes['import'] = function (S) {
   var hasKey = J.ai && J.ai.hasKey(), t = J.importType;
   var avail = imp && imp.source === 'nr2003' ? imp.sessions : null;
   var chips = '<div class="fchips" role="radiogroup" aria-label="What are you importing">' + TYPES.map(function (x) {
-    var dis = avail && (!avail[x[0]] || avail[x[0]].empty);
+    var dis = avail && x[0] !== 'test' && (!avail[x[0]] || avail[x[0]].empty);
     return '<button class="fc' + (t === x[0] ? ' on' : '') + '" data-act="impType" data-v="' + x[0] + '"' + (dis ? ' disabled title="Not in this file"' : '') + '>' + x[1] + '</button>';
   }).join('') + '</div>';
   return J.phead('Import Results', 'Race results update the standings. Practice and qualifying get the fans talking before the race.')
@@ -237,7 +237,7 @@ function loadText(text, name) {
   imp = { source: res.kind, file: name, meta: res.meta || {}, sessions: res.sessions || null, rows: res.rows || null };
   if (res.kind === 'nr2003') {
     var has = function (k) { return res.sessions[k] && !res.sessions[k].empty; };
-    if (!has(J.importType)) J.importType = has('race') ? 'race' : has('happy') ? 'happy' : has('qualifying') ? 'qualifying' : 'practice';
+    if (J.importType !== 'test' && !has(J.importType)) J.importType = has('race') ? 'race' : has('happy') ? 'happy' : has('qualifying') ? 'qualifying' : 'practice';
     var found = TYPES.filter(function (x) { return has(x[0]); }).map(function (x) { return x[1].replace(' results', ''); });
     setupForm(imp.meta.track, imp.meta.date);
     msg('Read ' + name + ' (NR2003 export). Found: ' + found.join(', ') + '. Showing ' + typeLabel(J.importType).toLowerCase() + '. Check it below, then import.', false);
@@ -268,7 +268,7 @@ async function readShots(files) {
     var res = await J.ai.readScreenshot(S, imgs, J.importType);
     if (!res.rows.length) throw new Error('No results table found in that picture. Try a clearer screenshot of the results screen.');
     var valid = { race: 1, qualifying: 1, practice: 1, happy: 1 }, note = '';
-    if (valid[res.session] && res.session !== J.importType) { note = ' It looks like ' + typeLabel(res.session).toLowerCase() + ', so I switched to that. Change it above if that is wrong.'; J.importType = res.session; }
+    if (J.importType !== 'test' && valid[res.session] && res.session !== J.importType) { note = ' It looks like ' + typeLabel(res.session).toLowerCase() + ', so I switched to that. Change it above if that is wrong.'; J.importType = res.session; }
     var unknown = 0, roster = J.roster(S);
     res.rows.forEach(function (r) { var clean = r.driver.replace(/\?+$/, '').trim(), d = roster.length ? J.findDriver(S, clean) : null; if (d) r.driver = d.name; else { r.driver = clean; if (roster.length) { r._new = true; unknown++; } } if (/\?$/.test(r.driver)) r._new = true; });
     imp = { source: 'shot', file: 'screenshot', meta: { source: 'Screenshot', track: res.track }, rows: res.rows };
