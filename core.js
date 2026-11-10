@@ -518,7 +518,7 @@ J.crossCompute = function (S) {
   var i = J.LADDER.indexOf(S.series.id), cur = function (id) { return J.leagues[id] && !J.leagues[id].archived ? J.leagues[id] : null; };
   var down = i > 0 ? cur(J.LADDER[i - 1]) : null, up = i >= 0 && i < J.LADDER.length - 1 ? cur(J.LADDER[i + 1]) : null;
   var heads = [];
-  J.SERIES_ORDER.forEach(function (id) { var L = cur(id); if (!L || L.series.id === S.series.id) return; L.articles.slice().sort(function (a, b) { return b.ts - a.ts; }).slice(0, 3).forEach(function (a) { heads.push({ series: L.series.label, sid: id, headline: a.headline, outlet: a.outlet, ts: a.ts }); }); });
+  J.SERIES_ORDER.forEach(function (id) { var L = cur(id); if (!L || L.series.id === S.series.id) return; L.articles.slice().sort(function (a, b) { return b.ts - a.ts; }).slice(0, 2).forEach(function (a) { heads.push({ series: L.series.label, sid: id, headline: a.headline, outlet: a.outlet, ts: a.ts }); }); });
   heads.sort(function (a, b) { return b.ts - a.ts; });
   var drivers = {};
   J.roster(S).forEach(function (d) { J.SERIES_ORDER.forEach(function (id) { var L = cur(id); if (!L || L.series.id === S.series.id) return; var ds = J.agg(L.races), x = ds.find(function (q) { return q.key === d.key; }); if (x) (drivers[d.key] = drivers[d.key] || []).push({ series: L.series.label, line: 'P' + (ds.indexOf(x) + 1) + ' in points, ' + J.plural(x.wins, 'win') + ' in ' + J.plural(x.starts, 'start') }); }); });
