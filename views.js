@@ -107,7 +107,7 @@ J.storyArt = function (S, a, big) {
 };
 function storyPic(S, a, big) { return thumbOf(S, a) || J.storyArt(S, a, big); }
 J.routes.home = function (S) {
-  var ds = J.agg(S.races), last = S.races[S.races.length - 1], nx = J.nextRound(S), total = Math.max(S.schedule.length, S.races.length), cp = J.chasePicture(S);
+  var ds = J.standings(S), last = S.races[S.races.length - 1], nx = J.nextRound(S), total = Math.max(S.schedule.length, S.races.length), cp = J.chasePicture(S);
   var arts = S.articles.slice().sort(function (a, b) { return b.ts - a.ts; });
   var lead = arts.find(function (a) { return thumbOf(S, a) && a.ts > (arts[0] ? arts[0].ts : 0) - 864e5 * 3; }) || arts[0], rest = arts.filter(function (a) { return a !== lead; });
   var out = '';
@@ -166,9 +166,9 @@ function bubbleCard(S, cp) {
     + '<div class="bub-row"><div class="bub-side">' + cp.bubble.lastIn.map(function (d) { return row(d, 'in'); }).join('') + '</div><div class="bub-line" aria-hidden="true"><i></i></div><div class="bub-side">' + cp.bubble.firstOut.map(function (d) { return row(d, 'out'); }).join('') + '</div></div></section>';
 }
 J.routes.standings = function (S, args) {
-  var ds = J.agg(S.races), n = S.races.length, view = args[0] === 'chase' ? 'chase' : 'points';
+  var ds = J.standings(S), pts = J.partTimers(S), n = S.races.length, view = args[0] === 'chase' ? 'chase' : 'points';
   if (!ds.length) return phead('Standings', 'Driver points championship') + empty('No points yet', 'Standings appear after the first race.');
-  var prev = {}; if (n > 1) J.agg(S.races.slice(0, -1)).forEach(function (d, i) { prev[d.key] = i; });
+  var prev = {}; if (n > 1) J.standings(S, S.races.slice(0, -1)).forEach(function (d, i) { prev[d.key] = i; });
   var top = ds[0].pts || 1, cp = J.chasePicture(S), byKey = {}; ds.forEach(function (d, i) { byKey[d.key] = { d: d, i: i }; });
   var tabs = '<nav class="subtabs" aria-label="Standings view"><a href="#/standings" class="' + (view === 'points' ? 'on' : '') + '">Points</a><a href="#/standings/chase" class="' + (view === 'chase' ? 'on' : '') + '">' + esc(S.chase.name) + ' grid</a></nav>';
   var pod = ds.slice(0, 3).map(function (d, i) { return '<div class="pod p' + (i + 1) + '" data-driver="' + esc(d.key) + '"><div class="pos">' + (i + 1) + '</div><div><b>' + esc(d.name) + '</b><small>' + (d.car ? '#' + esc(d.car) + ' ' : '') + esc(d.team || '') + '</small><div class="pp">' + d.pts + ' pts</div><small>' + plural(d.wins, 'win') + ', ' + d.t5 + ' top 5</small></div></div>'; }).join('');
@@ -191,11 +191,12 @@ J.routes.standings = function (S, args) {
     body = bubbleCard(S, cp) + '<div class="card"><div class="tw"><table class="data stand"><thead><tr><th>Seed</th><th>Driver</th><th>Wins</th><th>Points</th><th>+/&minus; Cut</th><th>How</th><th>Top 5</th></tr></thead><tbody>' + g + '</tbody></table></div></div>'
       + '<p class="fine">If the field were set today. Winners are seeded first, then the rest by points. ' + (cp.decided ? 'The field is set.' : 'Odds of making it are on the Chase Outlook page in The Garage.') + '</p>';
   }
-  return phead('Standings', S.series.label + ' championship after ' + plural(n, 'race'), '<button class="btn ghost sm" data-act="exportCsv">Export CSV</button>') + tabs + body;
+  if (view === 'points' && pts.length) body += '<h3 class="sech ptsh">Part-time drivers <small>not eligible for the championship</small></h3><div class="card ptcard"><div class="tw"><table class="data stand pt"><thead><tr><th>Driver</th><th>Car</th><th>Points</th><th>Starts</th><th>Wins</th><th>Top 5</th><th>Avg finish</th></tr></thead><tbody>' + pts.map(function (d) { var sh = J.sharesCar(S, d.key); return '<tr data-driver="' + esc(d.key) + '"><td><div class="drv"><span class="ptag">PT</span><div><b>' + esc(d.name) + '</b>' + (sh.length ? '<small>Shares the #' + esc(d.car) + ' with ' + esc(sh.slice(0, 3).join(', ')) + '</small>' : '') + '</div></div></td><td>' + carPlate(d.car) + '</td><td class="num"><b>' + d.pts + '</b></td><td>' + d.starts + '</td><td>' + d.wins + '</td><td>' + d.t5 + '</td><td>' + (d.fin / d.starts).toFixed(1) + '</td></tr>'; }).join('') + '</tbody></table></div></div><p class="fine">Part-time drivers share a car or run a limited schedule, like the real series. Their finishes count in race results but not in the championship or ' + esc(S.chase.name) + '.</p>';
+  return phead('Standings', S.series.label + ' championship after ' + plural(n, 'race') + (pts.length ? ' (full-time drivers)' : ''), '<button class="btn ghost sm" data-act="exportCsv">Export CSV</button>') + tabs + body;
 };
 J.nav.push({ id: 'standings', label: 'Standings' });
 J.acts.exportCsv = function () {
-  var S = J.S, ds = J.agg(S.races); if (!ds.length) { J.toast('No standings to export yet.'); return; }
+  var S = J.S, ds = J.standings(S); if (!ds.length) { J.toast('No standings to export yet.'); return; }
   var q = function (x) { return '"' + String(x == null ? '' : x).replace(/"/g, '""') + '"'; };
   var cp = J.chasePicture(S), cutTxt = function (d) { var o = cp && cp.info[d.key]; return !o ? '' : o.status === 'win' ? 'Win' : o.status === 'needwin' ? 'Needs a win' : o.toCut == null ? '' : (o.toCut > 0 ? '+' : '') + o.toCut; };
   var lines = [['Position', 'Driver', 'Car', 'Team', 'Points', 'Behind', 'To Cut Line', 'Starts', 'Wins', 'Top 5', 'Top 10', 'Poles', 'Laps Led', 'Avg Finish']].concat(ds.map(function (d, i) { return [i + 1, d.name, d.car, d.team, d.pts, i ? ds[0].pts - d.pts : 0, cutTxt(d), d.starts, d.wins, d.t5, d.t10, d.poles, d.led, d.avg.toFixed(1)]; }));
@@ -210,7 +211,7 @@ J.routes.results = function (S, args) {
   var chips = []; if (race.track) chips.push('Track <b>' + esc(race.track) + '</b>'); chips.push('Type <b>' + esc(J.TYPES[J.raceType(S, race)]) + '</b>'); if (race.date) chips.push('<b>' + esc(J.fmtDate(race.date)) + '</b>'); if (m.weather) chips.push('Weather <b>' + esc(m.weather) + '</b>'); if (m.pole) chips.push('Pole <b>' + esc(m.pole) + '</b>'); if (m.cautions != null) chips.push('Cautions <b>' + m.cautions + '</b>'); if (m.leadChanges != null) chips.push('Lead changes <b>' + m.leadChanges + '</b>'); if (info.laps) chips.push('Laps <b>' + info.laps + '</b>');
   var rows = info.rows.map(function (r) {
     var d = '<span class="flat">-</span>'; if (r.start > 0) { var g = r.start - r.position; d = g > 0 ? '<span class="up">&#9650;' + g + '</span>' : g < 0 ? '<span class="down">&#9660;' + (-g) + '</span>' : '<span class="flat">=</span>'; }
-    return '<tr data-driver="' + esc(J.driverKey(r.driver)) + '"><td class="rank">' + r.position + '</td><td>' + (r.start || '-') + ' ' + d + '</td><td>' + carPlate(r.car) + '</td><td><b>' + esc(r.driver) + '</b></td><td>' + (r.laps || '-') + '</td><td>' + (r.lapsLed || 0) + '</td><td class="' + (J.isDnf(r) ? 'dnf' : 'dim') + '">' + esc(r.status || '-') + '</td><td class="pts"><b>' + r.points + '</b></td></tr>';
+    return '<tr data-driver="' + esc(J.driverKey(r.driver)) + '"><td class="rank">' + r.position + '</td><td>' + (r.start || '-') + ' ' + d + '</td><td>' + carPlate(r.car) + '</td><td><b>' + esc(r.driver) + '</b>' + (J.isPT(S, J.driverKey(r.driver)) ? ' <span class="ptag" title="Part-time: not in the championship points">PT</span>' : '') + '</td><td>' + (r.laps || '-') + '</td><td>' + (r.lapsLed || 0) + '</td><td class="' + (J.isDnf(r) ? 'dnf' : 'dim') + '">' + esc(r.status || '-') + '</td><td class="pts"><b>' + r.points + '</b></td></tr>';
   }).join('');
   var art = S.articles.filter(function (a) { return a.raceId === race.id; }).sort(function (a, b) { return b.ts - a.ts; });
   var gal = S.media.filter(function (x) { return x.raceId === race.id; });
@@ -476,27 +477,27 @@ function happyBar(h) { if (!h) return ''; var cls = h.score >= 65 ? 'good' : h.s
 function contractBar(ci) { if (!ci) return ''; var yrs = Math.max(0, ci.left + 1), cls = ci.status === 'free' ? 'bad' : ci.status === 'expiring' ? 'warn' : ci.status === 'short' ? 'mid' : 'good'; return '<div class="hrow"><span class="hlab">Contract</span><span class="cseg">' + [1, 2, 3, 4].map(function (i) { return '<i class="' + (i <= yrs ? 'on k-' + cls : '') + '"></i>'; }).join('') + '</span><b class="hval k-' + cls + '">' + esc(ci.label) + '</b></div>'; }
 J.routes.drivers = function (S, args) {
   if (args[0]) return driverPage(S, args[0]);
-  var ds = J.agg(S.races), roster = J.roster(S), byKey = {}; ds.forEach(function (d, i) { byKey[d.key] = { d: d, i: i }; });
+  var ds = J.standings(S), all = J.agg(S.races), roster = J.allDrivers(S), byKey = {}; ds.forEach(function (d, i) { byKey[d.key] = { d: d, i: i }; }); all.forEach(function (d) { if (!byKey[d.key]) byKey[d.key] = { d: d, i: 900 - d.pts * 0.001 }; });
   if (!roster.length) return phead('Drivers', '') + empty('No drivers yet', 'Drivers show up after the first import.');
   var list = roster.slice().sort(function (a, b) { return (byKey[a.key] ? byKey[a.key].i : 999) - (byKey[b.key] ? byKey[b.key].i : 999); });
   return phead('Drivers', J.plural(list.length, 'driver') + ' in the ' + J.seasonYear(S) + ' ' + S.series.label) + '<div class="dgrid">' + list.map(function (r) {
     var x = byKey[r.key], d = x && x.d, t = J.teamOf(S, r.key), car = (S.contracts[r.key] && S.contracts[r.key].car) || r.car || '';
-    return '<a class="dcard" href="#/drivers/' + esc(r.key) + '" style="--tc:' + esc((t && t.color) || '#555') + '"><span class="dnum">' + esc(car || '?') + '</span><div class="dmeta"><b>' + esc(r.name) + '</b><small>' + esc(t ? t.name : 'No team set') + '</small></div><div class="dstats">' + (d ? '<span><b>' + (x.i + 1) + '</b>Pos</span><span><b>' + d.pts + '</b>Pts</span><span><b>' + d.wins + '</b>Wins</span>' : '<span><b>-</b>No starts</span>') + '</div></a>';
+    return '<a class="dcard" href="#/drivers/' + esc(r.key) + '" style="--tc:' + esc((t && t.color) || '#555') + '"><span class="dnum">' + esc(car || '?') + '</span><div class="dmeta"><b>' + esc(r.name) + (J.isPT(S, r.key) ? ' <span class="ptag">PT</span>' : '') + '</b><small>' + esc(t ? t.name : 'No team set') + '</small></div><div class="dstats">' + (d ? '<span><b>' + (x.i < 900 ? x.i + 1 : 'PT') + '</b>Pos</span><span><b>' + d.pts + '</b>Pts</span><span><b>' + d.wins + '</b>Wins</span>' : '<span><b>-</b>No starts</span>') + '</div></a>';
   }).join('') + '</div>';
 };
 J.nav.push({ id: 'drivers', label: 'Drivers' });
 function driverPage(S, key) {
-  var d = J.agg(S.races).find(function (x) { return x.key === key; }), r0 = J.roster(S).find(function (x) { return x.key === key; });
+  var d = J.agg(S.races).find(function (x) { return x.key === key; }), r0 = J.allDrivers(S).find(function (x) { return x.key === key; });
   if (!d && !r0) return phead('Drivers', '') + empty('Driver not found', '', '<a class="btn sm" href="#/drivers">All drivers</a>');
   var name = d ? d.name : r0.name, t = J.teamOf(S, key), ci = J.contractInfo(S, key), h = J.happiness(S, key), rep = J.repOf(S, key), car = (S.contracts[key] && S.contracts[key].car) || (d && d.car) || (r0 && r0.car) || '';
-  var rank = d ? J.agg(S.races).findIndex(function (x) { return x.key === key; }) + 1 : null, pred = (J.sillyPredictions(S, J.crossFor ? J.crossFor(S) : null) || []).find(function (x) { return x.key === key; });
+  var rank = d && !J.isPT(S, key) ? J.standings(S).findIndex(function (x) { return x.key === key; }) + 1 : null, shares = J.sharesCar(S, key), pred = (J.sillyPredictions(S, J.crossFor ? J.crossFor(S) : null) || []).find(function (x) { return x.key === key; });
   var mates = t ? J.teamDrivers(S, t.id).filter(function (k) { return k !== key; }) : [];
   var arts = S.articles.filter(function (a) { return (a.tags || []).some(function (n) { return J.driverKey(n) === key; }); }).sort(function (a, b) { return b.ts - a.ts; }).slice(0, 4);
   var other = J.otherSeriesFor ? J.otherSeriesFor(S, name) : [];
   var hist = d ? d.hist.slice().reverse().map(function (x) { return '<tr><td><a href="#/results/' + esc(x.raceId) + '">' + esc(x.race) + '</a></td><td>' + (x.start || '-') + '</td><td><b>' + x.pos + '</b></td><td>' + x.led + '</td><td class="' + (J.isDnf({ status: x.status }) ? 'down' : '') + '">' + esc(x.status || 'Running') + '</td><td class="num">' + x.pts + '</td></tr>'; }).join('') : '';
   var adm = J.MODE === 'admin' && !J.isPublicView() && J.driverEditor ? J.driverEditor(S, key) : '';
   return '<div class="crumb"><a href="#/drivers">&#8592; All drivers</a></div>'
-    + '<section class="dhead" style="--tc:' + esc((t && t.color) || '#555') + '"><span class="dnum big">' + esc(car || '?') + '</span><div class="dh-t"><div class="kick">' + esc(S.series.label) + '</div><h1>' + esc(name) + '</h1>' + teamChip(t) + '</div><div class="dh-s">' + (d ? '<span><b>' + rank + '</b>in points</span><span><b>' + d.pts + '</b>points</span><span><b>' + d.wins + '</b>wins</span><span><b>' + d.t5 + '</b>top 5s</span><span><b>' + (d.fin / d.starts).toFixed(1) + '</b>avg finish</span>' : '<span><b>0</b>starts</span>') + '</div></section>'
+    + '<section class="dhead" style="--tc:' + esc((t && t.color) || '#555') + '"><span class="dnum big">' + esc(car || '?') + '</span><div class="dh-t"><div class="kick">' + esc(S.series.label) + '</div><h1>' + esc(name) + '</h1>' + teamChip(t) + (J.isPT(S, key) ? ' <span class="ptag big">Part-time</span>' : '') + (shares.length ? '<div class="shares">Shares the #' + esc(car) + ' with ' + esc(shares.join(', ')) + '</div>' : '') + '</div><div class="dh-s">' + (d ? (rank ? '<span><b>' + rank + '</b>in points</span>' : '<span><b>PT</b>part-time</span>') + '<span><b>' + d.pts + '</b>points</span><span><b>' + d.wins + '</b>wins</span><span><b>' + d.t5 + '</b>top 5s</span><span><b>' + (d.fin / d.starts).toFixed(1) + '</b>avg finish</span>' : '<span><b>0</b>starts</span>') + '</div></section>'
     + '<div class="profgrid"><div>'
     + (hist ? '<section class="card"><div class="card-h"><h3>' + esc(J.seasonYear(S)) + ' results</h3></div><div class="tw"><table class="data"><thead><tr><th>Race</th><th>Start</th><th>Finish</th><th>Led</th><th>Status</th><th class="num">Pts</th></tr></thead><tbody>' + hist + '</tbody></table></div></section>' : '')
     + (arts.length ? '<h3 class="sech">In the news</h3><div class="ngrid two">' + arts.map(function (a) { return '<a class="ncard" href="#/news/' + esc(a.id) + '"><div class="npic">' + storyPic(S, a) + '</div>' + outletTag(a) + '<h4>' + esc(a.headline) + '</h4></a>'; }).join('') + '</div>' : '')
@@ -515,14 +516,15 @@ J.routes.teams = function (S, args) {
   tids.sort(function (a, b) { return stat(b).p - stat(a).p; });
   return phead('Teams', J.plural(tids.length, 'team') + ' in the ' + S.series.label) + '<div class="tgrid">' + tids.map(function (k) {
     var t = S.teams[k], s = stat(k);
-    return '<a class="tcard" href="#/teams/' + esc(k) + '" style="--tc:' + esc(t.color || '#555') + '"><div class="tc-top"><b>' + esc(t.name) + '</b><small>' + esc([t.base, t.mfr].filter(Boolean).join(' / ')) + '</small></div><div class="tc-cars">' + J.teamDrivers(S, k).map(function (x) { var c = S.contracts[x]; var r = J.roster(S).find(function (q) { return q.key === x; }); return '<span><i class="car">' + esc(c.car || (r && r.car) || '?') + '</i>' + esc(r ? J.lastName(r.name) : x) + '</span>'; }).join('') + '</div><div class="tc-s"><span><b>' + s.w + '</b>wins</span><span><b>' + s.p + '</b>points</span></div></a>';
+    return '<a class="tcard" href="#/teams/' + esc(k) + '" style="--tc:' + esc(t.color || '#555') + '"><div class="tc-top"><b>' + esc(t.name) + '</b><small>' + esc([t.base, t.mfr].filter(Boolean).join(' / ')) + '</small></div><div class="tc-cars">' + J.teamDrivers(S, k).map(function (x) { var c = S.contracts[x]; return '<span' + (c.pt ? ' class="ptc"' : '') + '><i class="car">' + esc(c.car || '?') + '</i>' + esc(J.lastName(c.name || x)) + (c.pt ? '<em>PT</em>' : '') + '</span>'; }).join('') + '</div><div class="tc-s"><span><b>' + s.w + '</b>wins</span><span><b>' + s.p + '</b>points</span></div></a>';
   }).join('') + '</div>';
 };
 J.nav.push({ id: 'teams', label: 'Teams' });
 function teamPage(S, id) {
   var t = (S.teams || {})[id]; if (!t) return phead('Teams', '') + empty('Team not found', '', '<a class="btn sm" href="#/teams">All teams</a>');
   var ds = J.agg(S.races), ks = J.teamDrivers(S, id);
-  var rows = ks.map(function (k) { var d = ds.find(function (q) { return q.key === k; }), r = J.roster(S).find(function (q) { return q.key === k; }), ci = J.contractInfo(S, k), h = J.happiness(S, k); return '<a class="tdrow" href="#/drivers/' + esc(k) + '"><span class="dnum">' + esc(S.contracts[k].car || (r && r.car) || '?') + '</span><div class="tdn"><b>' + esc(r ? r.name : k) + '</b><small>' + (d ? 'P' + (ds.indexOf(d) + 1) + ' in points, ' + J.plural(d.wins, 'win') + ', ' + (d.fin / d.starts).toFixed(1) + ' avg finish' : 'No starts yet') + '</small></div><div class="tdb">' + contractBar(ci) + happyBar(h) + '</div></a>'; }).join('');
+  ks.sort(function (a, b) { return (S.contracts[a].pt ? 1 : 0) - (S.contracts[b].pt ? 1 : 0) || String(S.contracts[a].car).localeCompare(String(S.contracts[b].car), undefined, { numeric: true }); });
+  var rows = ks.map(function (k) { var d = ds.find(function (q) { return q.key === k; }), r = J.allDrivers(S).find(function (q) { return q.key === k; }), ci = J.contractInfo(S, k), h = J.happiness(S, k); return '<a class="tdrow" href="#/drivers/' + esc(k) + '"><span class="dnum">' + esc(S.contracts[k].car || (r && r.car) || '?') + '</span><div class="tdn"><b>' + esc(r ? r.name : k) + (S.contracts[k].pt ? ' <span class="ptag">PT</span>' : '') + '</b><small>' + (J.sharesCar(S, k).length ? 'Shares the #' + esc(S.contracts[k].car) + '. ' : '') + (d ? (S.contracts[k].pt ? 'Part-time, ' : 'P' + (J.standings(S).findIndex(function (q) { return q.key === k; }) + 1) + ' in points, ') + J.plural(d.wins, 'win') + ', ' + (d.fin / d.starts).toFixed(1) + ' avg finish' : 'No starts yet') + '</small></div><div class="tdb">' + contractBar(ci) + happyBar(h) + '</div></a>'; }).join('');
   var arts = S.articles.filter(function (a) { return (a.tags || []).some(function (n) { return ks.indexOf(J.driverKey(n)) >= 0; }) || String(a.body || '').indexOf(t.name) >= 0; }).sort(function (a, b) { return b.ts - a.ts; }).slice(0, 4);
   var w = 0, top5 = 0, fin = 0, st = 0; ks.forEach(function (k) { var d = ds.find(function (q) { return q.key === k; }); if (d) { w += d.wins; top5 += d.t5; fin += d.fin; st += d.starts; } });
   return '<div class="crumb"><a href="#/teams">&#8592; All teams</a></div><section class="dhead team" style="--tc:' + esc(t.color || '#555') + '"><div class="dh-t"><div class="kick">' + esc(S.series.label) + '</div><h1>' + esc(t.name) + '</h1><small>' + esc([t.base, t.mfr, J.plural(ks.length, 'car')].filter(Boolean).join(' / ')) + '</small></div><div class="dh-s"><span><b>' + w + '</b>wins</span><span><b>' + top5 + '</b>top 5s</span><span><b>' + (st ? (fin / st).toFixed(1) : '-') + '</b>avg finish</span></div></section>'
@@ -538,13 +540,13 @@ J.routes.silly = function (S) {
   if (!Object.keys(S.contracts || {}).length) return out + empty('No contracts yet', J.MODE === 'admin' ? 'Contracts are created after the first import, or set them in Teams and Contracts.' : 'Check back after the first race.');
   out += '<h3 class="sech">Predicted moves</h3>' + (movers.length ? '<div class="pgrid">' + movers.map(function (x) {
     var pc = Math.round(x.p * 100), cls = x.p >= 0.6 ? 'bad' : x.p >= 0.35 ? 'warn' : 'mid';
-    return '<a class="pcard" href="#/drivers/' + esc(x.key) + '"><div class="pc-h"><span class="dnum">' + esc(x.car || '?') + '</span><div><b>' + esc(x.name) + '</b><small>' + esc(x.team ? x.team.name : 'No team') + '</small></div><span class="pc-p ' + cls + '">' + pc + '%</span></div>' + bar(x.p, 1, cls, pc + '% chance of a new ride')
+    return '<a class="pcard" href="#/drivers/' + esc(x.key) + '"><div class="pc-h"><span class="dnum">' + esc(x.car || '?') + '</span><div><b>' + esc(x.name) + '</b>' + (x.pt ? ' <span class="ptag">PT</span>' : '') + '<small>' + esc(x.team ? x.team.name : 'No team') + (x.pt ? ', part-time' : '') + '</small></div><span class="pc-p ' + cls + '">' + pc + '%</span></div>' + bar(x.p, 1, cls, pc + '% chance of a new ride')
       + (x.dest && x.dest.length ? '<div class="pc-d">Likely landing spot: <b>' + esc(x.dest[0]) + '</b>' + (x.dest[1] ? ' or ' + esc(x.dest[1]) : '') + '</div>' : '') + '<ul class="why">' + x.why.slice(0, 3).map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul>' + (x.storyline ? '<span class="chip r">' + esc(J.SILLY_LABEL[x.storyline.stage]) + '</span>' : '') + '</a>';
   }).join('') + '</div>' : '<p class="sub">Nobody looks likely to move right now.</p>');
   if (cross && cross.stars && cross.stars.length) out += '<h3 class="sech">Coming up from the ' + esc(cross.downLabel) + '</h3><div class="xstars">' + cross.stars.map(function (s) { return '<div class="xs"><span class="car">' + esc(s.car || '?') + '</span><div><b>' + esc(s.name) + '</b><small>' + J.plural(s.wins, 'win') + ', ' + s.avg.toFixed(1) + ' avg finish in the ' + esc(cross.downLabel) + '</small></div></div>'; }).join('') + '</div>';
   out += sillyBoard(S);
   out += '<h3 class="sech">Contract tracker</h3><div class="tw"><table class="data ctrack"><thead><tr><th>Car</th><th>Driver</th><th>Team</th><th>Contract</th><th>Happiness</th><th class="num">Move chance</th></tr></thead><tbody>' + preds.slice().sort(function (a, b) { return a.contract.through - b.contract.through || b.p - a.p; }).map(function (x) {
-    return '<tr data-driver="' + esc(x.key) + '"><td><span class="car">' + esc(x.car || '?') + '</span></td><td><b>' + esc(x.name) + '</b></td><td>' + esc(x.team ? x.team.name : '-') + '</td><td>' + contractBar(x.contract) + '</td><td>' + happyBar(x.happy) + '</td><td class="num"><b>' + Math.round(x.p * 100) + '%</b></td></tr>';
+    return '<tr data-driver="' + esc(x.key) + '"><td><span class="car">' + esc(x.car || '?') + '</span></td><td><b>' + esc(x.name) + '</b>' + (x.pt ? ' <span class="ptag">PT</span>' : '') + '</td><td>' + esc(x.team ? x.team.name : '-') + '</td><td>' + contractBar(x.contract) + '</td><td>' + happyBar(x.happy) + '</td><td class="num"><b>' + Math.round(x.p * 100) + '%</b></td></tr>';
   }).join('') + '</tbody></table></div>';
   return out;
 };
