@@ -1,1 +1,1 @@
-{"series":[{"id":"cup","label":"Cup Series"}],"seasons":{"cup":[{"id":"cup","year":"2026","label":"2026 (current)","current":true}]},"default":"cup"}
+{"series":[{"id":"cup","label":"Cup Series"},{"id":"xfinity","label":"O'Reilly Auto Parts Series"}],"seasons":{"cup":[{"id":"cup","year":"2026","label":"2026 (current)","current":true}],"xfinity":[{"id":"xfinity","year":"2026","label":"2026 (current)","current":true}]},"default":"cup"}
