@@ -187,7 +187,16 @@ J.nextSeason = function (prev, o) {
   L.chase = JSON.parse(JSON.stringify(prev.chase));
   if (prev.points) L.points = JSON.parse(JSON.stringify(prev.points));
   if (prev.outletNames) L.outletNames = JSON.parse(JSON.stringify(prev.outletNames));
-  L.fans = prev.fans; L.rep = prev.rep; L.teams = prev.teams; L.contracts = prev.contracts;
+  if (prev.art) L.art = JSON.parse(JSON.stringify(prev.art));
+  L.fans = prev.fans; L.rep = prev.rep; L.teams = JSON.parse(JSON.stringify(prev.teams || {})); L.contracts = JSON.parse(JSON.stringify(prev.contracts || {}));
+  L.moves = (prev.moves || []).filter(function (m) { return m.status === 'approved'; }).map(function (m) { return JSON.parse(JSON.stringify(m)); });
+  var ny = parseInt(L.season, 10);
+  Object.keys(L.contracts).forEach(function (k) {
+    var c = L.contracts[k], rr = J.rng('resign' + k + ny);
+    if (c.callup || c.released) { delete L.contracts[k]; return; } // one-off starts and released drivers do not carry over
+    if (c.through < ny) { c.through = ny + (rr() < 0.55 ? 1 : 0) + (rr() < 0.3 ? 1 : 0); c.resigned = ny; } // most expiring drivers re-sign
+  });
+  if (J.applyMovesFor) J.applyMovesFor(L);
   L.silly = (prev.silly || []).filter(function (x) { return x.stage !== 'confirmed' && x.stage !== 'dead'; });
   L.schedule = o.schedule || prev.schedule.map(function (r) { var x = JSON.parse(JSON.stringify(r)); x.id = x.id; if (/^\d{4}-/.test(x.date || '')) x.date = String(L.season) + x.date.slice(4); x.note = ''; return x; });
   return J.normalize(L);
@@ -434,6 +443,7 @@ J.seasonNum = function (S) { return parseInt(J.seasonYear(S), 10) || new Date().
 J.ensureContracts = function (S, lookup) {
   S.teams = S.teams || {}; S.contracts = S.contracts || {};
   var yr = J.seasonNum(S), changed = 0, ds = J.roster(S), lastRow = {};
+  if (lookup && (S.ptVer || 0) < 2) { Object.keys(S.contracts).forEach(function (k) { var c = S.contracts[k]; if (!c.ptSet && !c.extra && !c.callup) c.pt = null; }); S.ptVer = 2; changed++; }
   var starts = {}; S.races.forEach(function (r) { r.rows.forEach(function (x) { var k = J.driverKey(x.driver); lastRow[k] = x; starts[k] = (starts[k] || 0) + 1; }); });
   // in this league they ran (nearly) every race: full-time here, whatever the real roster says
   var everyRace = function (k) { return S.races.length >= 3 && (starts[k] || 0) >= S.races.length * 0.8; };
@@ -443,6 +453,7 @@ J.ensureContracts = function (S, lookup) {
     var known = lookup && lookup(d.name), rowTeam = lastRow[d.key] && lastRow[d.key].team;
     if (c) {
       if (!c.name) c.name = d.name;
+      if (c.released) return;
       if (c.auto && !c.team && known) { c.team = addTeam(known.team, known); if (known.number) c.car = known.number; changed++; }
       if (c.pt == null && !c.ptSet) {
         var seen = lastRow[d.key] && lastRow[d.key].car || d.car, r0 = c.auto ? realCar(lookup, d.name, seen, known, rowTeam) : null;
@@ -488,6 +499,14 @@ function sharedNumber(S, lookup, car) {
   var hits = Object.keys(lookup.cars).map(function (k) { return lookup.cars[k]; }).filter(function (x) { return String(x.number) === String(car); });
   return hits.length > 0 && hits.every(function (x) { return !x.fullTime; });
 }
+// owner-drivers and family teams do not get fired or sent down (Cody Ware at Rick Ware Racing, Jordan Anderson, Joey Gase...)
+var OWNERS = { codyware: 'rick ware', austindillon: 'childress', tygibbs: 'gibbs', ryansieg: 'rss', kylesieg: 'rss', jasonkitzmiller: 'cr7', stewartfriesen: 'friesen', bjmcleod: 'live fast', joshreaume: 'reaume', jeremyclements: 'clements', jordananderson: 'anderson', joeygase: 'gase', timmyhill: 'hill motorsports', calebcostner: 'costner', bradsmith: 'brad smith', alexclubb: 'clubb', michaelmaples: 'maples', normbenning: 'benning', gregvanalst: 'van alst', kriswright: 'wright' };
+J.isOwnerDriver = function (S, key) {
+  var c = (S.contracts || {})[key]; if (!c) return false; if (c.owner != null) return !!c.owner;
+  var t = c.team && S.teams && S.teams[c.team]; if (!t) return false; var tn = t.name.toLowerCase(), nk = String(c.name || key).toLowerCase().replace(/[^a-z]/g, '');
+  if (OWNERS[nk]) return tn.indexOf(OWNERS[nk]) >= 0;
+  var last = J.lastName(c.name || key).toLowerCase(); return last.length >= 4 && new RegExp('\\b' + last.replace(/[^a-z]/g, '') + '\\b').test(tn) && !/hendrick|penske|childress|roush|keselowski|petty|earnhardt|busch|wallace|harvick|stewart|johnson|hamlin/.test(last);
+};
 J.isPT = function (S, key) { var c = S.contracts && S.contracts[key]; return !!(c && c.pt); };
 // the points standings count full-time drivers only; part-timers are listed on their own
 J.standings = function (S, races) { return J.agg(races || S.races).filter(function (d) { return !J.isPT(S, d.key); }); };
@@ -505,6 +524,26 @@ J.contractInfo = function (S, key) {
   var c = (S.contracts || {})[key]; if (!c) return null;
   var yr = J.seasonNum(S), left = c.through - yr;
   return { team: J.teamOf(S, key), through: c.through, left: left, label: left < 0 ? 'Free agent' : left === 0 ? 'Final year (through ' + c.through + ')' : 'Signed through ' + c.through, status: left < 0 ? 'free' : left === 0 ? 'expiring' : left === 1 ? 'short' : 'long' };
+};
+// how the team sees the driver: results against the teammates (or the field), points, wins, DNFs, attitude
+J.teamView = function (S, key) {
+  var c = (S.contracts || {})[key]; if (!c || !c.team) return null;
+  var ds = J.agg(S.races), d = ds.find(function (x) { return x.key === key; }), ft = J.standings(S), rank = ft.findIndex(function (x) { return x.key === key; }) + 1, field = Math.max(20, ds.length);
+  var score = 62, why = [];
+  if (d && d.starts >= 3) {
+    var avg = d.fin / d.starts, mates = J.teamDrivers(S, c.team).filter(function (k) { return k !== key; }).map(function (k) { return ds.find(function (x) { return x.key === k; }); }).filter(function (x) { return x && x.starts >= 2; });
+    var exp = mates.length ? mates.reduce(function (a, m) { return a + m.fin / m.starts; }, 0) / mates.length : field * 0.5, gap = avg - exp;
+    score -= Math.max(-15, Math.min(25, gap * 1.6));
+    if (gap > 5) why.push(mates.length ? 'well behind the teammates' : 'running below what the team expects');
+    else if (gap < -4) why.push(mates.length ? 'beating the teammates' : 'getting more out of the car than expected');
+    if (rank && rank > ft.length * 0.7) { score -= 8; why.push('P' + rank + ' in points'); }
+    if (d.wins) { score += d.wins * 6; why.push(J.plural(d.wins, 'win')); }
+    var dnf = d.hist.filter(function (h) { return J.isDnf({ status: h.status }); }).length; if (dnf >= 3) { score -= dnf * 2; why.push(dnf + ' DNFs'); }
+  }
+  var h = J.happiness(S, key); if (h && h.score < 35) { score -= 8; why.push('unhappy, and the team knows it'); }
+  if (J.isOwnerDriver(S, key)) { score = Math.max(score, 70); why.unshift('owns the team (or it is the family team)'); }
+  score = Math.round(Math.max(5, Math.min(98, score)));
+  return { score: score, label: score >= 70 ? 'Valued' : score >= 50 ? 'Secure' : score >= 35 ? 'Under pressure' : 'Hot seat', why: why };
 };
 J.HAPPY_LABEL = function (s) { return s >= 80 ? 'Thrilled' : s >= 65 ? 'Happy' : s >= 50 ? 'Content' : s >= 35 ? 'Frustrated' : 'Unhappy'; };
 J.happiness = function (S, key) {
@@ -535,7 +574,7 @@ J.happiness = function (S, key) {
 };
 // Who is likely to change rides next season, and where to. Built from contracts, happiness, form and the rumor mill.
 J.STAGE_WEIGHT = { whisper: 0.05, rumor: 0.12, talks: 0.25, close: 0.45, confirmed: 1, dead: -0.2 };
-J.sillyPredictions = function (S, cross) {
+J.sillyPredictions = function (S, cross, quick) {
   var ds = J.standings(S), yr = J.seasonNum(S), byKey = {}; ds.forEach(function (d, i) { byKey[d.key] = { d: d, rank: i + 1 }; }); J.partTimers(S).forEach(function (d) { byKey[d.key] = { d: d, rank: null }; });
   var out = [];
   Object.keys(S.contracts || {}).forEach(function (k) {
@@ -548,19 +587,49 @@ J.sillyPredictions = function (S, cross) {
     if (sl) { p += J.STAGE_WEIGHT[sl.stage] || 0; why.push('in the rumor mill: ' + J.SILLY_LABEL[sl.stage].toLowerCase()); }
     var team = ci.team, teamRank = team ? (function () { var ks = J.teamDrivers(S, team.id), best = 99; ks.forEach(function (x) { if (byKey[x] && byKey[x].rank < best && x !== k) best = byKey[x].rank; }); return best; })() : 99;
     if (info && info.rank <= 8 && teamRank > 15) { p += 0.1; why.push('a top driver on a smaller team'); }
-    p = Math.max(0.02, Math.min(sl && sl.stage === 'confirmed' ? 1 : 0.95, p));
-    out.push({ pt: J.isPT(S, k), key: k, name: info ? info.d.name : (S.contracts[k].name || k), car: (S.contracts[k].car || (info && info.d.car) || ''), team: team, p: p, why: why, contract: ci, happy: h, rank: info ? info.rank : null, storyline: sl || null });
+    var mv = (S.moves || []).filter(function (m) { return m.key === k && (m.status === 'approved' || m.status === 'done') && m.kind !== 'renew'; }).pop();
+    if (mv) { p = 1; why.unshift(J.moveLine ? J.moveLine(mv, S) : 'deal done'); }
+    else if ((S.moves || []).some(function (m) { return m.key === k && m.status === 'approved' && m.kind === 'renew'; })) { p = 0.02; why.unshift('re-signed'); }
+    p = Math.max(0.02, Math.min(sl && sl.stage === 'confirmed' || mv ? 1 : 0.95, p));
+    var avg = info && info.d.starts ? info.d.fin / info.d.starts : null;
+    out.push({ owner: J.isOwnerDriver(S, k), avg: avg, wins: info ? info.d.wins : 0, starts: info ? info.d.starts : 0, move: mv || null, pt: J.isPT(S, k), key: k, name: info ? info.d.name : (S.contracts[k].name || k), car: (S.contracts[k].car || (info && info.d.car) || ''), team: team, p: p, why: why, contract: ci, happy: h, rank: info ? info.rank : null, storyline: sl || null });
   });
   out.sort(function (a, b) { return b.p - a.p; });
-  // seats likely to open = teams of drivers likely to leave; match strong movers to the best open seats
-  var seats = out.filter(function (x) { return x.p >= 0.35 && x.team; }).map(function (x) { return { team: x.team, from: x.name }; });
+  if (quick) return out;
+  // top 3 landing spots: open seats in this series, the series above (strong drivers) and below (struggling ones)
+  var here = J.openSeats(S, out), field = Math.max(20, ds.length), mid = field * 0.5;
   out.forEach(function (x) {
-    if (x.storyline && x.storyline.stage !== 'dead' && x.storyline.team) { x.dest = [x.storyline.team]; return; }
-    x.dest = seats.filter(function (s) { return !x.team || s.team.id !== x.team.id; }).slice(0, 2).map(function (s) { return s.team.name; });
-    if (!x.dest.length && x.pt && x.team) x.dest = ['the ' + x.team.name + ' #' + (x.car || '') + ' full-time'];
+    if (x.move) { x.spots = [{ label: J.moveDest ? J.moveDest(x.move, S) : 'done deal', pct: 100, sid: x.move.to }]; x.dest = [x.spots[0].label]; return; }
+    var avg = x.avg != null ? x.avg : mid, strong = Math.max(0, Math.min(1, (field * 0.45 - avg) / (field * 0.35))) + (x.rank && x.rank <= 3 ? 0.4 : 0) + Math.min(0.6, (x.wins || 0) * 0.2);
+    if (x.pt && x.avg != null && x.avg < 10) strong += 0.3;
+    var weak = Math.max(0, Math.min(1, (avg - field * 0.6) / (field * 0.3)));
+    var opts = [];
+    here.forEach(function (s) { if (x.team && s.teamId === x.team.id) return; if (x.owner) return; if (J.driverKey(s.from || '') === x.key) return; var fit = 1 / (1 + Math.abs((s.q != null ? s.q : mid) - avg) / 8); opts.push({ label: s.team + (s.car ? ' #' + s.car : ''), w: fit * (s.ptcar ? 0.7 : 1), sid: S.series.id }); });
+    if (x.pt && x.team) opts.push({ label: x.team.name + ' #' + (x.car || '') + ' full-time', w: 0.9 + strong * 0.6, sid: S.series.id });
+    if (x.owner) x.p = Math.min(x.p, 0.08);
+    if (cross && cross.upSeats && !x.owner) cross.upSeats.forEach(function (s) { if (strong > 0.35) opts.push({ label: s.team + (s.car ? ' #' + s.car : '') + ' (' + s.short + ')', w: strong * 1.3 / (1 + (s.q != null ? s.q / 25 : 0.6)), sid: s.sid }); });
+    if (cross && cross.downSeats && !x.owner) cross.downSeats.forEach(function (s) { if (weak > 0.3) opts.push({ label: s.team + (s.car ? ' #' + s.car : '') + ' (' + s.short + ')', w: weak * 0.8, sid: s.sid }); });
+    if (x.storyline && x.storyline.stage !== 'dead' && x.storyline.team) { var hit = opts.filter(function (o) { return o.label.toLowerCase().indexOf(String(x.storyline.team).toLowerCase()) === 0; }); if (hit.length) hit.forEach(function (o) { o.w += 2; }); else opts.push({ label: x.storyline.team, w: 2, sid: S.series.id }); }
+    var seen = {}; opts = opts.filter(function (o) { if (seen[o.label]) return false; seen[o.label] = 1; return true; }).sort(function (a, b) { return b.w - a.w; });
+    var W = opts.reduce(function (a, o) { return a + o.w; }, 0) || 1;
+    x.spots = opts.slice(0, 3).map(function (o) { return { label: o.label, sid: o.sid, pct: Math.max(1, Math.round(x.p * 100 * o.w / W)) }; });
+    x.dest = x.spots.map(function (o) { return o.label; });
     if (!x.dest.length && cross && cross.up) x.dest = ['a ride in the ' + cross.up];
   });
   return out;
+};
+// seats likely to open next season in this series: drivers likely to leave, approved moves out, part-time cars that could go full-time
+J.openSeats = function (S, preds) {
+  preds = preds || J.sillyPredictions(S, null, true);
+  var ds = J.agg(S.races), avgOf = function (k) { var d = ds.find(function (x) { return x.key === k; }); return d && d.starts ? d.fin / d.starts : null; };
+  var teamQ = function (tid) { var a = J.teamDrivers(S, tid).map(avgOf).filter(function (v) { return v != null; }); return a.length ? a.reduce(function (s, v) { return s + v; }, 0) / a.length : null; };
+  var out = [], seen = {};
+  var add = function (tid, car, from, ptcar) { var t = S.teams && S.teams[tid]; if (!t) return; var id = tid + '#' + car; if (seen[id]) return; seen[id] = 1; out.push({ teamId: tid, team: t.name, car: car || '', from: from || '', q: teamQ(tid), ptcar: !!ptcar, sid: S.series.id, short: ({ cup: 'Cup', xfinity: "O'Reilly", truck: 'Trucks', arca: 'ARCA' })[S.series.id] || S.series.short || S.series.label }); };
+  preds.forEach(function (x) { if (x.team && !x.pt && x.p >= 0.35) add(x.team.id, x.car, x.name); });
+  (S.moves || []).forEach(function (m) { if ((m.status === 'approved' || m.status === 'done') && m.from === S.series.id && m.to !== S.series.id && m.fromTeamId) add(m.fromTeamId, m.fromCar, m.name); });
+  var groups = {}; Object.keys(S.contracts || {}).forEach(function (k) { var c = S.contracts[k]; if (!c.team || !c.car || c.callup) return; var g = groups[c.team + '#' + c.car] = groups[c.team + '#' + c.car] || { tid: c.team, car: c.car, ft: false }; if (!c.pt) g.ft = true; });
+  Object.keys(groups).forEach(function (g) { if (!groups[g].ft) add(groups[g].tid, groups[g].car, '', true); });
+  return out.sort(function (a, b) { return (a.q == null ? 99 : a.q) - (b.q == null ? 99 : b.q); });
 };
 // stars of the other series (for cross-series rumors): best average finish with 2+ starts
 J.seriesStars = function (S, n) {
@@ -577,7 +646,7 @@ J.crossCompute = function (S) {
   heads.sort(function (a, b) { return b.ts - a.ts; });
   var drivers = {};
   J.roster(S).forEach(function (d) { J.SERIES_ORDER.forEach(function (id) { var L = cur(id); if (!L || L.series.id === S.series.id) return; var ds = J.agg(L.races), x = ds.find(function (q) { return q.key === d.key; }); if (x) (drivers[d.key] = drivers[d.key] || []).push({ series: L.series.label, line: 'P' + (ds.indexOf(x) + 1) + ' in points, ' + J.plural(x.wins, 'win') + ' in ' + J.plural(x.starts, 'start') }); }); });
-  return { down: down ? down.series.id : '', downLabel: down ? down.series.label : '', stars: down ? J.seriesStars(down, 5) : [], up: up ? up.series.label : '', upOpen: up ? J.sillyPredictions(up).filter(function (x) { return x.p >= 0.35 && x.team; }).slice(0, 4).map(function (x) { return { team: x.team.name, from: x.name }; }) : [], headlines: heads.slice(0, 6), drivers: drivers };
+  return { down: down ? down.series.id : '', downLabel: down ? down.series.label : '', stars: down ? J.seriesStars(down, 5) : [], up: up ? up.series.label : '', upOpen: up ? J.sillyPredictions(up, null, true).filter(function (x) { return x.p >= 0.35 && x.team && !x.pt; }).slice(0, 4).map(function (x) { return { team: x.team.name, from: x.name }; }) : [], upSeats: up ? J.openSeats(up).slice(0, 8) : [], downSeats: down ? J.openSeats(down).slice(0, 6) : [], headlines: heads.slice(0, 6), drivers: drivers };
 };
 J.crossFor = function (S) { return S.cross || J.crossCompute(S); };
 J.otherSeriesFor = function (S, name) { var c = J.crossFor(S); return (c && c.drivers && c.drivers[J.driverKey(name)]) || []; };
@@ -879,6 +948,9 @@ J.autoRecap = function (S, race) {
 J.publicData = function (S) {
   var o = JSON.parse(JSON.stringify(S, function (k, v) { return k.charAt(0) === '_' ? undefined : v; }));
   o.media = (o.media || []).filter(function (m) { return m.published; });
+  o.moves = (o.moves || []).filter(function (m) { return m.status === 'approved' || m.status === 'done'; });
+  o.callups = (o.callups || []).filter(function (m) { return m.status === 'approved'; });
+  delete o.carWeek;
   return o;
 };
 

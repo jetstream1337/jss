@@ -303,6 +303,8 @@ AI.raceFacts = function (S, race) {
   if (info.dnfs.length) lines.push('Did not finish or dropped out: ' + info.dnfs.map(function (r) { return r.driver + ' (' + r.status + ')'; }).join(', ') + '.');
   if (info.margin != null) lines.push('Margin of victory: ' + info.margin.toFixed(3) + ' seconds.');
   lines.push('Points standings now: ' + standingsText(S, 10) + '.');
+  var cu = info.rows.map(function (r) { var c = S.contracts && S.contracts[J.driverKey(r.driver)]; return c && c.callup ? r.driver + ' (' + ((J.SERIES[c.callup] || {}).label || c.callup) + ' regular making a call-up start, finished P' + r.position + ')' : ''; }).filter(Boolean);
+  if (cu.length) lines.push('Call-up starts this race: ' + cu.join('; ') + '.');
   return lines.join('\n');
 };
 /* Facts for the days before a race: practice, qualifying, happy hour. The race itself has NOT happened. */
@@ -616,6 +618,12 @@ function sillyBlock(S) {
 function contractsBlock(S) {
   var cross = J.crossFor(S), pr = J.sillyPredictions(S, cross).slice(0, 10), out = '';
   if (pr.length) out += '\nCONTRACTS AND MOOD (from the league data; use it, do not contradict it): ' + pr.map(function (x) { return x.name + (x.team ? ' (' + x.team.name + ')' : '') + (x.pt ? ' [part-time]' : '') + ': ' + x.contract.label.toLowerCase() + ', ' + (x.happy ? x.happy.label.toLowerCase() : 'unknown mood') + (x.why.length ? ' because ' + x.why.slice(0, 2).join(' and ') : ''); }).join('; ') + '.';
+  var deals = (S.moves || []).filter(function (m) { return m.status === 'approved' || m.status === 'done'; });
+  if (deals.length) out += '\nDONE DEALS FOR NEXT SEASON (decided by the league; treat them as fact, report them as official news when the silly season calendar allows a confirmation, otherwise as strong rumors close to done): ' + deals.map(function (m) { return m.name + ' ' + J.moveLine(m, S) + (m.why && m.why.length ? ' (' + m.why[0] + ')' : ''); }).join('; ') + '.';
+  var cus = (S.callups || []).filter(function (c) { return c.status === 'approved'; });
+  if (cus.length) out += '\nCALL-UPS THIS SEASON: ' + cus.map(function (c) { return c.name + ' (' + ((J.SERIES[c.from] || {}).label || c.from) + ' regular) runs ' + J.plural(c.rounds.length, 'race') + ' in the ' + ((J.SERIES[c.to] || {}).label || c.to) + ' ' + c.team + ' #' + c.car; }).join('; ') + '. A strong call-up is how real drivers earn a full-time ride a series up.';
+  var hot = Object.keys(S.contracts || {}).map(function (k) { var t = J.teamView(S, k); return t && t.score < 35 && !(S.contracts[k].pt) ? (S.contracts[k].name || k) + ' (' + t.why.slice(0, 2).join(', ') + ')' : ''; }).filter(Boolean).slice(0, 4);
+  if (hot.length) out += '\nHOT SEATS (the team is not happy with the driver): ' + hot.join('; ') + '.';
   if (cross && cross.stars && cross.stars.length) out += '\nRISING STARS ONE SERIES DOWN (' + cross.downLabel + '): ' + cross.stars.map(function (x) { return x.name + ' (' + J.plural(x.wins, 'win') + ', ' + x.avg.toFixed(1) + ' avg finish)'; }).join('; ') + '. Real silly season often links standouts from the series below to open seats.';
   if (cross && cross.upOpen && cross.upOpen.length) out += '\nSEATS THAT COULD OPEN ONE SERIES UP (' + cross.up + '): ' + cross.upOpen.map(function (x) { return x.team + ' (' + x.from + ' may leave)'; }).join('; ') + '. A strong driver here could be linked to one of them.';
   return out;

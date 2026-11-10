@@ -288,7 +288,13 @@ function rowsNow() {
   if (!imp) return [];
   var key = J.importType === 'test' && imp.source === 'nr2003' ? (['race', 'practice', 'qualifying', 'happy'].filter(function (k) { return imp.sessions[k] && !imp.sessions[k].empty; })[0] || 'race') : J.importType;
   var base = imp.source === 'nr2003' ? ((imp.sessions[key] || {}).rows || []) : (imp.rows || []);
-  return base.map(function (r, i) { if (imp.del[J.importType + i]) return null; var o = Object.assign({}, r); if (imp.edit[J.importType + i] != null) { o.driver = imp.edit[J.importType + i]; o._new = false; } o._i = i; return o; }).filter(Boolean);
+  var rows = base.map(function (r, i) { if (imp.del[J.importType + i]) return null; var o = Object.assign({}, r); if (imp.edit[J.importType + i] != null) { o.driver = imp.edit[J.importType + i]; o._new = false; o._edited = true; } o._i = i; return o; }).filter(Boolean);
+  // shared cars: put in this week's driver (NR2003 only shows one name per car)
+  if (J.carWeekSwap && !imp.noSwap && J.importType !== 'test' && imp.form && imp.form.round) {
+    var keep = rows.filter(function (r) { return r._edited; }), sw = J.carWeekSwap(J.S, imp.form.round, rows.filter(function (r) { return !r._edited; }));
+    rows = sw.rows.concat(keep).sort(function (a, b) { return a._i - b._i; });
+  }
+  return rows;
 }
 function metaNow() { var m = Object.assign({}, imp.meta); if (imp.source === 'nr2003' && imp.sessions[J.importType]) Object.assign(m, imp.sessions[J.importType].meta); return m; }
 function readForm() {
@@ -297,8 +303,16 @@ function readForm() {
   if (g('impName')) { f.name = g('impName').value; f.track = g('impTrack').value; if (g('impScoring')) { f.mode = g('impScoring').value; f.bonus = g('impBonus').checked; f.custom = g('impCustom').value; } }
   if (g('impDate') && !g('impRound')) f.date = g('impDate').value;
 }
-function nameCell(r) { return '<input class="nmin" data-ri="' + r._i + '" value="' + esc(r.driver) + '" aria-label="Driver name">' + (r._new ? ' <span class="chip y">NEW</span>' : '') + '<button class="xrow" data-act="impDelRow" data-ri="' + r._i + '" aria-label="Remove row" title="Remove this row">&#10005;</button>'; }
-function renderPreview() {
+function nameCell(r) { return '<input class="nmin" data-ri="' + r._i + '" value="' + esc(r.driver) + '" aria-label="Driver name">' + (r._new ? ' <span class="chip y">NEW</span>' : '') + (r._swap ? ' <span class="chip" title="NR2003 shows ' + esc(r._swap) + ' in this car">for ' + esc(r._swap) + '</span>' : '') + '<button class="xrow" data-act="impDelRow" data-ri="' + r._i + '" aria-label="Remove row" title="Remove this row">&#10005;</button>'; }
+function swapNote(rows) {
+  var sw = rows.filter(function (r) { return r._swap; });
+  if (imp.noSwap) return '<div class="swapnote">Shared-car swaps are off: every driver is saved exactly as NR2003 shows them. <button class="btn ghost sm" data-act="impSwap">Turn swaps back on</button></div>';
+  if (!sw.length) return '';
+  return '<div class="swapnote"><b>Shared cars this week:</b> ' + sw.map(function (r) { return '#' + esc(r.car) + ' ' + esc(r.driver) + ' (NR2003 shows ' + esc(r._swap) + ')'; }).join('; ') + '. Pick who drives on the Career Moves page. <button class="btn ghost sm" data-act="impSwap">Keep NR2003\'s names</button></div>';
+}
+J.acts.impSwap = function () { if (!imp) return; imp.noSwap = !imp.noSwap; renderPreview(); };
+function renderPreview() { renderPreview0(); var el = $('impForm'); if (!el || !imp || J.importType === 'test') return; var nt = swapNote(rowsNow()); if (nt) el.insertAdjacentHTML('afterbegin', nt); }
+function renderPreview0() {
   var S = J.S, el = $('impForm'); if (!el || !imp) return;
   var t = J.importType, f = imp.form, rows = rowsNow(), meta = metaNow(), hasKey = J.ai && J.ai.hasKey();
   if (!rows.length) { el.innerHTML = '<section class="panel"><p class="dim">' + (imp.source === 'nr2003' ? 'The ' + typeLabel(t).toLowerCase() + ' part of this file is empty. Pick another one above.' : 'No rows left.') + '</p></section>'; return; }
@@ -331,7 +345,7 @@ function renderPreview() {
       + '<div class="row"><button class="btn" data-act="impConfirm">Import ' + rows.length + ' drivers</button><button class="btn ghost" data-act="impCancel">Cancel</button>'
       + (hasKey ? '<label class="check" style="margin:0 0 0 6px"><input type="checkbox" id="impCover"' + (J.settings.autoCoverage !== false ? ' checked' : '') + '> Have ' + esc(J.ai.name()) + ' write the recap and fan reactions</label>' : '') + '</div></section>'
       + '<div class="card"><div class="tw"><table class="data"><thead><tr><th>Fin</th><th>Start</th><th>Car</th><th>Driver</th><th>Laps</th><th>Led</th><th>Status</th><th>Pts</th></tr></thead><tbody>'
-      + scored.map(function (r) { return '<tr><td class="rank">' + r.position + '</td><td>' + (r.start || '-') + '</td><td><span class="car">' + esc(r.car || '-') + '</span></td><td>' + nameCell(r) + '</td><td>' + (r.laps || '-') + '</td><td>' + (r.lapsLed || 0) + '</td><td class="' + (J.isDnf(r) ? 'dnf' : 'dim') + '">' + esc(r.status || '-') + '</td><td class="pts"><b>' + r.points + '</b></td></tr>'; }).join('')
+      + scored.map(function (r) { return '<tr><td class="rank">' + r.position + '</td><td>' + (r.start || '-') + '</td><td>' + J.carTag(r.car || '-') + '</td><td>' + nameCell(r) + '</td><td>' + (r.laps || '-') + '</td><td>' + (r.lapsLed || 0) + '</td><td class="' + (J.isDnf(r) ? 'dnf' : 'dim') + '">' + esc(r.status || '-') + '</td><td class="pts"><b>' + r.points + '</b></td></tr>'; }).join('')
       + '</tbody></table></div></div>';
     return;
   }
@@ -344,7 +358,7 @@ function renderPreview() {
       + warns.map(function (w) { return '<div class="warn">' + esc(w) + '</div>'; }).join('')
       + '<div class="row"><button class="btn" data-act="impConfirm">Save test (' + rows.length + ' drivers)</button><button class="btn ghost" data-act="impCancel">Cancel</button>'
       + (hasKey ? '<label class="check" style="margin:0 0 0 6px"><input type="checkbox" id="impCover" checked> Write preseason stories and fan posts</label>' : '') + '</div></section>'
-      + '<div class="card"><div class="tw"><table class="data"><thead><tr><th>Pos</th><th>Car</th><th>Driver</th><th>Time</th></tr></thead><tbody>' + rows.map(function (r) { return '<tr><td class="rank">' + r.position + '</td><td><span class="car">' + esc(r.car || '-') + '</span></td><td>' + nameCell(r) + '</td><td>' + esc(r.time || r.speed || '-') + '</td></tr>'; }).join('') + '</tbody></table></div></div>';
+      + '<div class="card"><div class="tw"><table class="data"><thead><tr><th>Pos</th><th>Car</th><th>Driver</th><th>Time</th></tr></thead><tbody>' + rows.map(function (r) { return '<tr><td class="rank">' + r.position + '</td><td>' + J.carTag(r.car || '-') + '</td><td>' + nameCell(r) + '</td><td>' + esc(r.time || r.speed || '-') + '</td></tr>'; }).join('') + '</tbody></table></div></div>';
     return;
   }
   // practice / qualifying / happy hour
@@ -361,7 +375,7 @@ function renderPreview() {
     + (hasKey ? '<label class="check" style="margin:0 0 0 6px"><input type="checkbox" id="impCover"' + (J.settings.autoCoverage !== false ? ' checked' : '') + '> Have the fans react and hype the race</label>' : '') + '</div>'
     + '<p class="fine">This does not change the standings. It tells the site who is in the field, shows the ' + esc(J.SESSIONS[t].toLowerCase()) + ' results, and feeds the Race Outlook.</p></section>'
     + '<div class="card"><div class="tw"><table class="data"><thead><tr><th>Pos</th><th>Car</th><th>Driver</th><th>Time</th></tr></thead><tbody>'
-    + rows.map(function (r) { return '<tr><td class="rank">' + r.position + '</td><td><span class="car">' + esc(r.car || '-') + '</span></td><td>' + nameCell(r) + '</td><td>' + esc(r.time || '-') + '</td></tr>'; }).join('')
+    + rows.map(function (r) { return '<tr><td class="rank">' + r.position + '</td><td>' + J.carTag(r.car || '-') + '</td><td>' + nameCell(r) + '</td><td>' + esc(r.time || '-') + '</td></tr>'; }).join('')
     + '</tbody></table></div></div>';
 }
 document.addEventListener('change', function (e) {
@@ -444,7 +458,8 @@ function commitRace(S, f, rows, meta, src, cover, name) {
 /* ---------- auto-sim: race the next round without NR2003, from the season so far ---------- */
 J.acts.autoSim = function () {
   var S = J.S, nx = J.nextRound(S); if (!nx) { J.toast('Every race on the schedule has been run.', true); return; }
-  var sim = J.simRace(S, nx); if (!sim) { J.toast('Import at least one race, practice or test session first so the sim knows the drivers.', true); return; }
+  var sim = J.simRace(S, nx); if (sim && J.carWeekSwap) sim.rows = J.carWeekSwap(S, nx.id, sim.rows, { dedupe: true }).rows;
+  if (!sim) { J.toast('Import at least one race, practice or test session first so the sim knows the drivers.', true); return; }
   var sp = J.seasonPoints(S), cover = !!(J.ai && J.ai.hasKey() && J.settings.autoCoverage !== false);
   if (!confirm('Auto-sim the ' + nx.name + '? The results come from how each driver has run this season (and at this kind of track), plus practice and qualifying if you imported them. It counts in the standings like a real race.')) return;
   var f = { round: nx.id, name: nx.name, track: nx.track || '', date: (/^\d{4}-\d{2}-\d{2}$/.test(nx.date || '') ? nx.date : J.todayISO()), mode: sp.template, bonus: false, custom: sp.template === 'custom' ? (S.points.table || []).join(',') : '' };

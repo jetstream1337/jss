@@ -20,7 +20,7 @@ You need a free GitHub account. GitHub builds the Windows installer for you, and
 4. Open the **jss-app** folder on your PC, select **everything inside it** (the `src`, `build` and `.github` folders and all the files), and drag it all onto the GitHub page. Click **Commit changes**.
    - If you do not see the `.github` folder, in File Explorer click **View**, then **Show**, then **Hidden items**. It must be uploaded too, because it holds the build instructions.
 5. Click the **Actions** tab at the top of your repository. You will see **Build the Windows app** running (yellow dot). Wait about 5 minutes for a green check.
-6. Click that run, scroll down to **Artifacts**, and click **Virtual-NASCAR-Setup**. A zip downloads. Open it and run **Virtual-NASCAR-Setup-3.3.0.exe**.
+6. Click that run, scroll down to **Artifacts**, and click **Virtual-NASCAR-Setup**. A zip downloads. Open it and run **Virtual-NASCAR-Setup-3.5.0.exe**.
 7. Windows will probably say **"Windows protected your PC"** because the app is not from a big company. Click **More info**, then **Run anyway**. Install it like any other program. A **Virtual NASCAR** shortcut appears on your desktop.
 
 > **Prefer not to use GitHub for the installer?** Install Node.js from nodejs.org, open the jss-app folder, type `cmd` in the address bar and press Enter, then type `npm install` and then `npm start`. The app opens. Use `npm run dist` to make the installer yourself (it lands in the `dist` folder).
@@ -71,6 +71,26 @@ If GitHub ever needs the token replaced (they expire), make a new one the same w
 - **Points systems.** League page: the 2026 Chase (55 for a win, no win-and-in), the 2017-2025 stage era, 2016, 2011-2015, the 2007-2010 and 2004-2006 Chase eras, Winston Cup 1975-2003, two ARCA systems, one point per car beaten, or your own list with lap-led bonuses. **Save and re-score** applies it to races already run. (Stage points are not counted: NR2003 has no stages.)
 - **Schedule templates.** Edit Schedule: load the real 2026 or 2027 schedule for any series, with race names, tracks, dates, start times (Eastern) and TV/streaming filled in, or save your own. The schedule page shows times and channels.
 - **News outlets.** Speedway Herald (race coverage), The Garage Insider (silly season) and The Pit Board (analysis). Rename them, their taglines and writers on the League page. Story pages now have a big header, pull quotes, key moments, "by the numbers", takeaways, "what's next", a race box and more from the same outlet.
+
+## New in 3.5
+
+- **Full-time now follows the real 2026 points standings.** A driver is full-time in a series when they race for that series' points and started at least 3 of every 4 races. For example, Austin Green, Mason Maggio, Josh Williams and Garrett Smithley are part-time in the O'Reilly series, Joey Gase is full-time, and Austin Hill is part-time in Cup (he races for O'Reilly points). About 70 more real part-timers are known, so they never count as full-time by mistake. In your own league, anyone who has run nearly every race stays full-time.
+- **Career Moves** (commissioner bar):
+  - **Shared cars this week:** pick who drives each shared car at the next race. When you import, the app puts that driver in the car, because NR2003 only shows one name. You can switch this off on the import screen with **Keep NR2003's names**. Auto-sim does it too.
+  - **Call-ups:** ARCA standouts get 2 to 4 Truck starts, Truck drivers get O'Reilly starts, O'Reilly drivers get Cup starts, all in part-time cars. Those starts never count in the series above's points.
+  - **Next season's moves:** suggested from results, contracts, happiness and how each team sees its driver, plus the real 2027 moves already announced. That means promotions up a series (a few rookies a year), new teams, re-signings, retirements, drivers sent down after a bad year, and fallouts where a team releases a driver, at season end or right away (an interim driver takes the car). Pick **How often teams fall out with drivers**. Owner-drivers and family teams are never fired or sent down; change that per driver on their page.
+  - Nothing happens until you **Approve** it. Approved moves happen when you **Finish season, start next** on the League page. Released drivers and call-ups don't carry over, and most expiring deals re-sign.
+- **Silly Season:** every predicted move shows its **top 3 landing spots** with a chance for each, including seats one series up or down. **Done deals** and **Call-ups** have their own sections, and the AI writers know about them.
+- Driver pages show **Seat** security: how the team sees the driver (Valued, Secure, Under pressure, Hot seat).
+
+## New in 3.4
+
+- **Logos and Numbers** (commissioner bar): use your own pictures for car numbers and series logos.
+  - **Car numbers:** drop a pile of pictures at once. Name each file after its car number (`24.jpg`, `#9.png`, `00-haas.png`) and it goes to that car by itself. Or use **Add picture** on any number, or **Another number** for one nobody drives yet. Each series keeps its own set, and a new season keeps them.
+  - **Background:** "Remove a white background" (best for JPEGs) makes the white around the number see-through but keeps white inside the number. There is also "Remove a black background" and "Keep the background". Empty edges are trimmed and pictures are resized so they stay small.
+  - Your number pictures replace the plain numbers in standings, race results, driver cards and pages, team pages, silly season, fan pages and The Garage, in the app and on the website.
+  - **Series logos:** pick a picture for each series. It shows on the series tabs and story pictures. **Back to built-in** undoes it.
+  - On the website the pictures are published as their own files, so pages stay fast.
 
 ## New in 3.3
 

@@ -438,7 +438,7 @@ J.teamEditor = function (S, id, compact) {
 };
 J.driverEditor = function (S, key) {
   var c = S.contracts[key] || {};
-  return '<section class="aside-card"><h4>Commissioner</h4><div class="field"><label>Team</label><select data-ct="team" data-k="' + esc(key) + '">' + teamOpts(S, c.team) + '</select></div><div class="field"><label>Schedule</label>' + ptSel(key, c) + '</div><div class="field"><label>Car number</label><input data-ct="car" data-k="' + esc(key) + '" value="' + esc(c.car || '') + '"></div><div class="field"><label>Signed through</label><select data-ct="through" data-k="' + esc(key) + '">' + yearOpts(S, c.through) + '</select></div><div class="field"><label>Mood baseline (how happy they are before results)</label><input type="range" min="20" max="90" data-ct="base" data-k="' + esc(key) + '" value="' + (c.base || 60) + '"></div></section>';
+  return '<section class="aside-card"><h4>Commissioner</h4><div class="field"><label>Team</label><select data-ct="team" data-k="' + esc(key) + '">' + teamOpts(S, c.team) + '</select></div><div class="field"><label>Schedule</label>' + ptSel(key, c) + '</div><div class="field"><label>Owns the team (never fired or sent down)</label><select data-ct="owner" data-k="' + esc(key) + '"><option value=""' + (c.owner == null ? ' selected' : '') + '>Work it out (' + (J.isOwnerDriver(S, key) && c.owner == null ? 'yes' : 'no') + ')</option><option value="1"' + (c.owner === true ? ' selected' : '') + '>Yes, owner or family team</option><option value="0"' + (c.owner === false ? ' selected' : '') + '>No</option></select></div><div class="field"><label>Car number</label><input data-ct="car" data-k="' + esc(key) + '" value="' + esc(c.car || '') + '"></div><div class="field"><label>Signed through</label><select data-ct="through" data-k="' + esc(key) + '">' + yearOpts(S, c.through) + '</select></div><div class="field"><label>Mood baseline (how happy they are before results)</label><input type="range" min="20" max="90" data-ct="base" data-k="' + esc(key) + '" value="' + (c.base || 60) + '"></div></section>';
 };
 document.addEventListener('change', function (e) {
   var t = e.target, S = J.S; if (!S) return;
@@ -447,8 +447,9 @@ document.addEventListener('change', function (e) {
     var f = t.dataset.ct; c.auto = false;
     if (f === 'team' && t.value === '__new') { var nm = prompt('New team name'); if (!nm) { t.value = c.team || ''; return; } var id = J.slug(nm); S.teams[id] = S.teams[id] || { id: id, name: nm.trim(), color: J.TEAM_COLORS[Object.keys(S.teams).length % J.TEAM_COLORS.length], base: '', mfr: '' }; c.team = id; }
     else if (f === 'pt') { c.pt = t.value === '1'; c.ptSet = true; }
+    else if (f === 'owner') { if (t.value === '') delete c.owner; else c.owner = t.value === '1'; }
     else c[f] = f === 'through' || f === 'base' ? +t.value : t.value.trim();
-    J.save({ render: f === 'team' || f === 'pt' });
+    J.save({ render: f === 'team' || f === 'pt' || f === 'owner' });
   } else if (t.dataset && t.dataset.tm) {
     var tm = S.teams[t.dataset.id]; if (!tm) return; tm[t.dataset.tm] = t.value.trim(); J.save({ render: false });
   }
@@ -558,4 +559,113 @@ J.nav.push({ id: 'preview', label: 'Preview public site', group: 'Commissioner',
 
 /* external links open in the normal web browser */
 document.addEventListener('click', function (e) { var a = e.target.closest && e.target.closest('a[target="_blank"]'); if (a && window.jssNative) { e.preventDefault(); J.openExternal(a.href); } }, true);
+
+/* ---------- Logos and Numbers: the commissioner's own images for car numbers and series logos ---------- */
+// turn an image file into a small, clean picture: optional see-through background (flood fill from the edges, so a
+// white number on a white background keeps its white fill), trimmed edges, scaled to a set height
+J.artImage = function (file, o) {
+  o = o || {};
+  return new Promise(function (resolve, reject) {
+    var url = URL.createObjectURL(file), img = new Image();
+    img.onload = function () {
+      try {
+        var w = img.naturalWidth || 300, h = img.naturalHeight || 150, k = Math.min(1, 1400 / Math.max(w, h));
+        w = Math.max(1, Math.round(w * k)); h = Math.max(1, Math.round(h * k));
+        var c = document.createElement('canvas'); c.width = w; c.height = h; var x = c.getContext('2d'); x.drawImage(img, 0, 0, w, h);
+        var id = x.getImageData(0, 0, w, h), p = id.data, cut = false;
+        if (o.bg === 'white' || o.bg === 'black') {
+          var T = o.bg === 'white' ? 255 : 0, dist = function (i) { return Math.max(Math.abs(p[i] - T), Math.abs(p[i + 1] - T), Math.abs(p[i + 2] - T)); };
+          var seen = new Uint8Array(w * h), q = [], push = function (n) { if (seen[n]) return; var i = n * 4; if (p[i + 3] < 12 || dist(i) <= 46) { seen[n] = 1; q.push(n); } };
+          for (var a = 0; a < w; a++) { push(a); push((h - 1) * w + a); }
+          for (var b = 0; b < h; b++) { push(b * w); push(b * w + w - 1); }
+          while (q.length) { var n = q.pop(), cx = n % w, cy = (n - cx) / w; p[n * 4 + 3] = 0; if (cx > 0) push(n - 1); if (cx < w - 1) push(n + 1); if (cy > 0) push(n - w); if (cy < h - 1) push(n + w); }
+          for (var m = 0; m < w * h; m++) { // soften the edge next to what was removed
+            if (seen[m]) continue; var mx = m % w, my = (m - mx) / w, near = (mx > 0 && seen[m - 1]) || (mx < w - 1 && seen[m + 1]) || (my > 0 && seen[m - w]) || (my < h - 1 && seen[m + w]);
+            if (near) { var d = dist(m * 4); if (d < 110) p[m * 4 + 3] = Math.round(p[m * 4 + 3] * Math.max(0.15, d / 110)); }
+          }
+          cut = true;
+        }
+        var x0 = w, y0 = h, x1 = -1, y1 = -1, see = false;
+        for (var yy = 0; yy < h; yy++) for (var xx = 0; xx < w; xx++) { var al = p[(yy * w + xx) * 4 + 3]; if (al < 255) see = true; if (al > 14) { if (xx < x0) x0 = xx; if (xx > x1) x1 = xx; if (yy < y0) y0 = yy; if (yy > y1) y1 = yy; } }
+        if (x1 < 0) { reject(new Error('the picture came out empty (try "Keep the background")')); return; }
+        x.putImageData(id, 0, 0);
+        var pad = 2, sx = Math.max(0, x0 - pad), sy = Math.max(0, y0 - pad), sw = Math.min(w, x1 + pad + 1) - sx, sh = Math.min(h, y1 + pad + 1) - sy;
+        if (!see && !cut) { sx = 0; sy = 0; sw = w; sh = h; }
+        var H = o.height || 140, s = Math.min(H / sh, (o.maxW || H * 3.2) / sw, 2), out = document.createElement('canvas');
+        out.width = Math.max(1, Math.round(sw * s)); out.height = Math.max(1, Math.round(sh * s));
+        var ox = out.getContext('2d'); ox.imageSmoothingQuality = 'high'; ox.drawImage(c, sx, sy, sw, sh, 0, 0, out.width, out.height);
+        resolve(see || cut ? out.toDataURL('image/png') : out.toDataURL('image/jpeg', 0.92));
+      } catch (e) { reject(e); } finally { URL.revokeObjectURL(url); }
+    };
+    img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('this file is not a picture the app can read')); };
+    img.src = url;
+  });
+};
+// "24.png", "#9 Kyle.jpg", "car-00.webp" -> the car number
+J.artNumFromName = function (name) { var base = String(name || '').replace(/\.[a-z0-9]+$/i, ''), m = base.match(/(?:^|[^0-9])(\d{1,3})(?![0-9])/); return m ? m[1] : ''; };
+function artNumbers(S) {
+  var by = {}, add = function (n, who) { n = String(n == null ? '' : n).trim(); if (!n || n === '?' || n === '-') return; by[n] = by[n] || []; if (who && by[n].indexOf(who) < 0) by[n].push(who); };
+  J.allDrivers(S).forEach(function (d) { var c = (S.contracts || {})[d.key]; add((c && c.car) || d.car, J.lastName(d.name)); });
+  Object.keys((S.art && S.art.nums) || {}).forEach(function (n) { add(n); });
+  return Object.keys(by).sort(function (a, b) { return (parseInt(a, 10) - parseInt(b, 10)) || a.length - b.length || a.localeCompare(b); }).map(function (n) { return { n: n, who: by[n] }; });
+}
+function seriesLeague(sid, make) { var L = null; Object.keys(J.leagues || {}).forEach(function (k) { var x = J.leagues[k]; if (x.series.id === sid && !x.archived) L = x; }); if (!L && make && J.SERIES[sid] && !J.leagues[sid]) { L = J.leagues[sid] = J.newLeague(sid, J.S ? J.S.league.name : ''); } return L; }
+J.routes.artwork = function (S) {
+  var nums = artNumbers(S), have = (S.art && S.art.nums) || {}, n0 = Object.keys(have).length, bg = J.ui.artBg || 'white';
+  var out = J.phead('Logos and Numbers', 'Use your own pictures for car numbers and series logos. They replace the built-in ones everywhere: standings, results, driver and team pages, silly season, The Garage, the series tabs, and on the website after it publishes.');
+  out += '<section class="panel"><h3>Car numbers: ' + esc(S.series.label) + '</h3><p class="sub">Each series keeps its own number pictures (the #1 truck and the #1 Cup car can look different). ' + J.plural(n0, 'number') + ' set so far.</p>'
+    + '<div class="row artopts"><label class="field" style="margin:0"><span>Background</span><select id="artBg" aria-label="Background">' + [['white', 'Remove a white background (best for JPEGs)'], ['black', 'Remove a black background'], ['keep', 'Keep the background as it is']].map(function (o) { return '<option value="' + o[0] + '"' + (bg === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label></div>'
+    + '<div class="drop" id="artDrop"><strong>Drop number pictures here</strong><p>JPEG, PNG, WebP or SVG. Name each file after its car number, like <b>24.jpg</b>, <b>#9.png</b> or <b>00-haas.png</b>, and drop as many as you want at once: each one goes to its number by itself. Empty edges are trimmed.</p><div class="row" style="justify-content:center"><button class="btn" data-act="artPick">Choose pictures</button></div><input type="file" id="artFiles" accept="image/*" multiple hidden></div>'
+    + '<div id="artMsg" class="msg" hidden></div>'
+    + '<div class="artgrid">' + nums.map(function (x) {
+      var on = !!have[x.n];
+      return '<div class="atile' + (on ? ' on' : '') + '"><div class="aprev">' + J.carTag(x.n, 'big') + '</div><b>#' + esc(x.n) + '</b><small>' + esc(x.who.slice(0, 3).join(', ') || 'no driver yet') + '</small><div class="abtns"><label class="btn ghost sm">' + (on ? 'Change' : 'Add picture') + '<input type="file" accept="image/*" data-artnum="' + esc(x.n) + '" hidden></label>' + (on ? '<button class="btn ghost sm" data-act="artDel" data-n="' + esc(x.n) + '" aria-label="Remove the picture for #' + esc(x.n) + '">Remove</button>' : '') + '</div></div>';
+    }).join('')
+    + '<div class="atile other"><div class="aprev"><span class="car big">#</span></div><b>Another number</b><input id="artOther" placeholder="e.g. 51" aria-label="Car number" inputmode="numeric"><div class="abtns"><label class="btn ghost sm">Add picture<input type="file" accept="image/*" data-artnum="" hidden></label></div></div></div>'
+    + (n0 ? '<div class="row"><button class="btn danger sm" data-act="artClear">Remove all ' + esc(S.series.label) + ' number pictures</button></div>' : '') + '</section>';
+  out += '<section class="panel"><h3>Series logos</h3><p class="sub">Shown on the series tabs at the top, on story pictures and on the website. A square picture with a see-through background (PNG) looks best on the dark header; the background setting above applies here too.</p><div class="slogos">' + J.SERIES_ORDER.map(function (sid) {
+    var L = seriesLeague(sid), s = J.SERIES[sid] || { label: sid }, own = L && L.art && L.art.logo;
+    return '<div class="slrow"><div class="slprev">' + J.seriesBadge(sid) + '</div><div><b>' + esc((L && L.series.label) || s.label) + '</b><small>' + (own ? 'Your picture' : 'Built-in badge') + '</small></div><div class="abtns"><label class="btn ghost sm">' + (own ? 'Change' : 'Use my picture') + '<input type="file" accept="image/*" data-artlogo="' + esc(sid) + '" hidden></label>' + (own ? '<button class="btn ghost sm" data-act="artLogoDel" data-id="' + esc(sid) + '">Back to built-in</button>' : '') + '</div></div>';
+  }).join('') + '</div></section>';
+  return out;
+};
+J.nav.push({ id: 'artwork', label: 'Logos and Numbers', group: 'Commissioner', admin: true });
+function artMsg(text, bad) { var m = $('artMsg'); if (!m) { J.toast(text, bad); return; } m.hidden = false; m.className = 'msg' + (bad ? ' err' : ' ok'); m.textContent = text; }
+async function artAdd(files, forced) {
+  var S = J.S; S.art = S.art || {}; S.art.nums = S.art.nums || {};
+  var done = [], skipped = [], bad = [];
+  for (var i = 0; i < files.length; i++) {
+    var f = files[i], n = forced != null ? forced : J.artNumFromName(f.name);
+    if (!/^image\//.test(f.type || '') && !/\.(jpe?g|png|webp|gif|svg|bmp)$/i.test(f.name)) { bad.push(f.name + ' (not a picture)'); continue; }
+    if (!n) { skipped.push(f.name); continue; }
+    try { S.art.nums[n] = await J.artImage(f, { bg: J.ui.artBg || 'white', height: 140 }); done.push('#' + n); } catch (e) { bad.push(f.name + ' (' + e.message + ')'); }
+  }
+  if (done.length) J.save();
+  var t = (done.length ? 'Added ' + J.plural(done.length, 'number picture') + ': ' + done.join(', ') + '.' : 'No pictures added.') + (skipped.length ? ' No car number in the file name of: ' + skipped.join(', ') + ' (rename them like 24.png, or use the button on a number).' : '') + (bad.length ? ' Could not use: ' + bad.join(', ') + '.' : '');
+  artMsg(t, !done.length);
+}
+J.acts.artPick = function () { $('artFiles').click(); };
+J.acts.artDel = function (el) { var S = J.S; if (S.art && S.art.nums) delete S.art.nums[el.dataset.n]; J.save(); };
+J.acts.artClear = function () { var S = J.S; if (!confirm('Remove all ' + S.series.label + ' number pictures? The built-in numbers come back.')) return; if (S.art) S.art.nums = {}; J.save(); };
+J.acts.artLogoDel = function (el) { var L = seriesLeague(el.dataset.id); if (!L || !L.art) return; delete L.art.logo; saveOther(L); };
+function saveOther(L) { L.updatedAt = Date.now(); if (L === J.S) { J.save(); return; } J.store.saveLeague(L).catch(function (e) { J.toast('Could not save: ' + e.message, true); }); if (J.publisher) J.publisher.schedule(); J.refresh(); }
+J.afters.artwork = function () {
+  var inp = $('artFiles'); if (inp) inp.addEventListener('change', function () { if (this.files.length) artAdd(Array.prototype.slice.call(this.files)); this.value = ''; });
+  var d = $('artDrop'); if (!d) return;
+  d.addEventListener('dragover', function (e) { e.preventDefault(); d.classList.add('over'); });
+  d.addEventListener('dragleave', function () { d.classList.remove('over'); });
+  d.addEventListener('drop', function (e) { e.preventDefault(); d.classList.remove('over'); var fs = Array.prototype.slice.call(e.dataTransfer.files || []); if (fs.length) artAdd(fs); });
+};
+document.addEventListener('change', function (e) {
+  var t = e.target; if (!t || !t.dataset) return;
+  if (t.id === 'artBg') { J.ui.artBg = t.value; return; }
+  if (t.dataset.artnum != null && t.files && t.files.length) {
+    var n = t.dataset.artnum || String(($('artOther') || {}).value || '').replace(/[^0-9]/g, '');
+    if (!n) { artMsg('Type the car number first, then pick the picture.', true); t.value = ''; return; }
+    artAdd([t.files[0]], n); t.value = '';
+  } else if (t.dataset.artlogo && t.files && t.files.length) {
+    var L = seriesLeague(t.dataset.artlogo, true), f = t.files[0]; t.value = ''; if (!L) return;
+    J.artImage(f, { bg: J.ui.artBg || 'white', height: 200, maxW: 360 }).then(function (src) { L.art = L.art || {}; L.art.logo = src; saveOther(L); J.toast('New ' + L.series.label + ' logo.'); }, function (err) { artMsg('Could not use ' + f.name + ': ' + err.message, true); });
+  }
+});
 })();

@@ -85,6 +85,15 @@ P.publicIndex = function (html) {
   return html.replace('data-mode="admin"', 'data-mode="public"');
 };
 function extOf(m, blob) { var t = (blob && blob.type) || ''; if (m.type === 'image') return /png/.test(t) ? 'png' : /webp/.test(t) ? 'webp' : /gif/.test(t) ? 'gif' : 'jpg'; return /webm/.test(t) || /\.webm$/i.test(m.name) ? 'webm' : /quicktime/.test(t) || /\.mov$/i.test(m.name) ? 'mov' : 'mp4'; }
+// the commissioner's number and logo pictures go up as their own files; the name changes when the picture does
+function dataBlob(d) { var m = /^data:([^;,]+)(;base64)?,(.*)$/.exec(d); if (!m) return null; var raw = m[2] ? atob(m[3]) : decodeURIComponent(m[3]), u = new Uint8Array(raw.length); for (var i = 0; i < raw.length; i++) u[i] = raw.charCodeAt(i); return new Blob([u], { type: m[1] }); }
+function quickHash(s) { var h = 5381; for (var i = 0; i < s.length; i += 7) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0; return h.toString(36) + s.length.toString(36); }
+function artFiles(art, lid, files) {
+  var one = function (src, name) { if (!/^data:/.test(src || '')) return src || ''; var b = dataBlob(src); if (!b) return ''; var path = 'media/art/' + lid + '-' + name + '-' + quickHash(src) + (/png/.test(b.type) ? '.png' : /webp/.test(b.type) ? '.webp' : '.jpg'); files.push({ path: path, blob: b, immutable: true }); return path; };
+  var out = { nums: {} }; Object.keys(art.nums || {}).forEach(function (n) { var p = one(art.nums[n], 'n' + String(n).replace(/[^0-9a-z]/gi, '')); if (p) out.nums[n] = p; });
+  if (art.logo) out.logo = one(art.logo, 'logo');
+  return out;
+}
 P.buildFiles = async function () {
   var files = [], add = function (path, text) { files.push({ path: path, text: text }); };
   add('index.html', P.publicIndex(await J.readAppFile('index.html')));
@@ -94,7 +103,7 @@ P.buildFiles = async function () {
   var order = J.SERIES_ORDER; ids.sort(function (a, b) { return order.indexOf(J.leagues[a].series.id) - order.indexOf(J.leagues[b].series.id) || String(a).localeCompare(String(b)); });
   var cur = ids.filter(function (k) { return !J.leagues[k].archived; }), seasons = {};
   ids.forEach(function (k) { var L = J.leagues[k]; (seasons[L.series.id] = seasons[L.series.id] || []).push({ id: k, year: J.seasonYear(L), label: J.seasonYear(L) + (L.archived ? (L.cancelled ? ' (cancelled)' : '') : ' (current)'), current: !L.archived }); });
-  add('data/index.json', JSON.stringify({ series: cur.map(function (k) { return { id: k, label: J.leagues[k].series.label }; }), seasons: seasons, default: cur.indexOf('cup') >= 0 ? 'cup' : cur[0] }));
+  var logos = {};
   for (var j = 0; j < ids.length; j++) {
     var L = J.leagues[ids[j]], pub = J.publicData(L); if (!L.archived) { try { pub.cross = J.crossCompute(L); } catch (e) {} }
     for (var k = 0; k < pub.media.length; k++) {
@@ -104,8 +113,14 @@ P.buildFiles = async function () {
       else m.url = '';
       if (m.type === 'video') { var pb = null; try { pb = await J.store.getMedia(m.id + ':poster'); } catch (e) {} if (pb) { m.poster = 'media/' + m.id + '-poster.jpg'; files.push({ path: m.poster, blob: pb, immutable: true }); } }
     }
+    if (pub.art) pub.art = artFiles(pub.art, L.id, files);
+    if (pub.art && pub.art.logo) logos[L.id] = pub.art.logo;
     add('data/' + L.id + '.json', JSON.stringify(pub));
   }
+  // logos of series that have not published yet go up too, ready for when they start
+  Object.keys(J.leagues).forEach(function (k) { var L = J.leagues[k]; if (!L.archived && L.art && L.art.logo && !logos[k]) logos[k] = artFiles({ logo: L.art.logo }, L.id, files).logo; });
+  var bySeries = {}; Object.keys(logos).forEach(function (k) { if (J.leagues[k] && !J.leagues[k].archived) bySeries[J.leagues[k].series.id] = logos[k]; });
+  add('data/index.json', JSON.stringify({ series: cur.map(function (k) { var o = { id: k, label: J.leagues[k].series.label }; if (logos[k]) o.logo = logos[k]; return o; }), seasons: seasons, logos: bySeries, default: cur.indexOf('cup') >= 0 ? 'cup' : cur[0] }));
   return files;
 };
 
