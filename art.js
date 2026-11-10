@@ -1,4 +1,4 @@
-/* Jet's Sim Series - artwork: page emblems, outlet logos, avatars, theme (shared by the app and the public site) */
+/* Virtual NASCAR - artwork: page emblems, outlet logos, avatars, theme (shared by the app and the public site) */
 (function () {
 'use strict';
 var J = window.JSS, esc = J.esc;
@@ -52,6 +52,19 @@ var OL = {
 J.outletLogo = function (id, size) {
   var o = J.OUTLETS[id] || J.OUTLETS.wire;
   return '<span class="olog ol-' + o.id + (size ? ' ol-' + size : '') + '">' + (OL[o.id] || OL.wire) + '<b>' + esc(o.name) + '</b>' + (size === 'lg' ? '<small>' + esc(o.tag) + '</small>' : '') + '</span>';
+};
+
+/* ---------- league logo and series badges (original artwork for this league) ---------- */
+J.SERIES_COLOR = { cup: '#f2b705', xfinity: '#0a9e4a', truck: '#1f6fe0', arca: '#d4202c' };
+J.logo = function (cls) {
+  return '<svg class="vlogo ' + (cls || '') + '" viewBox="0 0 220 44" role="img" aria-label="' + esc(J.APP_NAME) + '">'
+    + '<g transform="skewX(-14)"><path d="M14 4h14l7 22 7-22h14L42 40H28z" fill="var(--logo-a,#ffc20e)"/><path d="M50 4h9l-12 36h-9z" fill="var(--logo-b,#e3202c)"/><path d="M62 4h6L56 40h-6z" fill="var(--logo-c,#2f6fff)"/></g>'
+    + '<text x="78" y="19" font-family="var(--display)" font-size="12.5" font-weight="700" font-style="italic" letter-spacing="3.2" fill="currentColor" opacity=".72">VIRTUAL</text>'
+    + '<text x="76" y="40" font-family="var(--display)" font-size="23" font-weight="900" font-style="italic" letter-spacing=".5" fill="currentColor">NASCAR</text></svg>';
+};
+J.seriesBadge = function (id, cls) {
+  var c = J.SERIES_COLOR[id] || '#888', s = J.SERIES[id] || {}, t = { cup: 'CUP', xfinity: 'OAP', truck: 'TRK', arca: 'ARCA' }[id] || (s.short || '?');
+  return '<svg class="sbadge ' + (cls || '') + '" viewBox="0 0 40 40" role="img" aria-label="' + esc(s.label || id) + '"><path d="M20 2l16 6v13c0 9-7 15-16 17C11 36 4 30 4 21V8z" fill="#0b0d12" stroke="' + c + '" stroke-width="2.5"/><path d="M8 26L32 12v5L10 30z" fill="' + c + '"/><text x="20" y="' + (t.length > 3 ? 24 : 25) + '" text-anchor="middle" font-family="var(--display)" font-weight="900" font-style="italic" font-size="' + (t.length > 3 ? 9.5 : 11.5) + '" fill="#fff" stroke="#0b0d12" stroke-width="2.4" paint-order="stroke">' + esc(t) + '</text></svg>';
 };
 
 /* ---------- avatars ---------- */
