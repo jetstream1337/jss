@@ -417,16 +417,17 @@ J.routes.garagetools = function (S) {
 J.nav.push({ id: 'garagetools', label: 'Garage Tools', group: 'Commissioner', admin: true });
 
 /* ---------- Teams and contracts ---------- */
+function ptSel(key, c) { return '<select data-ct="pt" data-k="' + esc(key) + '" aria-label="Full-time or part-time"' + (c.pt ? ' class="ispt"' : '') + '><option value="0"' + (c.pt ? '' : ' selected') + '>Full-time (in points)</option><option value="1"' + (c.pt ? ' selected' : '') + '>Part-time (not in points)</option></select>'; }
 function yearOpts(S, sel) { var y = J.seasonNum(S), o = ''; for (var k = y - 1; k <= y + 5; k++) o += '<option value="' + k + '"' + (+sel === k ? ' selected' : '') + '>' + (k < y ? 'Expired (' + k + ')' : k === y ? y + ' (final year)' : k) + '</option>'; return o; }
 function teamOpts(S, sel) { return '<option value="">No team</option>' + Object.keys(S.teams || {}).sort(function (a, b) { return S.teams[a].name.localeCompare(S.teams[b].name); }).map(function (k) { return '<option value="' + esc(k) + '"' + (sel === k ? ' selected' : '') + '>' + esc(S.teams[k].name) + '</option>'; }).join('') + '<option value="__new">+ New team...</option>'; }
 J.routes.contracts = function (S) {
   J.ensureContracts(S, J.rosterLookup ? J.rosterLookup(S) : null);
-  var ds = J.roster(S), canFill = J.rosterLookup && J.rosterLookup(S);
+  var ds = J.allDrivers(S).sort(function (x, y) { var cx = S.contracts[x.key] || {}, cy = S.contracts[y.key] || {}; var tx = cx.team && S.teams[cx.team] ? S.teams[cx.team].name : 'zz', ty = cy.team && S.teams[cy.team] ? S.teams[cy.team].name : 'zz'; return tx.localeCompare(ty) || String(cx.car || x.car || '').localeCompare(String(cy.car || y.car || ''), undefined, { numeric: true }) || (cx.pt ? 1 : 0) - (cy.pt ? 1 : 0); }), canFill = J.rosterLookup && J.rosterLookup(S);
   return J.phead('Teams and Contracts', 'Who drives for whom, the car number, and how long the deal runs. Happiness is worked out from results, teammates, contract years and rumors.')
-    + '<section class="panel"><h3>Fill in from the real roster</h3><p class="sub">Matches your drivers by name to the real ' + esc(S.series.label) + ' teams and car numbers' + (canFill ? '' : ' (no real roster loaded for this series)') + '. Drivers it cannot match keep what they have.</p><div class="row" style="margin-top:0"><button class="btn sm" data-act="rosterFill"' + (canFill ? '' : ' disabled') + '>Fill teams and numbers</button></div></section>'
-    + '<section class="panel"><h3>Drivers</h3><div class="tw"><table class="data ctr"><thead><tr><th>Driver</th><th>Car</th><th>Team</th><th>Signed through</th><th>Mood baseline</th></tr></thead><tbody>' + ds.map(function (d) {
+    + '<section class="panel"><h3>Fill in from the real roster</h3><p class="sub">Matches your drivers by name to the real ' + esc(S.series.label) + ' teams and car numbers' + (canFill ? '' : ' (no real roster loaded for this series)') + '. Drivers it cannot match keep what they have. When several drivers share one car in real life (NR2003 only shows one of them), all of them are brought in as part-timers. Part-timers are not in the points; switch anyone to full-time below, for example after a silly season move.</p><div class="row" style="margin-top:0"><button class="btn sm" data-act="rosterFill"' + (canFill ? '' : ' disabled') + '>Fill teams and numbers</button></div></section>'
+    + '<section class="panel"><h3>Drivers</h3><div class="tw"><table class="data ctr"><thead><tr><th>Driver</th><th>Car</th><th>Team</th><th>Schedule</th><th>Signed through</th><th>Mood baseline</th></tr></thead><tbody>' + ds.map(function (d) {
       var c = S.contracts[d.key] || {};
-      return '<tr><td><a href="#/drivers/' + esc(d.key) + '"><b>' + esc(d.name) + '</b></a></td><td><input class="cnum" data-ct="car" data-k="' + esc(d.key) + '" value="' + esc(c.car || d.car || '') + '" aria-label="Car number"></td><td><select data-ct="team" data-k="' + esc(d.key) + '" aria-label="Team">' + teamOpts(S, c.team) + '</select></td><td><select data-ct="through" data-k="' + esc(d.key) + '" aria-label="Signed through">' + yearOpts(S, c.through) + '</select></td><td><input type="range" min="20" max="90" data-ct="base" data-k="' + esc(d.key) + '" value="' + (c.base || 60) + '" aria-label="Mood baseline"></td></tr>';
+      return '<tr><td><a href="#/drivers/' + esc(d.key) + '"><b>' + esc(d.name) + '</b></a></td><td><input class="cnum" data-ct="car" data-k="' + esc(d.key) + '" value="' + esc(c.car || d.car || '') + '" aria-label="Car number"></td><td><select data-ct="team" data-k="' + esc(d.key) + '" aria-label="Team">' + teamOpts(S, c.team) + '</select></td><td>' + ptSel(d.key, c) + '</td><td><select data-ct="through" data-k="' + esc(d.key) + '" aria-label="Signed through">' + yearOpts(S, c.through) + '</select></td><td><input type="range" min="20" max="90" data-ct="base" data-k="' + esc(d.key) + '" value="' + (c.base || 60) + '" aria-label="Mood baseline"></td></tr>';
     }).join('') + '</tbody></table></div></section>'
     + '<section class="panel"><h3>Teams</h3>' + Object.keys(S.teams || {}).map(function (k) { return J.teamEditor(S, k, true); }).join('') + '<div class="row"><button class="btn ghost sm" data-act="teamNew">Add a team</button></div></section>';
 };
@@ -437,7 +438,7 @@ J.teamEditor = function (S, id, compact) {
 };
 J.driverEditor = function (S, key) {
   var c = S.contracts[key] || {};
-  return '<section class="aside-card"><h4>Commissioner</h4><div class="field"><label>Team</label><select data-ct="team" data-k="' + esc(key) + '">' + teamOpts(S, c.team) + '</select></div><div class="field"><label>Car number</label><input data-ct="car" data-k="' + esc(key) + '" value="' + esc(c.car || '') + '"></div><div class="field"><label>Signed through</label><select data-ct="through" data-k="' + esc(key) + '">' + yearOpts(S, c.through) + '</select></div><div class="field"><label>Mood baseline (how happy they are before results)</label><input type="range" min="20" max="90" data-ct="base" data-k="' + esc(key) + '" value="' + (c.base || 60) + '"></div></section>';
+  return '<section class="aside-card"><h4>Commissioner</h4><div class="field"><label>Team</label><select data-ct="team" data-k="' + esc(key) + '">' + teamOpts(S, c.team) + '</select></div><div class="field"><label>Schedule</label>' + ptSel(key, c) + '</div><div class="field"><label>Car number</label><input data-ct="car" data-k="' + esc(key) + '" value="' + esc(c.car || '') + '"></div><div class="field"><label>Signed through</label><select data-ct="through" data-k="' + esc(key) + '">' + yearOpts(S, c.through) + '</select></div><div class="field"><label>Mood baseline (how happy they are before results)</label><input type="range" min="20" max="90" data-ct="base" data-k="' + esc(key) + '" value="' + (c.base || 60) + '"></div></section>';
 };
 document.addEventListener('change', function (e) {
   var t = e.target, S = J.S; if (!S) return;
@@ -445,8 +446,9 @@ document.addEventListener('change', function (e) {
     var c = S.contracts[t.dataset.k] = S.contracts[t.dataset.k] || { base: 60, through: J.seasonNum(S) };
     var f = t.dataset.ct; c.auto = false;
     if (f === 'team' && t.value === '__new') { var nm = prompt('New team name'); if (!nm) { t.value = c.team || ''; return; } var id = J.slug(nm); S.teams[id] = S.teams[id] || { id: id, name: nm.trim(), color: J.TEAM_COLORS[Object.keys(S.teams).length % J.TEAM_COLORS.length], base: '', mfr: '' }; c.team = id; }
+    else if (f === 'pt') { c.pt = t.value === '1'; c.ptSet = true; }
     else c[f] = f === 'through' || f === 'base' ? +t.value : t.value.trim();
-    J.save({ render: f === 'team' });
+    J.save({ render: f === 'team' || f === 'pt' });
   } else if (t.dataset && t.dataset.tm) {
     var tm = S.teams[t.dataset.id]; if (!tm) return; tm[t.dataset.tm] = t.value.trim(); J.save({ render: false });
   }
@@ -455,7 +457,8 @@ J.acts.teamNew = function () { var S = J.S, nm = prompt('Team name'); if (!nm) r
 J.acts.teamDel = function (el) { var S = J.S, id = el.dataset.id, t = S.teams[id]; if (!t || !confirm('Remove ' + t.name + '? Its drivers will have no team.')) return; J.teamDrivers(S, id).forEach(function (k) { S.contracts[k].team = ''; }); delete S.teams[id]; J.save(); };
 J.acts.rosterFill = function () {
   var S = J.S, look = J.rosterLookup && J.rosterLookup(S); if (!look) return;
-  var n = 0; J.roster(S).forEach(function (d) { var k = look(d.name); if (!k) return; var id = J.slug(k.team); S.teams[id] = S.teams[id] || { id: id, name: k.team, color: k.color || '#888', base: k.base || '', mfr: k.mfr || '' }; var c = S.contracts[d.key] = S.contracts[d.key] || { base: 60, through: J.seasonNum(S) }; c.team = id; if (k.number) c.car = k.number; n++; });
+  var n = 0; J.roster(S).forEach(function (d) { var k = look(d.name); if (!k) return; var id = J.slug(k.team); S.teams[id] = S.teams[id] || { id: id, name: k.team, color: k.color || '#888', base: k.base || '', mfr: k.mfr || '' }; var c = S.contracts[d.key] = S.contracts[d.key] || { base: 60, through: J.seasonNum(S) }; c.name = c.name || d.name; c.team = id; if (k.number) c.car = k.number; if (!c.ptSet) c.pt = !k.fullTime; n++; });
+  J.ensureContracts(S, look);
   J.save(); J.toast('Matched ' + n + ' of ' + J.roster(S).length + ' drivers to the real roster.');
 };
 J.acts.regenFans = function (el) {

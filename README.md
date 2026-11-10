@@ -20,7 +20,7 @@ You need a free GitHub account. GitHub builds the Windows installer for you, and
 4. Open the **jss-app** folder on your PC, select **everything inside it** (the `src`, `build` and `.github` folders and all the files), and drag it all onto the GitHub page. Click **Commit changes**.
    - If you do not see the `.github` folder, in File Explorer click **View**, then **Show**, then **Hidden items**. It must be uploaded too, because it holds the build instructions.
 5. Click the **Actions** tab at the top of your repository. You will see **Build the Windows app** running (yellow dot). Wait about 5 minutes for a green check.
-6. Click that run, scroll down to **Artifacts**, and click **Virtual-NASCAR-Setup**. A zip downloads. Open it and run **Virtual-NASCAR-Setup-3.2.1.exe**.
+6. Click that run, scroll down to **Artifacts**, and click **Virtual-NASCAR-Setup**. A zip downloads. Open it and run **Virtual-NASCAR-Setup-3.3.0.exe**.
 7. Windows will probably say **"Windows protected your PC"** because the app is not from a big company. Click **More info**, then **Run anyway**. Install it like any other program. A **Virtual NASCAR** shortcut appears on your desktop.
 
 > **Prefer not to use GitHub for the installer?** Install Node.js from nodejs.org, open the jss-app folder, type `cmd` in the address bar and press Enter, then type `npm install` and then `npm start`. The app opens. Use `npm run dist` to make the installer yourself (it lands in the `dist` folder).
@@ -71,6 +71,13 @@ If GitHub ever needs the token replaced (they expire), make a new one the same w
 - **Points systems.** League page: the 2026 Chase (55 for a win, no win-and-in), the 2017-2025 stage era, 2016, 2011-2015, the 2007-2010 and 2004-2006 Chase eras, Winston Cup 1975-2003, two ARCA systems, one point per car beaten, or your own list with lap-led bonuses. **Save and re-score** applies it to races already run. (Stage points are not counted: NR2003 has no stages.)
 - **Schedule templates.** Edit Schedule: load the real 2026 or 2027 schedule for any series, with race names, tracks, dates, start times (Eastern) and TV/streaming filled in, or save your own. The schedule page shows times and channels.
 - **News outlets.** Speedway Herald (race coverage), The Garage Insider (silly season) and The Pit Board (analysis). Rename them, their taglines and writers on the League page. Story pages now have a big header, pull quotes, key moments, "by the numbers", takeaways, "what's next", a race box and more from the same outlet.
+
+## New in 3.3
+
+- **Part-time cars.** Cars that several drivers share in real life (like the #1 Tricon truck: Corey Heim, Brandon Jones and Nick Leitz) are marked part-time. NR2003 only shows one driver per car, so when you import a race or a preseason test, the app brings in **all** the real drivers of that car as part-timers on the same team and number.
+- **Points are for full-time drivers.** Part-timers are left out of the championship standings and The Chase. They get their own **Part-time drivers** table under the standings (purple **PT** tag), and they are tagged on race results, driver pages, team pages and the silly season page. Their finishes still count in race results.
+- **Make a car full-time for one driver.** Teams and Contracts (or the commissioner box on a driver's page): switch anyone between **Full-time (in points)** and **Part-time (not in points)**. The real roster never undoes your choice, so a silly season move sticks. Silly season also flags part-timers who are looking for a full-time ride.
+- In a league that already has races, anyone who ran nearly every race stays full-time, whatever the real roster says.
 
 ## New in 3.2
 

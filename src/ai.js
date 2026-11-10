@@ -287,7 +287,11 @@ AI.ensureFans = function (S) {
 };
 
 /* ---------- context builders ---------- */
-function standingsText(S, n, races) { return J.agg(races || S.races).slice(0, n || 10).map(function (d, i) { return (i + 1) + '. ' + d.name + ' ' + d.pts + ' pts' + (d.wins ? ' (' + d.wins + (d.wins === 1 ? ' win' : ' wins') + ')' : ''); }).join('; '); }
+function standingsText(S, n, races) {
+  var main = J.standings(S, races || S.races).slice(0, n || 10).map(function (d, i) { return (i + 1) + '. ' + d.name + ' ' + d.pts + ' pts' + (d.wins ? ' (' + d.wins + (d.wins === 1 ? ' win' : ' wins') + ')' : ''); }).join('; ');
+  var pt = J.partTimers(S, races || S.races).slice(0, 8).map(function (d) { var sh = J.sharesCar(S, d.key); return d.name + ' (#' + (d.car || '?') + (sh.length ? ', shares it with ' + sh.slice(0, 3).join(', ') : '') + ')'; });
+  return main + (main && pt.length ? '. PART-TIME drivers (not in the championship points, never call them points leaders or say they are in the playoff hunt): ' + pt.join('; ') : '');
+}
 AI.raceFacts = function (S, race) {
   var info = J.raceInfo(race), m = race.meta || {}, lines = [];
   var total = Math.max(S.schedule.length, S.races.length), idx = S.races.indexOf(race) + 1;
@@ -611,7 +615,7 @@ function sillyBlock(S) {
 // contracts, moods and the other series: what a real silly season reporter would know
 function contractsBlock(S) {
   var cross = J.crossFor(S), pr = J.sillyPredictions(S, cross).slice(0, 10), out = '';
-  if (pr.length) out += '\nCONTRACTS AND MOOD (from the league data; use it, do not contradict it): ' + pr.map(function (x) { return x.name + (x.team ? ' (' + x.team.name + ')' : '') + ': ' + x.contract.label.toLowerCase() + ', ' + (x.happy ? x.happy.label.toLowerCase() : 'unknown mood') + (x.why.length ? ' because ' + x.why.slice(0, 2).join(' and ') : ''); }).join('; ') + '.';
+  if (pr.length) out += '\nCONTRACTS AND MOOD (from the league data; use it, do not contradict it): ' + pr.map(function (x) { return x.name + (x.team ? ' (' + x.team.name + ')' : '') + (x.pt ? ' [part-time]' : '') + ': ' + x.contract.label.toLowerCase() + ', ' + (x.happy ? x.happy.label.toLowerCase() : 'unknown mood') + (x.why.length ? ' because ' + x.why.slice(0, 2).join(' and ') : ''); }).join('; ') + '.';
   if (cross && cross.stars && cross.stars.length) out += '\nRISING STARS ONE SERIES DOWN (' + cross.downLabel + '): ' + cross.stars.map(function (x) { return x.name + ' (' + J.plural(x.wins, 'win') + ', ' + x.avg.toFixed(1) + ' avg finish)'; }).join('; ') + '. Real silly season often links standouts from the series below to open seats.';
   if (cross && cross.upOpen && cross.upOpen.length) out += '\nSEATS THAT COULD OPEN ONE SERIES UP (' + cross.up + '): ' + cross.upOpen.map(function (x) { return x.team + ' (' + x.from + ' may leave)'; }).join('; ') + '. A strong driver here could be linked to one of them.';
   return out;

@@ -9,9 +9,20 @@ J.ROSTERS = {"cup":[["Kyle Larson","5","Hendrick Motorsports","Concord, NC","#1F
 J.MOVES_2027 = [["Jimmie Johnson","retirement","cup","","","","2026-05-15",1],["Corey Heim","promotion","cup","cup","23XI Racing","35","2026-05-30",0],["Denny Hamlin","retirement","cup","","","","2026-06-08",1],["Jesse Love","promotion","xfinity","cup","Wood Brothers Racing","21","2026-06-17",0],["Alex Bowman","retirement","cup","","","","2026-07-23",0],["Connor Zilisch","move","cup","cup","Hendrick Motorsports","48","2026-08-17",0],["Austin Hill","promotion","xfinity","cup","Richard Childress Racing","33","2026-08-24",0],["Lee Pulliam","promotion","xfinity","xfinity","Peterson Racing","87","2026-08-25",0],["Chandler Smith","promotion","truck","xfinity","Richard Childress Racing","21","2026-08-26",0],["Carson Brown","promotion","arca","xfinity","Richard Childress Racing","2","2026-08-26",0],["Carson Kvapil","move","xfinity","xfinity","JR Motorsports","8","2026-08-27",0],["Daniel Dye","promotion","xfinity","xfinity","Jordan Anderson Racing","32","2026-08-28",0],["Riley Herbst","move","cup","cup","Legacy Motor Club","84","2026-09-03",0],["Josh Berry","move","cup","cup","Legacy Motor Club","42","2026-09-08",0],["Sam Mayer","move","xfinity","xfinity","JR Motorsports","1","2026-09-22",0],["Brad Keselowski","move","cup","","","","2026-09-29",1],["Jake Garcia","move","truck","truck","Front Row Motorsports","38","2026-09-29",0],["Kasey Kahne","new","","truck","Spire Motorsports","77","2026-10-07",0],["Brennan Poole","move","xfinity","xfinity","Jordan Anderson Racing","unconfirmed","2026-10-16",1],["Sammy Smith","move","xfinity","truck","Tricon Garage","15","2026-10-23",1],["Dawson Sutton","move","truck","truck","Tricon Garage","5","2026-10-23",1],["Garrett Mitchell (Cleetus McFarland)","move","arca","arca","Richard Childress Racing","33","2026-10-28",0],["Ryan Preece","move","cup","cup","RFK Racing","6","2026-11-04",0],["John Hunter Nemechek","move","cup","xfinity","Haas Factory Team","41","2026-11-04",0],["Will Rodgers","move","xfinity","xfinity","Big Machine Racing","unconfirmed","2026-11-07",1]];
 J.rosterLookup = function (S) {
   var list = J.ROSTERS[S.series.id]; if (!list) return null;
-  var map = {}, yr = J.seasonNum(S);
-  list.slice().sort(function (a, b) { return b[6] - a[6]; }).forEach(function (r) { var k = J.driverKey(r[0]); if (!map[k]) map[k] = { team: r[2], number: r[1], base: r[3], color: r[4], mfr: r[5] }; });
-  if (yr >= 2027) J.MOVES_2027.forEach(function (m) { if (m[3] === S.series.id && m[4]) { var old = null; Object.keys(J.ROSTERS).some(function (s) { return J.ROSTERS[s].some(function (r) { if (r[2] === m[4]) { old = r; return true; } }); }); map[J.driverKey(m[0])] = { team: m[4], number: m[5], base: old ? old[3] : '', color: old ? old[4] : '#888', mfr: old ? old[5] : '' }; } });
-  return function (name) { return map[J.driverKey(name)] || null; };
+  var map = {}, yr = J.seasonNum(S), cars = J.rosterCars(S);
+  list.filter(function (r) { return !/\(|rotating/i.test(r[0]); }).slice().sort(function (a, b) { return b[6] - a[6]; }).forEach(function (r) {
+    var k = J.driverKey(r[0]); if (map[k]) return;
+    var car = cars[r[2] + '#' + r[1]], shared = car ? car.drivers.filter(function (n) { return J.driverKey(n) !== k; }) : [];
+    map[k] = { team: r[2], number: r[1], base: r[3], color: r[4], mfr: r[5], fullTime: !!r[6], shared: shared };
+  });
+  if (yr >= 2027) J.MOVES_2027.forEach(function (m) { if (m[3] === S.series.id && m[4]) { var old = null; Object.keys(J.ROSTERS).some(function (s) { return J.ROSTERS[s].some(function (r) { if (r[2] === m[4]) { old = r; return true; } }); }); map[J.driverKey(m[0])] = { team: m[4], number: m[5], base: old ? old[3] : '', color: old ? old[4] : '#888', mfr: old ? old[5] : '', fullTime: true, shared: [] }; } });
+  var fn = function (name) { return map[J.driverKey(name)] || null; };
+  fn.cars = cars;
+  return fn;
+};
+// every real car in this series: "Team#number" -> { team, number, drivers: [names], fullTime: one driver runs it all year }
+J.rosterCars = function (S) {
+  var out = {}; (J.ROSTERS[S.series.id] || []).forEach(function (r) { if (/\(|rotating/i.test(r[0])) return; var k = r[2] + '#' + r[1], c = out[k] = out[k] || { team: r[2], number: r[1], base: r[3], color: r[4], mfr: r[5], drivers: [], fullTime: false }; c.drivers.push(r[0]); if (r[6]) { c.fullTime = true; (c.ftNames = c.ftNames || []).push(r[0]); } });
+  return out;
 };
 })();
