@@ -63,8 +63,35 @@ J.logo = function (cls) {
     + '<text x="76" y="40" font-family="var(--display)" font-size="23" font-weight="900" font-style="italic" letter-spacing=".5" fill="currentColor">NASCAR</text></svg>';
 };
 J.seriesBadge = function (id, cls) {
+  var own = J.seriesLogo(id); if (own) { var s0 = J.SERIES[id] || {}; return '<img class="sbadge simg ' + (cls || '') + '" src="' + esc(own) + '" alt="' + esc(s0.label || id) + '">'; }
   var c = J.SERIES_COLOR[id] || '#888', s = J.SERIES[id] || {}, t = { cup: 'CUP', xfinity: 'OAP', truck: 'TRK', arca: 'ARCA' }[id] || (s.short || '?');
   return '<svg class="sbadge ' + (cls || '') + '" viewBox="0 0 40 40" role="img" aria-label="' + esc(s.label || id) + '"><path d="M20 2l16 6v13c0 9-7 15-16 17C11 36 4 30 4 21V8z" fill="#0b0d12" stroke="' + c + '" stroke-width="2.5"/><path d="M8 26L32 12v5L10 30z" fill="' + c + '"/><text x="20" y="' + (t.length > 3 ? 24 : 25) + '" text-anchor="middle" font-family="var(--display)" font-weight="900" font-style="italic" font-size="' + (t.length > 3 ? 9.5 : 11.5) + '" fill="#fff" stroke="#0b0d12" stroke-width="2.4" paint-order="stroke">' + esc(t) + '</text></svg>';
+};
+
+/* ---------- the commissioner's own images: car numbers and series logos (Logos and Numbers page) ----------
+   S.art = { nums: { "24": image }, logo: image }  image = a data URL in the app, a file path on the website */
+J.seriesLogo = function (id) {
+  var S = J.S, hit = '';
+  if (S && S.series && S.series.id === id && S.art && S.art.logo) return S.art.logo;
+  if (J.MODE === 'admin' && J.leagues) Object.keys(J.leagues).some(function (k) { var L = J.leagues[k]; if (L.series.id === id && L.art && L.art.logo && !L.archived) { hit = L.art.logo; return true; } });
+  if (!hit && J.siteLogos && J.siteLogos[id]) hit = J.siteLogos[id];
+  if (!hit) (J.seriesList || []).some(function (o) { if ((o.id === id || (J.leagues && J.leagues[o.id] && J.leagues[o.id].series.id === id)) && o.logo) { hit = o.logo; return true; } });
+  return hit;
+};
+J.numArt = function (car, S) {
+  if (S === false) return ''; S = S || J.S;
+  var a = S && S.art && S.art.nums; if (!a || car == null) return '';
+  return a[String(car).trim()] || '';
+};
+J.carTag = function (car, cls, S) {
+  var src = J.numArt(car, S);
+  if (src) return '<span class="car art' + (cls ? ' ' + cls : '') + '"><img src="' + esc(src) + '" alt="' + esc(car) + '"></span>';
+  return '<span class="car' + (cls ? ' ' + cls : '') + '">' + esc(car) + '</span>';
+};
+J.dnumTag = function (car, cls, S) {
+  var src = J.numArt(car, S);
+  if (src) return '<span class="dnum art' + (cls ? ' ' + cls : '') + '"><img src="' + esc(src) + '" alt="' + esc(car) + '"></span>';
+  return '<span class="dnum' + (cls ? ' ' + cls : '') + '">' + esc(car) + '</span>';
 };
 
 /* ---------- avatars ---------- */
