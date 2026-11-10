@@ -1,4 +1,4 @@
-// JSS Commissioner - Electron main process.
+// Virtual NASCAR (commissioner app) - Electron main process.
 // Holds the window, does network requests (so Claude and GitHub calls are not blocked by the browser),
 // and keeps leagues, photos/videos and settings on disk. API key and GitHub token are encrypted with Windows' own protection.
 const { app, BrowserWindow, ipcMain, safeStorage, shell, Menu, net } = require('electron');
@@ -6,6 +6,8 @@ const path = require('path');
 const fs = require('fs');
 
 const SRC = path.join(__dirname, 'src');
+// The app was called "JSS Commissioner" before; keep using that data folder so every league, photo and key stays put.
+app.setPath('userData', path.join(app.getPath('appData'), 'JSS Commissioner'));
 const DATA = () => app.getPath('userData');
 const LEAGUES = () => path.join(DATA(), 'leagues');
 const MEDIA = () => path.join(DATA(), 'media');
@@ -120,8 +122,8 @@ ipcMain.handle('app:dataFolder', () => { shell.openPath(DATA()); return DATA(); 
 function createWindow() {
   const win = new BrowserWindow({
     width: 1400, height: 900, minWidth: 980, minHeight: 640,
-    title: "Jet's Sim Series - Commissioner",
-    backgroundColor: '#0a1f44',
+    title: 'Virtual NASCAR - Commissioner',
+    backgroundColor: '#000000',
     icon: path.join(__dirname, 'build', 'icon.png'),
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: true }
   });

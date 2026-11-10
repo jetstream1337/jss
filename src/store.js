@@ -1,4 +1,4 @@
-/* Jet's Sim Series - commissioner storage (never published).
+/* Virtual NASCAR - commissioner storage (never published).
    In the desktop app everything goes through window.jssNative (files on disk, secrets encrypted by Windows).
    In a plain browser it falls back to localStorage (leagues, settings) and IndexedDB (photos, video). */
 (function () {

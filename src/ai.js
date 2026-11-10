@@ -1,4 +1,4 @@
-/* Jet's Sim Series - AI layer: Gemini (free) or Claude (paid) (commissioner app only; never published) */
+/* Virtual NASCAR - AI layer: Gemini (free) or Claude (paid) (commissioner app only; never published) */
 (function () {
 'use strict';
 var J = window.JSS, AI = J.ai = {};
@@ -156,13 +156,22 @@ var FIRST = {
   adult: ['Greg', 'Donna', 'Mike', 'Tammy', 'Steve', 'Rob', 'Kelly', 'Jason', 'Heather', 'Scott', 'Dave', 'Brian', 'Lisa', 'Chad', 'Shawn', 'Travis', 'Amy', 'Wes', 'Darren', 'Jen', 'Troy', 'Missy'],
   oldhead: ['Don', 'Ron', 'Bill', 'Gary', 'Larry', 'Earl', 'Wayne', 'Carl', 'Janet', 'Dale', 'Jim', 'Bobby', 'Linda', 'Harold', 'Junior', 'Buck', 'Darlene', 'Roy', 'Glenn', 'Shirley']
 };
-var RACE_N = ['lugnut', 'splitter', 'apron', 'draft', 'restart', 'caution', 'pitroad', 'spotter', 'trackbar', 'wedge', 'tirerub', 'stickers', 'scuffs', 'bumpdraft', 'yellowline', 'backstretch', 'frontstretch', 'infield', 'hauler', 'loosewheel', 'bigone', 'overtime', 'stage2', 'checkers', 'pacecar', 'pitbox', 'catchcan', 'roundofwedge', 'fuelmileage', 'twotires', 'outsidelane', 'tandem', 'freightrain', 'dogbox', 'pylon'];
-var RACE_ADJ = ['loose', 'tight', 'sketchy', 'salty', 'lapped', 'wrecked', 'late', 'cursed', 'washed', 'mid', 'cooked_tire', 'greenflag', 'unhinged', 'tired', 'pole', 'stagewin', 'lucky_dog'];
-var TRACKS = ['Talladega', 'Bristol', 'Darlington', 'Martinsville', 'Daytona', 'Rockingham', 'Dover', 'Pocono', 'Charlotte', 'Wilkesboro', 'Richmond', 'Atlanta', 'Phoenix', 'Michigan'];
-var RD_A = ['Spicy', 'Fluffy', 'Ok', 'Ill', 'Low', 'Fast', 'Quiet', 'Broad', 'Loud', 'Strict', 'Bright', 'Nervous', 'Rare', 'Former', 'Sad', 'Polite', 'Tough', 'Electrical', 'Federal', 'Massive', 'Visual', 'Practical'];
-var RD_N = ['Lugnut', 'Mechanic', 'Spray', 'Tie', 'Engine', 'Garage', 'Hammer', 'Tire', 'Bumper', 'Wrench', 'Gasket', 'Throttle', 'Chassis', 'Antelope', 'Pickle', 'Banana', 'Sandwich', 'Shift', 'Pin', 'Exhaust'];
-var EMO = ['🏁', '🏎️', '🔧', '🛞', '⚡', '🍺', '🔥', '🦅', '🐐', '☕'];
-var COLORS = ['#ffc20e', '#e3202c', '#2f6fff', '#22c55e', '#a855f7', '#06b6d4', '#f97316', '#ec4899', '#94a3b8', '#eab308', '#14b8a6', '#ef4444'];
+var LASTN = ['Miller', 'Johnson', 'Smith', 'Davis', 'Brown', 'Wilson', 'Moore', 'Taylor', 'Thomas', 'Jackson', 'White', 'Harris', 'Martin', 'Thompson', 'Clark', 'Lewis', 'Walker', 'Hall', 'Allen', 'Young', 'King', 'Wright', 'Scott', 'Green', 'Baker', 'Adams', 'Nelson', 'Hill', 'Campbell', 'Mitchell', 'Roberts', 'Carter', 'Phillips', 'Evans', 'Turner', 'Parker', 'Collins', 'Edwards', 'Stewart', 'Morris', 'Murphy', 'Cook', 'Rogers', 'Morgan', 'Cooper', 'Peterson', 'Reed', 'Bailey', 'Bell', 'Howard', 'Ward', 'Cox', 'Richardson', 'Wood', 'Brooks', 'Watson', 'Gray', 'Hughes', 'Price', 'Sanders', 'Myers', 'Long', 'Ross', 'Foster', 'Powell', 'Jenkins', 'Perry', 'Russell', 'Sullivan', 'Fisher', 'Henderson', 'Coleman', 'Simmons', 'Patterson', 'Jordan', 'Reynolds', 'Hamilton', 'Graham', 'Kim', 'Gonzalez', 'Alvarez', 'Hayes', 'Myers', 'Ford', 'Wells', 'Webb', 'Tucker', 'Porter', 'Hunter', 'Hicks', 'Crawford', 'Boyd', 'Mason', 'Dixon', 'Hunt', 'Pope', 'Barnes', 'Dunn', 'Pruitt', 'Cagle', 'Beasley', 'Honeycutt', 'Puckett', 'Satterfield', 'Whitaker', 'Blevins', 'Dobbins', 'Tillman'];
+var PLACES = ['Charlotte, NC', 'Concord, NC', 'Mooresville, NC', 'Raleigh, NC', 'Greensboro, NC', 'Hickory, NC', 'Wilkesboro, NC', 'Greenville, SC', 'Spartanburg, SC', 'Florence, SC', 'Columbia, SC', 'Knoxville, TN', 'Bristol, TN', 'Johnson City, TN', 'Nashville, TN', 'Chattanooga, TN', 'Birmingham, AL', 'Huntsville, AL', 'Talladega, AL', 'Daytona Beach, FL', 'Jacksonville, FL', 'Tampa, FL', 'Atlanta, GA', 'Dawsonville, GA', 'Macon, GA', 'Richmond, VA', 'Martinsville, VA', 'Roanoke, VA', 'Indianapolis, IN', 'Fort Wayne, IN', 'Columbus, OH', 'Dayton, OH', 'Toledo, OH', 'Detroit, MI', 'Grand Rapids, MI', 'Pittsburgh, PA', 'Pocono, PA', 'Harrisburg, PA', 'Dover, DE', 'Fort Worth, TX', 'Houston, TX', 'San Antonio, TX', 'Kansas City, KS', 'St. Louis, MO', 'Des Moines, IA', 'Madison, WI', 'Phoenix, AZ', 'Las Vegas, NV', 'Sacramento, CA', 'Bakersfield, CA', 'Lancaster, NY', 'Watkins Glen, NY', 'Concord, NH', 'Mobile, AL', 'Shreveport, LA', 'Tulsa, OK', 'Wichita, KS', 'Louisville, KY', 'Bowling Green, KY', 'Toronto, ON'];
+var STATE_TAG = { NC: ['NC', 'Carolina', 'Tarheel'], SC: ['SC', 'Carolina', 'Gamecock'], TN: ['Tn', 'Vol', 'Tenn'], AL: ['Bama', 'Bama', 'Roll'], FL: ['FL', 'Gator', 'Florida'], GA: ['GA', 'Dawg', 'Peach'], VA: ['VA', 'Hokie', 'Va'], IN: ['Indy', 'Hoosier', 'IN'], OH: ['Ohio', 'Buckeye', 'OH'], MI: ['MI', 'Mich', 'Spartan'], PA: ['PA', 'Penn', 'Yinz'], TX: ['TX', 'Texas', 'Tx'], KS: ['KS', 'Jayhawk', 'KC'], MO: ['MO', 'Stl', 'Mizzou'], IA: ['Iowa', 'IA', 'Hawkeye'], WI: ['Wis', 'Badger', 'Cheese'], AZ: ['AZ', 'Desert', 'Az'], NV: ['Vegas', 'NV', 'Vegas'], CA: ['Cali', 'CA', 'Socal'], NY: ['NY', 'Upstate', 'NY'], NH: ['NH', 'Granite', 'NE'], LA: ['Cajun', 'LA', 'Geaux'], OK: ['Okie', 'OK', 'Sooner'], KY: ['KY', 'Bluegrass', 'Kentucky'], DE: ['DE', 'Del', 'Monster'], ON: ['Canuck', 'ON', 'Canada'] };
+// who an interest fits: M male, F female, T teen, Y 20s, A adults (not teens), O old-heads, blank anyone
+var INTERESTS = ['M|Ford guy', 'M|Chevy guy', 'F|Chevy girl', 'F|Ford girl', '|Toyota fan', '|hunting and fishing', '|Bama football', '|Go Dawgs', '|Go Vols', '|Clemson fan', '|Gamecocks', '|Buckeyes', '|Steelers', '|Panthers', '|Colts', '|Braves', '|Cubs', 'A|golf when it is not race day', '|dirt late models on Saturday night', '|local short track regular', '|sim racer', '|iRacing on weeknights', '|diecast collector', 'A|weekend camper at the track', 'A|grill master', 'A|coffee first', '|country music', 'A|classic trucks', '|lifted trucks', '|fantasy NASCAR', 'Y|DFS grinder', 'A|photographer', 'A|welder', 'A|nurse', 'A|teacher', 'A|lineman', 'A|truck driver', 'A|mechanic', 'A|firefighter', 'A|farmer', 'A|Army vet', 'Y|college student', 'T|high school', 'O|retired', 'MO|grandpa of 5', 'FO|grandma of 4', 'FA|boy mom', 'MA|girl dad', 'A|dog dad', 'FA|cat mom', '|Truck Series enjoyer', '|ARCA nerd'];
+var FEM = { mila: 1, brynn: 1, rylee: 1, kenzie: 1, lexi: 1, aubree: 1, paisley: 1, kayla: 1, chelsea: 1, alyssa: 1, hannah: 1, morgan: 1, brittany: 1, jess: 1, donna: 1, tammy: 1, kelly: 1, heather: 1, lisa: 1, amy: 1, jen: 1, missy: 1, janet: 1, linda: 1, darlene: 1, shirley: 1 };
+function fits(code, age, fem) {
+  if (!code) return true;
+  if (code.indexOf('M') >= 0 && fem) return false; if (code.indexOf('F') >= 0 && !fem) return false;
+  var ages = code.replace(/[MF]/g, ''); if (!ages) return true;
+  return ages.indexOf(age === 'teen' ? 'T' : age === 'young' ? 'Y' : age === 'oldhead' ? 'O' : 'X') >= 0 || (ages.indexOf('A') >= 0 && age !== 'teen');
+}
+var RD_A = ['Spicy', 'Fluffy', 'Ok', 'Low', 'Quiet', 'Broad', 'Loud', 'Bright', 'Nervous', 'Rare', 'Former', 'Polite', 'Tough', 'Federal', 'Massive', 'Visual', 'Practical', 'Unusual', 'Vegetable', 'Odd', 'Expensive', 'Weekly', 'Equivalent', 'Reasonable', 'Ancient', 'Upstairs', 'Wonderful', 'Pristine', 'Dry', 'Tall'];
+var RD_N = ['Antelope', 'Pickle', 'Banana', 'Sandwich', 'Lobster', 'Ostrich', 'Toaster', 'Pineapple', 'Raccoon', 'Badger', 'Walrus', 'Pancake', 'Potato', 'Otter', 'Moose', 'Cactus', 'Bagel', 'Penguin', 'Falcon', 'Turnip', 'Kettle', 'Lamp', 'Sock', 'Biscuit', 'Squirrel'];
+var EMO = ['🏁', '🏎️', '🇺🇸', '🔧', '🔥', '🦅', '☕', '🌻', '🎣', '🏈', '⚾', '🐾'];
+var COLORS = ['#ffc20e', '#e3202c', '#2f6fff', '#22c55e', '#a855f7', '#06b6d4', '#f97316', '#ec4899', '#94a3b8', '#eab308', '#14b8a6', '#ef4444', '#8b5cf6', '#0ea5e9', '#84cc16'];
 var QUIRKS = {
   teen: ['types in lowercase with almost no punctuation', 'reacts fast and short, sometimes just an emoji', 'stan-account energy for their driver, makes edits', 'borrows streamer and meme slang', 'gets dramatic, then forgets about it a post later', 'replies to big accounts hoping to get noticed'],
   young: ['sarcastic group-chat humor', 'has a fantasy lineup and a bet slip riding on it', 'complains about the broadcast and strategy calls', 'swears mildly', 'loves dunking on bad takes with a quote post', 'brings receipts from old posts when someone is wrong', 'posts hungover on race day', 'treats every race like a fantasy draft'],
@@ -170,59 +179,107 @@ var QUIRKS = {
   oldhead: ['nostalgic: compares everything to the old days', 'thinks there are too many cautions and the cars look the same', 'types sloppy: ellipses, random CAPS, missing punctuation', 'Facebook-comment energy, signs off with an initial now and then', 'thinks the playoff format ruined everything', 'loves the sport and will defend it to the end']
 };
 function weighted(rand, items, w) { var t = w.reduce(function (a, b) { return a + b; }, 0), r = rand() * t; for (var i = 0; i < items.length; i++) { r -= w[i]; if (r <= 0) return items[i]; } return items[items.length - 1]; }
-function clean(h) { h = String(h).replace(/[^A-Za-z0-9_\-]/g, ''); return h.length > 21 ? '' : h; }
+// X handles: letters, numbers and _ only, 4 to 15 long. Reddit: also -, up to 20.
+function clean(h, forum) { h = String(h).replace(forum ? /[^A-Za-z0-9_\-]/g : /[^A-Za-z0-9_]/g, ''); return h.length > (forum ? 20 : 15) || h.length < 4 ? '' : h; }
 function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
-function handleFor(age, level, drv, rand, first, platform) {
-  var P = function (a) { return J.pick(rand, a); }, n2 = 10 + Math.floor(rand() * 89), yy = P(['07', '08', '09', '10', '11', '98', '99', '01', '03', '05']);
-  var L = J.lastName(drv ? drv.name : '').replace(/[^A-Za-z]/g, ''), l = L.toLowerCase(), c = (drv && drv.car) || '';
-  if (platform === 'forum' && rand() < 0.45) return P(RD_A) + P(['-', '_']) + P(RD_N) + P(['-', '_']) + (1000 + Math.floor(rand() * 8999));
-  if (drv && level === 2) return P([L + 'Nation', 'team' + l, l + 'szn', c + 'szn', l + 'stan' + yy, 'ride_or_die_' + c, 'no' + c + 'enjoyer', L + 'Brigade']);
-  if (drv && level === -2) return P(['anyonebut' + c, l + 'isoverrated', 'not' + c + 'again', l + '_hater_acct', 'Fade' + L]);
-  if (drv && level === -1 && rand() < 0.4) return P([l + '_overrated', 'no' + l + 'please', l + 'fumbles']);
-  if (drv && level === 1 && rand() < 0.35) return P([c + '_til_i_die', l + 'fan' + n2, 'the' + c + 'guy', l + 'brainrot']);
-  var rn = P(RACE_N), ra = P(RACE_ADJ);
-  if (age === 'teen') return P([P(['', 'its', 'the', 'lil']) + rn + P(['szn', '_', 'x', 'edits', 'clips', 'fr', 'zz']), rn + yy, ra + rn + P(['', 'hours']), first + P(['.edits', 'zone', '_racing', 'tv']), 'pitroad' + P(['princess', 'prince', 'menace'])]);
-  if (age === 'young') return P([ra + '_' + rn, rn + '_enjoyer', 'pushin_the_' + P(['draft', 'apron', 'limit', 'tandem', 'pack']), 'not_your_spotter', 'certified_' + P(['caution', 'restart', 'playoff', 'stage', 'debris']) + '_hater', cap(rn) + n2, 'Fantasy' + cap(rn) + n2, rn + 'brain', first.toLowerCase() + '_on_the_' + P(['apron', 'wall', 'draft', 'box'])]);
-  if (age === 'adult') return P(['Sunday' + P(['Grill', 'Couch', 'Garage']) + P(['Dad', 'Guy', 'Mom', 'King']), cap(rn) + first, 'TwoTire' + first, 'Section' + (100 + Math.floor(rand() * 220)) + 'Seats', 'Turn' + P(['1', '2', '3', '4']) + P(['Grandstand', 'Fence', 'Camper']), first + '_' + P(TRACKS).toLowerCase() + n2, 'CrewChief' + first]);
-  return P(['OldSchool' + P(['Oval', 'Racing', 'Fan']), P(TRACKS) + P(['Forever', 'Fan', 'Regular']) + (rand() < 0.5 ? n2 : ''), 'BiasPly' + first, 'Carburetor' + P(['Era', 'Days', 'Kid']), (1968 + Math.floor(rand() * 27)) + P(TRACKS), first + '_from_' + P(TRACKS), 'Rt' + (1 + Math.floor(rand() * 90)) + 'Racer']);
+var BORN = { teen: [2007, 2011], young: [1992, 2003], adult: [1971, 1991], oldhead: [1948, 1970] };
+// Real handles are mostly boring: names, initials, birth years, home state, a car number, a truck brand, a football team.
+// Racing-themed handles are the minority, and auto-generated Reddit names are common.
+function handleFor(age, level, drv, rand, first, platform, last, born, place) {
+  var fem = !!FEM[first.toLowerCase()];
+  var P = function (a) { return J.pick(rand, a); }, f = first.toLowerCase(), F = cap(f), l = last.toLowerCase(), L = last, fi = f.charAt(0), li = l.charAt(0);
+  var yy = String(born).slice(2), yyyy = String(born), n2 = String(1 + Math.floor(rand() * 98)), n3 = String(100 + Math.floor(rand() * 899)), n4 = String(1000 + Math.floor(rand() * 8999));
+  var st = (place && place.split(', ')[1]) || 'NC', tag = P(STATE_TAG[st] || ['']), car = drv ? String(drv.car || '').replace(/[^0-9]/g, '') : '', dl = drv ? J.lastName(drv.name).replace(/[^A-Za-z]/g, '') : '';
+  if (platform === 'forum') {
+    if (rand() < 0.42) return P(RD_A) + P(['_', '-', '']) + P(RD_N) + P(['_', '-', '']) + n4; // Reddit's own suggested names
+    return P([f + l + n2, fi + l + yy, f + '_' + l, 'the' + f + l, f + P(['racing', 'raceday', '_turns_left', 'fan']) + n2, l + '_' + yyyy, tag.toLowerCase() + '_' + f, 'throwaway_' + f + n3, (car ? car + '_' : '') + f + '_' + l, f + li + n4, (dl ? dl.toLowerCase() + 'fan' + n2 : f + 'fan' + n2), P(['loose', 'tight', 'lapped', 'loosewheel', 'greenwhite', 'trackbar']) + '_' + f]);
+  }
+  var fanOf = drv && level > 0 && rand() < (level === 2 ? 0.55 : 0.25);
+  if (fanOf) return P([dl + 'Fan' + n2, dl + car + 'Fan', 'Team' + dl + (rand() < 0.5 ? car : ''), car + F + yy, F + '_' + car, 'No' + car + F, dl + 'Nation' + (rand() < 0.5 ? n2 : ''), f + '4' + dl.toLowerCase(), F + dl + car]);
+  if (drv && level === -2 && rand() < 0.2) return P(['AnybodyBut' + car, 'Not' + car + 'Again', dl + 'Overrated', F + 'HatesThe' + car]);
+  var plain = [f + l, f + '_' + l, F + L, f + l + n2, f + li + n2, fi + l + n2, F + li + yy, f + '_' + l + yy, fi + fi + l, f + l.slice(0, 3) + n2, l + f.slice(0, 1) + yy, f + yy, 'the_' + f + l, 'Real' + F + L, f + '_' + li + li];
+  var hobby = [tag + F + n2, F + tag, tag + '_' + f, P(['Ford', 'Chevy', 'Mopar', 'Tundra']) + (fem ? P(['Girl', 'Fan', 'Gal']) : P(['Guy', 'Fan', 'Man'])) + yy, P(['Silverado', 'F150', 'Ram', 'Duramax', 'Cummins']) + F, F + P(['Hunts', 'Fishes', 'Grills', 'Golfs']), P(['Dawg', 'Vol', 'Bama', 'Tiger', 'Gator', 'Buck']) + F + n2, F + P(['DFS', 'Fantasy', 'Picks']) + (rand() < 0.5 ? yy : ''), 'Coach' + L, (fem ? P(['Mama', 'Momma', 'Nana']) : P(['Papa', 'Pops', 'Big'])) + F + (rand() < 0.5 ? yy : ''), F + 'Racing' + n2, 'Turn' + P(['3', '4', '1']) + F];
+  var racing = ['Lapped' + F, F + 'OnTheBox', 'Backstretch' + F, F + 'TwoTires', 'Pit' + P(['Road', 'Box']) + F, F + 'Scanner', 'RaceDay' + F, F + '_Infield', 'Loose' + F + n2];
+  var pool = age === 'teen' ? [plain, plain, hobby, racing] : age === 'oldhead' ? [plain, plain, plain, hobby, hobby] : [plain, plain, plain, hobby, hobby, racing];
+  var h = P(P(pool));
+  if (age === 'teen' && rand() < 0.5) h = h.toLowerCase();
+  if (rand() < 0.12) h = h + '_';
+  return h;
 }
 var JOKE_USED = {};
-function displayName(age, handle, rand, first, drv, level) {
-  var nm = displayName0(age, handle, rand, first, drv, level);
-  if (/^(certified hater|spotter hours|caution clock victim|Dad of 3)/.test(nm)) { if (JOKE_USED[nm]) return cap(first); JOKE_USED[nm] = 1; }
-  return nm;
+function displayName(age, handle, rand, first, drv, level, last) {
+  var fem = !!FEM[first.toLowerCase()];
+  var P = function (a) { return J.pick(rand, a); }, f = cap(first), l = last, c = drv && level > 0 ? String(drv.car || '') : '', r = rand();
+  var em = rand() < (age === 'teen' ? 0.35 : age === 'young' ? 0.25 : age === 'adult' ? 0.18 : 0.08) ? ' ' + P(EMO) : '';
+  if (age === 'teen') return r < 0.4 ? first.toLowerCase() + em : r < 0.6 ? f + ' ' + l.charAt(0) : r < 0.75 && c ? first.toLowerCase() + ' #' + c : r < 0.9 ? f + em : f + ' ' + l;
+  if (age === 'young') return r < 0.4 ? f + ' ' + l + em : r < 0.6 ? f + em : r < 0.72 && c ? f + ' | #' + c : r < 0.85 ? f + ' ' + l.charAt(0) + '.' : handle;
+  if (age === 'adult') return r < 0.55 ? f + ' ' + l + em : r < 0.7 ? f + em : r < 0.8 ? (fem ? 'Coach ' + l : P(['Coach ', 'Big ']) + (rand() < 0.5 ? l : f)) : r < 0.9 && c ? f + ' ' + l + ' #' + c : f + ' ' + l.charAt(0);
+  return r < 0.65 ? f + ' ' + l : r < 0.8 ? f + ' ' + l.charAt(0) : r < 0.9 ? (fem ? P(['Aunt ', 'Nana ', 'Miss ']) : P(['Uncle ', 'Papa ', 'Ol\' '])) + f : f + em;
 }
-function displayName0(age, handle, rand, first, drv, level) {
-  var P = function (a) { return J.pick(rand, a); }, f = cap(first), c = drv && level > 0 ? drv.car : '', r = rand();
-  var em = rand() < (age === 'teen' ? 0.5 : age === 'young' ? 0.3 : 0.15) ? ' ' + P(EMO) : '';
-  if (age === 'teen') return r < 0.35 ? first + em : r < 0.55 ? handle.replace(/[_.]/g, ' ') : r < 0.75 && c ? first + ' | #' + c : P([first.slice(0, 3), first + ' ✨', first + 'ie', 'its ' + first]);
-  if (age === 'young') return r < 0.35 ? f + em : r < 0.5 && c ? f + ' | #' + c : r < 0.65 ? f.charAt(0) + P(['J', 'T', 'M', 'K', 'B']) : r < 0.8 ? P(['Big ' + f.charAt(0), f + ' (fantasy commish)', 'certified hater', 'spotter hours', 'caution clock victim', f + ' on the apron']) : handle;
-  if (age === 'adult') return r < 0.4 ? f + em : r < 0.55 ? P(['Big ' + f, 'Coach ' + f, f + ' the Grill Sgt']) : r < 0.7 && c ? f + ' | #' + c : r < 0.85 ? P(['Dad of 3' + em, f + ' (Turn 3)', 'Two Tire ' + f]) : f.charAt(0) + '.' + P(['W.', 'R.', 'K.', 'D.']);
-  return r < 0.45 ? f : r < 0.65 ? P(['Uncle ' + f, f + ' from ' + P(TRACKS), 'Ol\' ' + f]) : r < 0.8 ? f + ' (since \'' + (68 + Math.floor(rand() * 27)) + ')' : f + ' ' + P(['G', 'W', 'H', 'R', 'B']);
+function bioFor(age, rand, drv, level, place, born, first) {
+  var fem = !!FEM[String(first).toLowerCase()], P = function (a) { return J.pick(rand, a); }, bits = J.shuffle(INTERESTS.filter(function (x) { return fits(x.split('|')[0], age, fem); }).map(function (x) { return x.split('|')[1]; }), rand).slice(0, rand() < 0.4 ? 1 : rand() < 0.75 ? 2 : 3);
+  if (drv && level > 0) bits.splice(Math.floor(rand() * (bits.length + 1)), 0, P(['#' + drv.car + ' fan', J.lastName(drv.name) + ' fan since day one', '#' + drv.car + ' til I die', 'ride or die for the ' + drv.car]));
+  if (rand() < 0.12) bits.push('opinions are my own');
+  if (rand() < 0.25) return '';
+  var sep = P([' | ', '. ', ' / ', ' • ', ', ']);
+  var out = bits.map(function (b, i) { return i === 0 ? cap(b) : sep === '. ' ? cap(b) : b; }).join(sep);
+  return age === 'teen' && rand() < 0.5 ? out.toLowerCase() : out;
 }
-function makeFan(S, ds, rand, used, keep) {
-  var age = keep ? keep.age : weighted(rand, ['teen', 'young', 'adult', 'oldhead'], [16, 36, 30, 18]);
-  var platform = keep ? keep.platform : (rand() < (age === 'teen' ? 0.9 : age === 'oldhead' ? 0.5 : 0.62) ? 'x' : 'forum');
+function makeFan(S, ds, rand, used, keep, reroll) {
+  var age = keep && !reroll ? keep.age : weighted(rand, ['teen', 'young', 'adult', 'oldhead'], [15, 34, 33, 18]);
+  var platform = keep && !reroll ? keep.platform : (rand() < (age === 'teen' ? 0.88 : age === 'oldhead' ? 0.5 : 0.62) ? 'x' : 'forum');
   var drv = null, level = 0;
-  if (keep) { if (keep.stance && keep.stance.driver) { drv = ds.find(function (d) { return d.key === keep.stance.driver; }) || null; level = keep.stance.level; } }
-  else if (rand() < 0.68) { drv = weighted(rand, ds, ds.map(function (d, i) { return i < 3 ? 5 : i < 8 ? 3 : i < 20 ? 1.5 : 1; })); level = weighted(rand, [2, 1, -1, -2], [22, 40, 26, 12]); }
-  for (var tries = 0; tries < 30; tries++) {
-    var first = J.pick(rand, FIRST[age]), h = clean(handleFor(age, level, drv, rand, first, platform));
-    if (h.length < 4 || used[h.toLowerCase()]) continue;
+  if (keep && !reroll) { if (keep.stance && keep.stance.driver) { drv = ds.find(function (d) { return d.key === keep.stance.driver; }) || null; level = keep.stance.level; } }
+  else if (rand() < 0.7) { drv = weighted(rand, ds, ds.map(function (d, i) { return i < 3 ? 5 : i < 8 ? 3 : i < 20 ? 1.5 : 1; })); level = weighted(rand, [2, 1, -1, -2], [22, 40, 26, 12]); }
+  for (var tries = 0; tries < 40; tries++) {
+    var first = J.pick(rand, FIRST[age]), last = J.pick(rand, LASTN), b = BORN[age], born = b[0] + Math.floor(rand() * (b[1] - b[0] + 1)), place = rand() < 0.62 ? J.pick(rand, PLACES) : '';
+    var h = clean(handleFor(age, level, drv, rand, first, platform, last, born, place), platform === 'forum');
+    if (!h || used[h.toLowerCase()]) continue;
     used[h.toLowerCase()] = 1;
-    var f = keep || { id: 'f' + (S.fans.length + 1) + J.uid('').slice(-3), age: age, platform: platform, stance: drv ? { driver: drv.key, level: level, seen: (S.rep[drv.key] ? S.rep[drv.key].events.length : 0) } : { driver: null, level: 0, seen: 0 } };
-    f.handle = h; f.name = displayName(age, h, rand, first, drv, level); f.v = 2;
+    var f = keep || { id: 'f' + (S.fans.length + 1) + J.uid('').slice(-3) };
+    f.age = age; f.platform = platform;
+    f.stance = drv ? { driver: drv.key, level: level, seen: (S.rep[drv.key] ? S.rep[drv.key].events.length : 0) } : { driver: null, level: 0, seen: 0 };
+    f.handle = h; f.name = platform === 'forum' ? h : displayName(age, h, rand, first, drv, level, last); f.v = 3;
     f.color = J.pick(rand, COLORS); f.quirks = J.shuffle(QUIRKS[age], rand).slice(0, 2).join('; '); f.qv = 2;
-    f.followers = Math.round(Math.pow(rand(), 3) * (age === 'oldhead' ? 900 : 4200)) + 12;
+    f.followers = Math.round(Math.pow(rand(), 3.2) * (age === 'oldhead' ? 900 : 3800)) + 8;
+    f.following = Math.round(80 + rand() * (age === 'teen' ? 900 : 600));
+    f.place = platform === 'forum' ? '' : place; f.bio = platform === 'forum' ? '' : bioFor(age, rand, drv, level, place, born, first);
+    var j0 = Math.max(2008, born + 13), jy = Math.min(2025, j0 + Math.floor(rand() * Math.max(1, 2026 - j0))); f.joined = jy + '-' + String(1 + Math.floor(rand() * 12)).padStart(2, '0');
+    f.karma = platform === 'forum' ? Math.round(Math.pow(rand(), 2) * 48000) + 120 : 0;
     return f;
   }
   return null;
 }
+// New identities for every fan account (same ids, so their posts follow them). reroll also re-picks age, platform and who they cheer for.
+// New names, handles and bios for the media personalities (roles and how they post stay the same)
+var FIG_FIRST = ['Jamie', 'Kyle', 'Brett', 'Casey', 'Dustin', 'Marty', 'Shannon', 'Trey', 'Lindsey', 'Cole', 'Hailey', 'Rusty', 'Dana', 'Jeff', 'Kristen', 'Reid', 'Toni', 'Grant', 'Bobby', 'Erin', 'Wade', 'Nikki', 'Darrell', 'Skip'];
+var FIG_LAST = ['Kraft', 'Pennington', 'Albright', 'Delaney', 'Ruffin', 'Stroud', 'McAllister', 'Hargrove', 'Benton', 'Yates', 'Castellano', 'Dorsey', 'Lockhart', 'Mabry', 'Ingram', 'Vickers', 'Hollis', 'Sapp', 'Rowland', 'Gaither'];
+var FIG_BRAND = { tommy: ['LooseWheelTV', 'RedFlagRants', 'TurnFourTV', 'WideOpenRacing', 'PitWallTV'], sam: ['LapByLapStats', 'LoopDataLive', 'StintStats', 'RaceByNumbers', 'GreenFlagData'], pod: ['TheBumpDraftPod', 'DraftingRoomPod', 'TwoTirePod', 'PitRoadPodcast', 'BackstretchPod'], memes: ['CautionClockMemes', 'LeftTurnMemes', 'DebrisCautionHQ', 'WreckedMemes', 'InfieldMemes'] };
+AI.regenFigures = function (S) {
+  var rand = J.rng('figs' + S.id + Date.now()), used = {}, out = {};
+  Object.keys(J.FIGURE_BASE).forEach(function (k) {
+    var b = J.FIGURE_BASE[k], first, last, name, handle;
+    for (var t = 0; t < 30; t++) { first = J.pick(rand, FIG_FIRST); last = J.pick(rand, FIG_LAST); if (!used[first] && !used[last]) break; }
+    used[first] = used[last] = 1;
+    if (FIG_BRAND[k]) { var br = J.pick(rand, FIG_BRAND[k]); name = k === 'tommy' ? first + ' ' + last : br.replace(/([a-z])([A-Z])/g, '$1 $2'); handle = '@' + br; }
+    else { name = first + ' ' + last; handle = '@' + J.pick(rand, [first + last, first + last + 'Racing', first + 'On' + J.pick(rand, ['PitRoad', 'TheBox', 'TheWall', 'Track']), last + 'Reports', first.charAt(0) + last + 'NASCAR']).slice(0, 15); }
+    if (k === 'tommy') handle = '@' + J.pick(rand, FIG_BRAND.tommy);
+    var fl = Math.round((parseFloat(b.followers) || 100) * (0.6 + rand() * 0.9)), fol = /M$/.test(b.followers) ? (fl / 1).toFixed(1) + 'M' : fl + 'K';
+    out[k] = { name: name, handle: handle, followers: fol };
+  });
+  S.figureOverrides = out; J.useFigures(S); return out;
+};
+AI.regenFans = function (S, reroll) {
+  var ds = J.roster(S); if (!ds.length) return 0;
+  var rand = J.rng('regen' + S.id + Date.now()), used = {};
+  S.fans.forEach(function (f) { makeFan(S, ds, rand, used, f, reroll); });
+  return S.fans.length;
+};
 AI.ensureFans = function (S) {
   var ds = J.roster(S); if (!ds.length) return false;
   var target = Math.min(170, Math.max(140, ds.length + 100)), rand = J.rng('fans2' + S.id + S.fans.length + ':' + S.races.length), used = {};
-  JOKE_USED = {}; S.fans.forEach(function (f) { if (f.v === 2) { used[String(f.handle).toLowerCase()] = 1; JOKE_USED[f.name] = 1; } });
-  S.fans.forEach(function (f) { if (f.v !== 2) makeFan(S, ds, rand, used, f); }); // older accounts get modern handles and names, same id and stance
+  S.fans.forEach(function (f) { if (f.v === 3) used[String(f.handle).toLowerCase()] = 1; });
+  S.fans.forEach(function (f) { if (f.v !== 3) makeFan(S, ds, rand, used, f); }); // older accounts get real-world style handles, names and profiles (same id and stance)
   S.fans.forEach(function (f) { if (f.qv !== 2 && QUIRKS[f.age]) { f.quirks = J.shuffle(QUIRKS[f.age], rand).slice(0, 2).join('; '); f.qv = 2; } }); // quirks used to name catchphrases, which got repeated
   var guard = 0;
   while (S.fans.length < target && guard++ < 600) { var f = makeFan(S, ds, rand, used, null); if (f) S.fans.push(f); }
@@ -357,7 +414,7 @@ function addPool(pool, text) { var w = words(text); if (w.length <= 4) { var k =
 /* rotating vocabulary: each batch gets a few slang words and reply types to draw from, so the same ones do not show up every time */
 var SLANG = ['lowkey', 'highkey', 'no shot', 'ain\'t no way', 'be so serious', 'it\'s giving', 'touch grass', 'I\'m crying', 'chat is this real', 'the way he', 'not him again', 'respectfully', 'mid', 'washed', 'fraud watch', 'he\'s HIM', 'down bad', 'say less', 'we been knew', 'the audacity', 'bffr', 'tweaking', 'cooked (sparingly)', 'he ate', 'peak', 'cinema', 'aura', 'unc', 'unserious', 'nah because', 'genuinely', 'insane behavior', 'invisible all day', 'free him', 'locked in', 'fumbled', 'menace', 'he\'s so back', 'it\'s over for him', 'built different'];
 var SHORT = ['ratio', 'nah', 'L', 'W', 'real', 'source?', 'this', 'LMAO', 'cope', 'lol', 'fair', 'and?', 'no', 'facts', 'who asked', 'huh', 'yikes', 'easy', 'ok and', 'bruh', 'sure', 'wrong', 'clip it', 'called it', 'meh', 'boring', 'stop', 'wait what', 'hm', 'yep', 'nope', '??', 'oof', 'agreed'];
-var ANGLES = ['a fantasy or DFS argument', 'the broadcast or a camera miss', 'a pit call being second-guessed', 'a driver in a slump', 'a mid-pack surprise', 'an officiating or rules gripe', 'a stat that starts a fight', 'who is best at this kind of track', 'a nostalgic comparison to the old days', 'the cut line math', 'a rumor from the insider', 'a meme format described in words', 'somebody\'s watch party or race-day setup', 'a crew chief decision', 'tire wear or fuel', 'a young driver getting hype', 'a hot take that gets dragged', 'a prediction for next week', 'a driver everybody forgot about', 'someone who only watched the last 10 laps', 'a ranking or tier list', 'someone asking an honest newbie question', 'a callback to a post that aged badly', 'a rivalry heating up'];
+var ANGLES = ['a "rate the race" post (people give it a score out of 10)', 'driver ratings out of 10 after the race', 'a "this you?" quote of somebody\'s old take', 'a reporter posting a small nugget from the garage', 'a post-race thread on the subreddit', 'a fantasy or DFS argument', 'the broadcast or a camera miss', 'a pit call being second-guessed', 'a driver in a slump', 'a mid-pack surprise', 'an officiating or rules gripe', 'a stat that starts a fight', 'who is best at this kind of track', 'a nostalgic comparison to the old days', 'the cut line math', 'a rumor from the insider', 'a meme format described in words', 'somebody\'s watch party or race-day setup', 'a crew chief decision', 'tire wear or fuel', 'a young driver getting hype', 'a hot take that gets dragged', 'a prediction for next week', 'a driver everybody forgot about', 'someone who only watched the last 10 laps', 'a ranking or tier list', 'someone asking an honest newbie question', 'a callback to a post that aged badly', 'a rivalry heating up'];
 function fanStyle(rand) {
   var slang = J.shuffle(SLANG, rand).slice(0, 5), short = J.shuffle(SHORT, rand).slice(0, 7);
   return FAN_STYLE.replace('{SLANG}', slang.map(function (x) { return '"' + x + '"'; }).join(', ')).replace('{SHORT}', short.map(function (x) { return '"' + x + '"'; }).join(', '));
@@ -374,6 +431,14 @@ var FAN_STYLE = 'YOU ARE WRITING REAL-LOOKING NASCAR SOCIAL MEDIA (X/Twitter and
   + '- Emoji: teens and young adults use 💀 😭 🫡 🤡 📉 🐐 🔥 sometimes (max one or two, and many posts have none). Adults rarely. Old-heads use 👍 or none.\n'
   + '- Quote posts: someone quotes an earlier post with their own short take on top ("quote": index). Polls: big accounts and some fans post polls ("poll": 2 to 4 short options). Use one or two of each across the whole batch, not every thread.\n'
   + '- Reddit (forum) is different: posts have a title, comments are longer and nerdier, people say "Edit: ...", "Came here to say this", correct each other on facts, and the top comment is usually a joke. Reddit users never use display names or emoji much.\n\n'
+  + 'HOW REAL FANS TALK ABOUT DRIVERS\n'
+  + '- Almost never the full name. Last name ("Creed"), first name for favorites ("Sheldon"), the car number ("the 00", "the 7 car"), or a nickname the fanbase uses. Teams by the owner or shop name only if it is in the facts.\n'
+  + '- People get small things wrong, misremember a finish by a spot, and get corrected in the replies. People argue about what they saw on TV, not what is in a stats table. Only analysts and stats accounts quote exact numbers.\n'
+  + '- Most fans post because they feel something (annoyed, hyped, smug, bored), not to inform. A lot of posts are reactions to one moment: a restart, a pit call, a block, the broadcast cutting to commercial.\n\n'
+  + 'THINGS THAT GIVE AWAY AI (never do these)\n'
+  + '- No em dashes or en dashes. No semicolons in fan posts. No "Absolutely", "Truly", "a testament to", "showcasing", "masterclass", "electric atmosphere", "what a race, folks", "the field", "it is worth noting", "let\'s dive in".\n'
+  + '- No ending a post with a neat summary line or a question to the audience unless it is a poll or a podcast account. No hashtags except the rare one a real person would use. No two posts built the same way.\n'
+  + '- Not every post is about the top 3. Fans of midpack drivers talk about P14 like it was a win.\n\n'
   + 'VOICES BY AGE\n'
   + '- Teens: lowercase, fast, stan culture, edits, dramatic for one post then on to the next thing. 2 to 12 words.\n'
   + '- 20s to early 30s: sarcastic group-chat humor, DFS lineups and bet slips, complaining about the broadcast and pit calls, mild swearing (damn, hell, ass, shit).\n'
@@ -404,7 +469,7 @@ AI.threads = async function (S, o) {
   var fans = S.fans.slice(), pri = fans.filter(function (f) { return f.stance && focus[f.stance.driver]; }), rest = J.shuffle(fans.filter(function (f) { return !(f.stance && focus[f.stance.driver]); }), rand);
   var chosen = J.shuffle(pri, rand).slice(0, 14).concat(rest).slice(0, 34);
   var recent = S.posts.slice(-30).map(function (p) { return '- ' + p.text.slice(0, 90); }).join('\n');
-  var angles = J.shuffle(ANGLES, rand).slice(0, 8), worn = wornText(S);
+  var angles = J.shuffle(ANGLES.filter(function (x) { return J.talkPhase(S).playoff >= 2 || !/cut line/.test(x); }), rand).slice(0, 8), worn = wornText(S);
   var rumors = J.sillyActive(S).slice(-5).map(function (x) { return x.title + ' (' + J.SILLY_LABEL[x.stage].toLowerCase() + ')'; });
   var lastRace = S.races[S.races.length - 1], extra = [];
   if (lastRace) {
@@ -412,10 +477,11 @@ AI.threads = async function (S, o) {
     var want = {}; chosen.forEach(function (f) { if (f.stance && f.stance.driver && !shown[f.stance.driver]) want[f.stance.driver] = 1; });
     lastRace.rows.forEach(function (r) { var k = J.driverKey(r.driver); if (want[k]) extra.push(r.driver + ' finished P' + r.position + ' (started P' + (r.start || '?') + (J.isDnf(r) ? ', ' + r.status : '') + (r.interval && /(\d+)\s*l/i.test(r.interval) ? ', ' + (function (n) { return n + (n === '1' ? ' lap' : ' laps'); })(r.interval.match(/(\d+)\s*l/i)[1]) + ' down' : '') + ')'); });
   }
-  var cp = J.chasePicture(S), cutTxt = cp && cp.lastIn && cp.firstOut ? S.chase.name + ' cut line right now: ' + cp.lastIn.name + ' is the last driver in on points, ' + cp.firstOut.name + ' the first out, ' + Math.abs(cp.lastIn.pts - cp.firstOut.pts) + ' points apart.' : '';
+  var tp = J.talkPhase(S), cp = tp.playoff ? J.chasePicture(S) : null, cutTxt = cp && cp.lastIn && cp.firstOut ? (tp.playoff === 1 ? '(Background only: just stats accounts or the analyst would mention this, as an aside.) ' : '') + S.chase.name + ' cut line right now: ' + cp.lastIn.name + ' is the last driver in on points, ' + cp.firstOut.name + ' the first out, ' + Math.abs(cp.lastIn.pts - cp.firstOut.pts) + ' points apart.' : '';
   var heads = S.articles.slice(0, 5).map(function (a) { return '"' + a.headline + '" (' + (J.OUTLETS[a.outlet] || J.OUTLETS.wire).name + ')'; });
   var user = 'LEAGUE: ' + S.league.name + ' (' + S.series.label + '), ' + J.seasonYear(S) + ' season. Races run: ' + S.races.length + ' of ' + Math.max(S.schedule.length, S.races.length) + '.\n\n'
     + 'FACTS (use only these):\n' + o.facts + (extra.length ? '\nOther drivers the fans below follow, last race: ' + extra.join('; ') + '.' : '') + (cutTxt ? '\n' + cutTxt : '') + '\n\n'
+    + J.talkLine(S) + '\n\n'
     + (o.story ? 'THE STORY EVERYONE IS REACTING TO: "' + o.story.headline + '" - ' + (o.story.dek || '') + '\n\n' : '')
     + (heads.length ? 'LATEST HEADLINES ON THE SITE (people may react to or argue with these): ' + heads.join('; ') + '\n\n' : '')
     + 'DRIVER REPUTATION (0-100, higher = more liked): ' + repText(S) + '\n\n'
@@ -453,7 +519,7 @@ AI.applyThreads = function (S, res, ref, at) {
     });
   });
   AI.lastDropped = dropped;
-  var ths = J.threadsOf(S); if (ths.length > 110) { var keep = {}; ths.slice(0, 110).forEach(function (t) { keep[t.id] = 1; }); fresh.forEach(function (t) { keep[t] = 1; }); S.posts = S.posts.filter(function (p) { return keep[p.thread]; }); } // never trim what was just written
+  J.trimThreads(S, 110, fresh); // never trims what was just written
   return added;
 };
 
@@ -470,7 +536,7 @@ function newsSystem(S, outlet) {
     + OUTLET_VOICE[outlet] + '\n\n' + NEWS_RULES + '\n\n'
     + 'Quotes: the only quotes you may put in the article are ones you also list in "interviews". Those are fictional pit road quotes by Ray Calloway\'s interviews: clipped racer talk, 1 to 3 sentences, sometimes salty, sometimes humble, always about the racing. If images are attached they are sim screenshots or race footage frames: describe only what you can actually see or what the commissioner told you, and never identify anyone by their face.';
 }
-var NEWS_SCHEMA = 'Return ONLY JSON: {"article":{"headline":"...","dek":"one sentence","body":"paragraphs separated by a blank line","tags":["Driver Name"],"photoCaptions":["caption for image 1","..."]},"interviews":[{"driver":"Full Name as in standings","quote":"...","tone":"gracious|salty|cocky|humble|fired up|frustrated","repDelta":-6 to 6,"why":"short reason fans would react"}],"reputation":[{"driver":"Full Name","delta":-8 to 8,"why":"the on-track moment that changed how fans see them"}]}\nreputation is for on-track moments (clean pass for the win, a block, a wreck someone caused, good sportsmanship). Mostly small numbers (1 to 4), rarely 6 or more. Leave arrays empty if nothing applies.';
+var NEWS_SCHEMA = 'Return ONLY JSON: {"article":{"headline":"...","dek":"one sentence","body":"paragraphs separated by a blank line","tags":["Driver Name"],"photoCaptions":["caption for image 1","..."],"extras":{"pullQuote":{"text":"a striking line from the story or an interview","by":"who said it"},"keyMoments":[{"when":"Lap 112 or Stage 2 or Friday practice","text":"what happened"}],"byNumbers":[{"value":"3","label":"wins this season"}],"takeaways":["short point"],"whatsNext":"one sentence about what comes next"}},"interviews":[{"driver":"Full Name as in standings","quote":"...","tone":"gracious|salty|cocky|humble|fired up|frustrated","repDelta":-6 to 6,"why":"short reason fans would react"}],"reputation":[{"driver":"Full Name","delta":-8 to 8,"why":"the on-track moment that changed how fans see them"}]}\nreputation is for on-track moments (clean pass for the win, a block, a wreck someone caused, good sportsmanship). Mostly small numbers (1 to 4), rarely 6 or more. Leave arrays empty if nothing applies.\nextras make the story page richer: 3 to 6 keyMoments (in order, only real moments from the data), 3 or 4 byNumbers (numbers taken straight from the data, never invented), 2 to 4 takeaways, one pullQuote. For a silly season story keyMoments can be the timeline of the rumor. Omit any part you cannot ground in the data.';
 
 AI.articleDraft = async function (S, o) {
   var outlet = o.outlet || 'wire', race = o.race || null, parts = [];
@@ -482,18 +548,30 @@ AI.articleDraft = async function (S, o) {
   if (o.notes) parts.push('COMMISSIONER\'S NOTES (facts you may use):\n' + o.notes);
   if (o.images && o.images.length) parts.push(o.images.length + ' image(s) are attached in this order: ' + o.images.map(function (im, i) { return (i + 1) + '=' + (im.label || 'untitled'); }).join(', ') + '. Add one caption per image in photoCaptions.');
   parts.push('DRIVER REPUTATION RIGHT NOW (0-100): ' + repText(S));
+  var tp = J.talkPhase(S); parts.push('WHERE THE SEASON IS: ' + tp.label + ' (race ' + tp.run + ' of ' + tp.total + '). WHAT REAL NASCAR MEDIA COVERS AT THIS POINT: ' + tp.media + (tp.playoff ? '' : ' Leave ' + J.theChase(S) + ' and the cut line out unless the commissioner\'s notes bring it up.'));
   var worn = wornText(S); if (worn) parts.push(worn);
   parts.push('Write the story now. ' + (o.interviews === false ? 'Return an empty interviews array.' : 'Include 2 to 3 pit road interviews tied to the story.') + '\n\n' + NEWS_SCHEMA);
-  return AI.json({ system: newsSystem(S, outlet), user: parts.join('\n\n'), images: o.images || [], role: 'writer', maxTokens: 5000 });
+  return AI.json({ system: newsSystem(S, outlet), user: parts.join('\n\n'), images: o.images || [], role: 'writer', maxTokens: 6500 });
 };
 AI.article = async function (S, o) {
   var res = await AI.articleDraft(S, o), race = o.race || null;
   return AI.applyArticle(S, res, { outlet: o.outlet || 'wire', raceId: race ? race.id : '', preSid: o.preSid || '', media: o.mediaIds || [], replaceAutoFor: race ? race.id : null, ts: o.ts });
 };
+function cleanExtras(x) {
+  if (!x || typeof x !== 'object') return null;
+  var str = function (v, n) { return String(v == null ? '' : v).slice(0, n).trim(); }, out = {};
+  if (x.pullQuote && x.pullQuote.text) out.pullQuote = { text: str(x.pullQuote.text, 240), by: str(x.pullQuote.by, 60) };
+  out.keyMoments = (Array.isArray(x.keyMoments) ? x.keyMoments : []).filter(function (m) { return m && m.text; }).slice(0, 8).map(function (m) { return { when: str(m.when, 30), text: str(m.text, 220) }; });
+  out.byNumbers = (Array.isArray(x.byNumbers) ? x.byNumbers : []).filter(function (m) { return m && m.value != null && m.label; }).slice(0, 6).map(function (m) { return { value: str(m.value, 12), label: str(m.label, 60) }; });
+  out.takeaways = (Array.isArray(x.takeaways) ? x.takeaways : []).map(function (t) { return str(t, 200); }).filter(Boolean).slice(0, 5);
+  if (x.whatsNext) out.whatsNext = str(x.whatsNext, 240);
+  return out;
+}
 AI.applyArticle = function (S, res, o) {
   var a = res.article || {}; if (!a.headline || !a.body) throw new Error(AI.name() + ' returned a story without a headline or body.');
   var staff = (J.OUTLETS[o.outlet] || J.OUTLETS.wire).staff, now = o.ts || Date.now();
   var art = { id: J.uid('a'), outlet: o.outlet, headline: String(a.headline).slice(0, 160), dek: String(a.dek || '').slice(0, 260), body: String(a.body), author: staff[Math.floor(Math.random() * staff.length)], ts: now, raceId: o.raceId || '', preSid: o.preSid || '', tags: (a.tags || []).slice(0, 6).map(String), media: o.media || [] };
+  art.extras = cleanExtras(a.extras);
   if (o.replaceAutoFor) S.articles = S.articles.filter(function (x) { return !(x.auto && x.raceId === o.replaceAutoFor); });
   (a.photoCaptions || []).forEach(function (c, i) { var m = S.media.find(function (x) { return x.id === (o.media || [])[i]; }); if (m && c && !m.caption) m.caption = String(c).slice(0, 200); });
   S.articles.unshift(art);
@@ -512,16 +590,31 @@ AI.applyArticle = function (S, res, o) {
    One request writes 2 or 3 stories at once (saves the free daily allowance). phase: 'post' (after a race),
    'pre' (after practice or qualifying), 'week' (commissioner pressed the button). */
 var DESK = {
-  wire: 'Checkered Wire (race coverage): previews, recaps, points-race news. Straight news voice. 350 to 550 words.',
-  silly: 'Silly Season Daily (contracts, rides, sponsors, crew chiefs, rumors): league fiction about rides, contracts, sponsors, crew chiefs or team moves ONLY. Follow the SILLY SEASON CALENDAR below for what is realistic right now. One storyline per story. Prefer moving an existing storyline forward (or killing it) over starting a new one. Sourcing like "per sources", "is said to be", "nothing is signed" until a storyline is confirmed. Never personal life, money figures, legal trouble or health. 300 to 450 words.',
-  notes: 'Pit Notes (analysis and features): one angle the data supports (momentum, cut-line math, a track-type trend, a rivalry, a slump), argued with numbers. A few "## " subheads allowed. 450 to 650 words.'
+  wire: 'OUTLET_WIRE (race coverage): previews, recaps, points-race news. Straight news voice. 350 to 550 words.',
+  silly: 'OUTLET_SILLY (contracts, rides, sponsors, crew chiefs, rumors): league fiction about rides, contracts, sponsors, crew chiefs or team moves ONLY. Follow the SILLY SEASON CALENDAR below for what is realistic right now. One storyline per story. Prefer moving an existing storyline forward (or killing it) over starting a new one. Sourcing like "per sources", "is said to be", "nothing is signed" until a storyline is confirmed. Never personal life, money figures, legal trouble or health. 300 to 450 words.',
+  notes: 'OUTLET_NOTES (analysis and features): one angle the data supports (momentum, cut-line math, a track-type trend, a rivalry, a slump), argued with numbers. A few "## " subheads allowed. 450 to 650 words.'
 };
+function deskText(k) { return String(DESK[k]).replace('OUTLET_WIRE', J.OUTLETS.wire.name).replace('OUTLET_SILLY', J.OUTLETS.silly.name).replace('OUTLET_NOTES', J.OUTLETS.notes.name); }
+function deskNotes(S) {
+  var tp = J.talkPhase(S), fm = ['power rankings', 'winners and losers', 'what we learned', 'by the numbers', 'a trend at this kind of track', 'a driver feature', 'who is hot and who is not', 'a rivalry or grudge'];
+  if (tp.playoff >= 2) fm = ['bubble watch', 'what each driver needs', J.theChase(S) + ' picture'].concat(fm.slice(0, 4));
+  return J.OUTLETS.notes.name + ' (analysis and features): one angle the data supports, argued with real numbers. Pick a format that fits and that the RECENT HEADLINES have not used lately: ' + fm.join(', ') + '.' + (tp.playoff ? '' : ' Not the cut line: it is too early for that.') + ' A few "## " subheads allowed. 450 to 650 words.';
+}
 function sillyBlock(S) {
   var ph = J.sillyPhase(S), all = (S.silly || []).slice(-10);
   return 'SILLY SEASON CALENDAR: ' + ph.label + ' (race ' + ph.run + ' of ' + ph.total + '; field for ' + S.chase.name + ' set after race ' + ph.cut + '). ' + ph.guide + ' The furthest a storyline may go right now: "' + ph.maxStage + '".'
     + '\nSTORYLINE STAGES in order: whisper, rumor, talks, close, confirmed (or dead if it falls through). A storyline moves one stage per story, two at most, and needs at least two earlier stories before it can be confirmed.'
     + (all.length ? '\nSTORYLINES SO FAR (id | title | stage | stories so far | race it started):\n' + all.map(function (x) { return x.id + ' | ' + x.title + ' | ' + x.stage + ' | ' + x.history.length + ' | race ' + x.openedAt; }).join('\n') : '\nNo storylines yet.')
-    + '\nFor the Silly Season Daily story add "storyline":{"id":"existing id or new","title":"short label, e.g. Gibbs to the 22 for next season","drivers":["Full Name"],"stage":"..."}.';
+    + contractsBlock(S)
+    + '\nFor the ' + J.OUTLETS.silly.name + ' story add "storyline":{"id":"existing id or new","title":"short label, e.g. Gibbs to the 22 for next season","drivers":["Full Name"],"team":"team they are linked to, if any","stage":"..."}.';
+}
+// contracts, moods and the other series: what a real silly season reporter would know
+function contractsBlock(S) {
+  var cross = J.crossFor(S), pr = J.sillyPredictions(S, cross).slice(0, 10), out = '';
+  if (pr.length) out += '\nCONTRACTS AND MOOD (from the league data; use it, do not contradict it): ' + pr.map(function (x) { return x.name + (x.team ? ' (' + x.team.name + ')' : '') + ': ' + x.contract.label.toLowerCase() + ', ' + (x.happy ? x.happy.label.toLowerCase() : 'unknown mood') + (x.why.length ? ' because ' + x.why.slice(0, 2).join(' and ') : ''); }).join('; ') + '.';
+  if (cross && cross.stars && cross.stars.length) out += '\nRISING STARS ONE SERIES DOWN (' + cross.downLabel + '): ' + cross.stars.map(function (x) { return x.name + ' (' + J.plural(x.wins, 'win') + ', ' + x.avg.toFixed(1) + ' avg finish)'; }).join('; ') + '. Real silly season often links standouts from the series below to open seats.';
+  if (cross && cross.upOpen && cross.upOpen.length) out += '\nSEATS THAT COULD OPEN ONE SERIES UP (' + cross.up + '): ' + cross.upOpen.map(function (x) { return x.team + ' (' + x.from + ' may leave)'; }).join('; ') + '. A strong driver here could be linked to one of them.';
+  return out;
 }
 var ORDER = J.SILLY_STAGES;
 AI.applyStoryline = function (S, sl, art) {
@@ -529,9 +622,10 @@ AI.applyStoryline = function (S, sl, art) {
   var ph = J.sillyPhase(S), cap = ORDER.indexOf(ph.maxStage), want = ORDER.indexOf(sl.stage); if (want < 0) want = 1;
   var x = (S.silly || []).find(function (q) { return q.id === sl.id; });
   if (!x) {
-    x = { id: J.uid('sl'), title: String(sl.title || art.headline).slice(0, 90), drivers: (sl.drivers || []).slice(0, 3).map(String), stage: 'whisper', openedAt: S.races.length, history: [] };
+    x = { id: J.uid('sl'), title: String(sl.title || art.headline).slice(0, 90), drivers: (sl.drivers || []).slice(0, 3).map(String), team: String(sl.team || '').slice(0, 60), stage: 'whisper', openedAt: S.races.length, history: [] };
     want = Math.min(want, 1); S.silly.push(x);
   } else if (x.stage === 'confirmed' || x.stage === 'dead') return x;
+  else if (sl.team && !x.team) x.team = String(sl.team).slice(0, 60);
   var cur = ORDER.indexOf(x.stage), next = want;
   if (next !== 5) { next = Math.min(next, cur + 2, cap); if (next === 4 && x.history.length < 2) next = 3; if (next < cur) next = cur; }
   x.stage = ORDER[next]; x.history.push({ ts: art.ts, stage: x.stage, art: art.id }); art.storyline = x.id;
@@ -544,16 +638,19 @@ AI.newsCycle = async function (S, o) {
   var nx = J.nextRound(S), race = o.race || (phase === 'post' ? S.races[S.races.length - 1] : null);
   var sp = J.sillyPhase(S), roll = J.rng('silly' + S.races.length + ':' + S.articles.length + ':' + phase)(), wantSilly = o.silly === true || (o.silly !== false && roll < sp.rate);
   if (o.only) plan = o.only.slice();
+  else if (phase === 'preseason') plan = ['notes', 'wire', 'silly'];
   else if (phase === 'post') plan = wantSilly ? ['notes', 'silly'] : ['notes'];
   else if (phase === 'pre') plan = ['wire'].concat(S.races.length ? ['notes'] : []).concat(wantSilly ? ['silly'] : []).slice(0, 2);
   else plan = (S.races.length ? ['wire', 'notes'] : ['wire']).concat(wantSilly ? ['silly'] : []);
   var target = o.sid ? S.schedule.find(function (x) { return x.id === o.sid; }) : nx;
   var before = target ? racesBefore(S, target.id) : S.races, ranTarget = target && S.races.some(function (x) { return x.sid === target.id; });
   parts.push('LEAGUE STANDINGS' + (phase === 'post' ? ' NOW' : ' GOING IN') + ': ' + (standingsText(S, 16, phase === 'post' ? S.races : before) || 'no races run yet') + '.');
-  var cp = J.chasePicture(S);
-  if (cp && cp.lastIn && cp.firstOut && !ranTarget) parts.push(S.chase.name.toUpperCase() + ' PICTURE: top ' + cp.size + ' make it after race ' + cp.cutRace + ' (' + (cp.decided ? 'field is set' : cp.left + ' races left before the cut') + '). ' + (cp.winners ? cp.winners + ' race winner(s) locked in. ' : '') + 'Last in on points: ' + cp.lastIn.name + ' (' + cp.lastIn.pts + '). First out: ' + cp.firstOut.name + ' (' + cp.firstOut.pts + ').');
+  var tp = J.talkPhase(S), cp = tp.playoff ? J.chasePicture(S) : null;
+  parts.push('WHERE THE SEASON IS: ' + tp.label + ' (race ' + tp.run + ' of ' + tp.total + (tp.left > 0 ? ', ' + tp.left + ' before ' + J.theChase(S) + ' cut' : '') + '). WHAT REAL NASCAR MEDIA COVERS AT THIS POINT: ' + tp.media + (tp.playoff ? '' : ' Do NOT write about ' + J.theChase(S) + ' cut line or playoff math; it is too early and nobody covers it yet.'));
+  if (cp && cp.lastIn && cp.firstOut && !ranTarget) parts.push((tp.playoff === 1 ? '(Background; a passing mention at most.) ' : '') +S.chase.name.toUpperCase() + ' PICTURE: top ' + cp.size + ' make it after race ' + cp.cutRace + ' (' + (cp.decided ? 'field is set' : cp.left + ' races left before the cut') + '). ' + (cp.winners ? cp.winners + ' race winner(s) locked in. ' : '') + 'Last in on points: ' + cp.lastIn.name + ' (' + cp.lastIn.pts + '). First out: ' + cp.firstOut.name + ' (' + cp.firstOut.pts + ').');
+  if (phase === 'preseason') parts.push(AI.preseasonFacts(S) + '\nTHESE ARE PRESEASON STORIES. The season has not started. ' + J.OUTLETS.notes.name + ' writes the expectations piece: what to expect from the drivers this year, grouped the way real previews do it (title contenders, ' + J.theChase(S) + ' hopefuls, dark horses, rookies and new rides to watch), grounded in the test speeds, last season and the rides. ' + J.OUTLETS.wire.name + ' writes the test session report. ' + J.OUTLETS.silly.name + ' writes about contract years and seats to watch this season. Never invent race results.');
   if (race) parts.push('LATEST RACE:\n' + AI.raceFacts(S, race));
-  var preSid = phase === 'post' ? '' : (o.sid || (nx ? nx.id : ''));
+  var preSid = phase === 'post' || phase === 'preseason' ? '' : (o.sid || (nx ? nx.id : ''));
   if (preSid) parts.push('THE RACE THESE STORIES PREVIEW (has NOT been run as of these stories):\n' + AI.sessionFacts(S, preSid));
   else if (nx) parts.push('NEXT RACE (has NOT been run): ' + nx.name + (nx.track ? ' at ' + nx.track : '') + ' (' + J.TYPES[nx.type].toLowerCase() + ')' + (nx.date ? ', ' + nx.date : '') + '.');
   var ro = nx && (!preSid || preSid === nx.id) ? J.raceOutlook(S) : null;
@@ -565,11 +662,11 @@ AI.newsCycle = async function (S, o) {
   var recent = S.articles.slice(0, 16).map(function (a) { return '- [' + (J.OUTLETS[a.outlet] || J.OUTLETS.wire).name + '] ' + a.headline; });
   if (recent.length) parts.push('RECENT HEADLINES (do not repeat these angles or headline shapes; continue storylines instead):\n' + recent.join('\n'));
   var worn = wornText(S); if (worn) parts.push(worn);
-  parts.push('WRITE ' + plan.length + ' ' + (plan.length === 1 ? 'STORY' : 'STORIES, one per outlet, in this order') + ': ' + plan.map(function (k) { return J.OUTLETS[k].name; }).join(', ') + '.\n' + plan.map(function (k) { return '- ' + DESK[k]; }).join('\n')
+  parts.push('WRITE ' + plan.length + ' ' + (plan.length === 1 ? 'STORY' : 'STORIES, one per outlet, in this order') + ': ' + plan.map(function (k) { return J.OUTLETS[k].name; }).join(', ') + '.\n' + plan.map(function (k) { return '- ' + (k === 'notes' ? deskNotes(S) : deskText(k)); }).join('\n')
     + (phase !== 'post' ? '\nThe race being previewed has NOT happened. Previews may predict, never report a result.' : '')
-    + '\n\nReturn ONLY JSON: {"articles":[{"outlet":"wire|silly|notes","headline":"...","dek":"one sentence","body":"paragraphs separated by a blank line","tags":["Driver Name"],"storyline":{...only for Silly Season Daily...}}]}');
+    + '\n\nReturn ONLY JSON: {"articles":[{"outlet":"wire|silly|notes","headline":"...","dek":"one sentence","body":"paragraphs separated by a blank line","tags":["Driver Name"],"extras":{"pullQuote":{"text":"a striking line from the story or an interview","by":"who said it"},"keyMoments":[{"when":"Lap 112 or Stage 2 or Friday practice","text":"what happened"}],"byNumbers":[{"value":"3","label":"wins this season"}],"takeaways":["short point"],"whatsNext":"one sentence about what comes next"},"storyline":{...only for the silly season outlet...}}]} (extras: only facts from the data; keyMoments and byNumbers can be empty)');
   var sys = 'You are the editors of three fictional outlets covering "' + S.league.name + '", a SIMULATED ' + S.series.label + ' league run in NASCAR Racing 2003. The drivers are the league\'s sim drivers. Everything is fiction for a sim-racing fan site; keep it on racing and the league. Nothing about anyone\'s real-world personal life, politics, family, health, legal matters or money.\n\n' + NEWS_RULES + ' Headlines read like real motorsport headlines: specific, no puns stacked on puns, no colons-and-questions template. Each story has a different angle, different drivers where possible, and its own vocabulary: no shared phrases between the stories. No quotes from drivers in these stories.';
-  var res = await AI.json({ system: sys, user: parts.join('\n\n'), role: 'writer', maxTokens: 9000 });
+  var res = await AI.json({ system: sys, user: parts.join('\n\n'), role: 'writer', maxTokens: 12000 });
   var made = [];
   (res.articles || []).slice(0, 3).forEach(function (a, i) {
     var outlet = J.OUTLETS[a.outlet] ? a.outlet : plan[i] || 'notes';
@@ -601,6 +698,7 @@ AI.outlooks = async function (S) {
     + (ro && ro.favorites ? 'NEXT RACE: ' + ro.next.name + ' at ' + (ro.next.track || 'TBD') + ' (' + J.TYPES[ro.type].toLowerCase() + '). Win odds: ' + ro.rows.slice(0, 8).map(function (r) { return r.name + ' ' + p(r.win); }).join('; ') + '. Should run well: ' + ro.shouldRunWell.map(function (r) { return r.name; }).join(', ') + '. Dark horses: ' + (ro.darkHorses.map(function (r) { return r.name; }).join(', ') || 'none yet (not enough races at this kind of track)') + '. Not expected up front: ' + ro.notUpFront.map(function (r) { return r.name; }).join(', ') + '. Highest wreck risk: ' + ro.wreckRisk.map(function (r) { return r.name + ' ' + p(r.dnf); }).join(', ') + '.\n\n' : 'NEXT RACE: none left on the schedule.\n\n')
     + 'SEASON PROJECTION: ' + so.rows.slice(0, 12).map(function (r) { return r.name + ' projected P' + r.rankMed + ', ' + Math.round(r.projPts) + ' pts, title odds ' + p(r.champOdds); }).join('; ') + '\n\n'
     + 'DRIVER REPUTATION: ' + repText(S) + '\n\n'
+    + (J.talkPhase(S).playoff < 2 ? 'TIMING: it is ' + J.talkPhase(S).label.toLowerCase() + ', ' + J.talkPhase(S).left + ' races before the cut. Real analysts treat ' + S.chase.name + ' odds this far out as a long-range look: no bubble, must-win or cut-line drama in any of the three takes. The race and season takes should be about racing.\n\n' : '')
     + (S.ai.chase ? 'LAST TIME THEY SAID (say something new, do not reuse these words): ' + ['chase', 'race', 'season'].map(function (k) { return S.ai[k] ? S.ai[k].headline + ' / ' + S.ai[k].summary : ''; }).join(' | ') + '\n\n' : '')
     + (wornText(S) ? wornText(S) + '\n\n' : '')
     + 'Write three short takes as three different people, grounded ONLY in the numbers above. Do not change any number. Return ONLY JSON: {"chase":{"headline":"short","summary":"2 to 3 sentences","notes":{"Full Name":"one sentence"}},"race":{...same shape...},"season":{...same shape...}}. Up to 6 notes each, only for drivers with something interesting to say (bubble drivers, surprises, hot or cold streaks). '
@@ -615,6 +713,31 @@ AI.outlooks = async function (S) {
   return true;
 };
 
+// what the newsroom knows before a season: the test session, last season, the rides
+AI.preseasonFacts = function (S) {
+  var p = S.preseason, out = [];
+  if (p && p.rows && p.rows.length) out.push('PRESEASON TEST (' + p.name + (p.track ? ' at ' + p.track : '') + '): ' + p.rows.slice(0, 20).map(function (r) { return 'P' + r.position + ' ' + r.driver + (r.car ? ' #' + r.car : '') + (r.time ? ' ' + r.time : ''); }).join('; ') + '. Test speeds are only a hint: teams sandbag and run different programs.');
+  var prev = J.leagues ? Object.keys(J.leagues).map(function (k) { return J.leagues[k]; }).filter(function (L) { return L.archived && L.series.id === S.series.id; }).sort(function (a, b) { return J.seasonNum(b) - J.seasonNum(a); })[0] : null;
+  if (prev && prev.races.length) { var ds = J.agg(prev.races); out.push('LAST SEASON (' + J.seasonYear(prev) + '): ' + ds.slice(0, 12).map(function (d, i) { return (i + 1) + '. ' + d.name + ' (' + J.plural(d.wins, 'win') + ', ' + (d.fin / d.starts).toFixed(1) + ' avg)'; }).join('; ') + '.'); var lastNames = {}; ds.forEach(function (d) { lastNames[d.key] = 1; }); var rookies = J.roster(S).filter(function (d) { return !lastNames[d.key]; }); if (rookies.length) out.push('NEW TO THE SERIES THIS YEAR: ' + rookies.slice(0, 10).map(function (d) { return d.name; }).join(', ') + '.'); }
+  var rides = J.roster(S).map(function (d) { var t = J.teamOf(S, d.key), ci = J.contractInfo(S, d.key); return t || ci ? d.name + (t ? ' (' + t.name + ')' : '') + (ci && ci.status === 'expiring' ? ' in a contract year' : '') : ''; }).filter(Boolean);
+  if (rides.length) out.push('RIDES: ' + rides.slice(0, 40).join('; ') + '.');
+  var nx = J.nextRound(S); if (nx) out.push('SEASON OPENER: ' + nx.name + (nx.track ? ' at ' + nx.track : '') + (nx.date ? ', ' + nx.date : '') + '.');
+  return out.join('\n');
+};
+AI.raceReactionTask = function (S, race) { return 'The ' + race.name + ' just ended. Write 7 to 9 threads of fans and accounts reacting to THIS race, right after the checkered flag. Nearly every thread is about what actually happened in it, using the real names and finishing spots from FACTS: the winner and how they won, the drivers who ran up front, who got wrecked or had problems, a big mover, someone furious about where their driver finished' + (J.talkPhase(S).playoff >= 2 ? ', what the result does to the points and ' + J.theChase(S) + ' cut line' : J.talkPhase(S).playoff === 1 ? ', maybe one stats account noting the points' : '') + '. People name the drivers and the finishing positions. At most one thread looks ahead to next week.'; };
+// Garage chatter between races (or before the next race once practice/qualifying are in)
+AI.chatter = async function (S, o) {
+  o = o || {}; var nx = J.nextRound(S), pre = nx && J.sessionsFor(S, nx.id).length, race = S.races[S.races.length - 1];
+  if (!race && !pre) throw new Error('Import a race, practice or qualifying first.');
+  var facts = pre ? AI.sessionFacts(S, nx.id) + (race ? '\n\nLAST RACE, for context:\n' + AI.raceFacts(S, race) : '') : AI.raceFacts(S, race) + (nx ? '\nNext race: ' + nx.name + ' at ' + (nx.track || 'TBD') + ' (' + J.TYPES[nx.type].toLowerCase() + ').' : '');
+  return AI.threads(S, { facts: facts, focus: [], at: o.at, ref: { type: 'week', id: race ? race.id : nx.id }, task: pre ? 'The next race has NOT been run yet. Write 5 to 7 threads of pre-race chatter: practice and qualifying takes, predictions, fantasy picks, hype, someone worried about their driver, a rumor. Never say who won the next race.' : 'It is the middle of the week between races. Write 5 to 7 threads of the usual chatter for this point of the season: takes about the last race and the standings, predictions for the next race, someone still mad about last week, a fantasy lineup argument, a rumor, one person asking a dumb question and getting roasted. Not everything is about the last race.' });
+};
+// Fans after practice / qualifying / happy hour
+AI.sessionHype = function (S, sess, at) {
+  var top = sess.rows.slice(0, 3).map(function (r) { return r.driver; });
+  return AI.threads(S, { facts: AI.sessionFacts(S, sess.sid), focus: top, ref: { type: 'session', id: sess.id }, at: at, task: 'The race has NOT happened yet. ' + J.SESSIONS[sess.type] + ' just finished. Write 5 to 7 threads of pre-race talk: reactions to who was fast and who was slow, hype and predictions for the race, someone mad about where their driver ended up, a fantasy or betting pick, a "practice speed means nothing" argument, a media figure with an observation. Never say who won the race.' });
+};
+
 /* ---------- one pipeline for "a race just happened" ---------- */
 AI.coverage = async function (S, race, step) {
   step = step || function () {};
@@ -627,7 +750,7 @@ AI.coverage = async function (S, race, step) {
   }
   var info = J.raceInfo(race), focus = [info.winner.driver]; if (info.mover) focus.push(info.mover.row.driver); if (info.poleRow) focus.push(info.poleRow.driver);
   step('fans', 'run');
-  try { var n = await AI.threads(S, { facts: AI.raceFacts(S, race), story: art, focus: focus, race: true, at: art ? art.ts : J.storyTime(S, 'recap', { race: race }), ref: art ? { type: 'article', id: art.id } : { type: 'race', id: race.id }, task: 'The ' + race.name + ' just ended. Write 7 to 9 threads of fans and accounts reacting to THIS race, right after the checkered flag. Nearly every thread is about what actually happened in it, using the real names and finishing spots from FACTS: the winner and how they won, the drivers who ran up front, who got wrecked or had problems, a big mover, someone furious about where their driver finished, what the result does to the points and the ' + S.chase.name + ' cut line. People name the drivers and the finishing positions. At most one thread looks ahead to next week.' }); step('fans', 'ok', n + ' posts'); } catch (e) { fail++; step('fans', 'err', e.message); }
+  try { var n = await AI.threads(S, { facts: AI.raceFacts(S, race), story: art, focus: focus, race: true, at: art ? art.ts : J.storyTime(S, 'recap', { race: race }), ref: art ? { type: 'article', id: art.id } : { type: 'race', id: race.id }, task: AI.raceReactionTask(S, race) }); step('fans', 'ok', n + ' posts'); } catch (e) { fail++; step('fans', 'err', e.message); }
   step('outlooks', 'run');
   try { await AI.outlooks(S); step('outlooks', 'ok'); } catch (e) { fail++; step('outlooks', 'err', e.message); }
   var ch = J.driftFans(S); step('drift', 'ok', ch.length ? ch.length + ' fans changed sides' : 'no one switched');

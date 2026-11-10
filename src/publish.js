@@ -1,11 +1,11 @@
-/* Jet's Sim Series - publishes the public website to GitHub Pages (commissioner only, never published) */
+/* Virtual NASCAR - publishes the public website to GitHub Pages (commissioner only, never published) */
 (function () {
 'use strict';
 var J = window.JSS, P = J.publisher = {};
 var API = 'https://api.github.com';
 var VIDEO_MAX = 40 * 1024 * 1024;
 P.state = { kind: 'off', msg: '', at: 0 };
-var timer = null, running = null, again = false;
+var timer = null, running = null, again = false, tries = 0;
 
 function cfg() { var s = J.settings || {}; return { owner: s.ghOwner, repo: s.ghRepo, branch: s.ghBranch || 'gh-pages', token: s.ghToken, auto: s.autoPublish !== false }; }
 P.ready = function () { var c = cfg(); return !!(c.owner && c.repo && c.token); };
@@ -18,9 +18,19 @@ P.refreshState = function () { if (!P.ready()) set('off'); else if (P.state.kind
 P.init = function () { if (!P.ready()) { set('off'); return; } set('pending'); if (cfg().auto) P.schedule(1500); };
 P.schedule = function (ms) {
   if (!P.ready() || !cfg().auto) { if (!P.ready()) set('off'); return; }
+  if (J.publishHold) { if (P.state.kind !== 'busy') set('pending'); P.held = true; return; } // a long job is running; it publishes once at the end
   if (P.state.kind !== 'busy') set('pending');
   clearTimeout(timer); timer = setTimeout(function () { P.run(false).catch(function () {}); }, ms || 4000);
 };
+
+// Long jobs (an import's AI coverage, Refresh everything) hold publishing and publish once when they finish.
+P.hold = function (on) {
+  J.publishHold = !!on; clearTimeout(P._holdTimer);
+  if (on) P._holdTimer = setTimeout(function () { P.hold(false); }, 15 * 60000); // never stuck on hold
+  else if (P.held) { P.held = false; P.schedule(1500); }
+};
+// Hiccups worth retrying on our own: no connection, GitHub busy or briefly out of sync, rate limits.
+function transient(e) { var s = e && e.status; return s === 0 || s === undefined || s >= 500 || s === 409 || s === 429 || (s === 422 && !/too large|size/i.test(e.message)) || (s === 403 && /rate limit|too often/i.test(e.message)); }
 
 /* ---------- GitHub API ---------- */
 async function gh(method, path, body) {
@@ -36,7 +46,9 @@ function explain(status, data, path) {
   if (status === 403 && /rate limit/i.test(m)) return 'GitHub says the app is publishing too often. It will try again in a few minutes.';
   if (status === 403) return 'Your token is not allowed to do this. Check that it has Contents: Read and write on this repository' + (/pages/.test(path) ? ' and Pages: Read and write' : '') + '.';
   if (status === 404) return 'GitHub could not find ' + cfg().owner + '/' + cfg().repo + '. Check the username and repository name, and that the token was made for this repository.';
-  if (status === 409) return 'The repository is empty or busy. Try again in a moment.';
+  if (status === 409) return 'GitHub was busy with the last update.';
+  if (status === 422 && /fast forward|reference/i.test(m)) return 'GitHub was still saving the last update.';
+  if (status >= 500) return 'GitHub is having a problem right now (' + status + ').';
   if (status === 422 && /too large|size/i.test(m)) return 'A file is too big for GitHub. Try a shorter video clip.';
   if (status === 0) return 'The app could not connect to GitHub' + (m ? ' (' + m.replace(/^Network error \(|\)$/g, '') + ')' : '') + '. If your browser works, an antivirus web shield, VPN or firewall may be blocking the JSS app.';
   return 'GitHub problem (' + status + '): ' + (m || 'unknown error');
@@ -79,10 +91,12 @@ P.buildFiles = async function () {
   for (var i = 0, n = ['core.js', 'art.js', 'views.js', 'style.css']; i < n.length; i++) add(n[i], await J.readAppFile(n[i]));
   add('.nojekyll', '');
   var ids = Object.keys(J.leagues).filter(function (k) { var L = J.leagues[k]; return L.races.length || L.articles.length || L.id === J.S.id; });
-  var order = Object.keys(J.SERIES); ids.sort(function (a, b) { return order.indexOf(a) - order.indexOf(b); });
-  add('data/index.json', JSON.stringify({ series: ids.map(function (k) { return { id: k, label: J.leagues[k].series.label }; }), default: ids.indexOf('cup') >= 0 ? 'cup' : ids[0] }));
+  var order = J.SERIES_ORDER; ids.sort(function (a, b) { return order.indexOf(J.leagues[a].series.id) - order.indexOf(J.leagues[b].series.id) || String(a).localeCompare(String(b)); });
+  var cur = ids.filter(function (k) { return !J.leagues[k].archived; }), seasons = {};
+  ids.forEach(function (k) { var L = J.leagues[k]; (seasons[L.series.id] = seasons[L.series.id] || []).push({ id: k, year: J.seasonYear(L), label: J.seasonYear(L) + (L.archived ? (L.cancelled ? ' (cancelled)' : '') : ' (current)'), current: !L.archived }); });
+  add('data/index.json', JSON.stringify({ series: cur.map(function (k) { return { id: k, label: J.leagues[k].series.label }; }), seasons: seasons, default: cur.indexOf('cup') >= 0 ? 'cup' : cur[0] }));
   for (var j = 0; j < ids.length; j++) {
-    var L = J.leagues[ids[j]], pub = J.publicData(L);
+    var L = J.leagues[ids[j]], pub = J.publicData(L); if (!L.archived) { try { pub.cross = J.crossCompute(L); } catch (e) {} }
     for (var k = 0; k < pub.media.length; k++) {
       var m = pub.media[k], blob = null;
       try { blob = await J.store.getMedia(m.id); } catch (e) {}
@@ -119,7 +133,15 @@ P.run = function (force) {
   if (!P.ready()) { set('off'); return Promise.reject(new Error('Fill in the GitHub details in Settings first.')); }
   if (running) { again = true; return running; }
   clearTimeout(timer);
-  running = doRun(force).then(function (r) { running = null; if (again) { again = false; P.schedule(1000); } return r; }, function (e) { running = null; again = false; throw e; });
+  running = doRun(force).then(function (r) { running = null; tries = 0; if (again) { again = false; P.schedule(1000); } return r; }, function (e) {
+    running = null; again = false;
+    if (transient(e) && tries < 8) { // try again by itself: 30 s, 1, 2, 4, 5, 5... minutes
+      var wait = Math.min(30000 * Math.pow(2, tries), 5 * 60000); tries++;
+      set('err', e.message + ' The app will try again by itself in ' + (wait < 60000 ? Math.round(wait / 1000) + ' seconds' : J.plural(Math.round(wait / 60000), 'minute')) + '.');
+      clearTimeout(timer); timer = setTimeout(function () { P.run(false).catch(function () {}); }, wait);
+    }
+    throw e;
+  });
   return running;
 };
 async function doRun(force, force_init) {
@@ -161,7 +183,6 @@ async function doRun(force, force_init) {
     return 'Published ' + J.plural(uploaded, 'file') + '. Visitors see it in about 1 to 2 minutes.';
   } catch (e) {
     set('err', e.message || String(e));
-    if (e.status === 403 && /rate limit/i.test(e.message)) P.schedule(5 * 60000);
     throw e;
   }
 }

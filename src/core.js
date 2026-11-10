@@ -1,4 +1,4 @@
-/* Jet's Sim Series - core engine (shared by the desktop app and the public site) */
+/* Virtual NASCAR - core engine (shared by the desktop app and the public site) */
 (function () {
 'use strict';
 var J = window.JSS = window.JSS || {};
@@ -35,13 +35,40 @@ J.lastName = function (n) { var p = String(n || '').trim().split(/\s+/); var l =
 J.titleCase = function (s) { return String(s).toLowerCase().replace(/\b[a-z]/g, function (c) { return c.toUpperCase(); }); };
 J.isDnf = function (r) { return !!(r && r.status && !/^(running|finished|ok|classified)/i.test(String(r.status).trim())); };
 J.nascarPts = function (p) { return p === 1 ? 40 : Math.max(1, 37 - p); };
+/* ---------- points templates (real NASCAR systems + your own). table[0] is the winner's points before bonuses.
+   Stage points are not counted: NASCAR Racing 2003 does not run stages. ---------- */
+J.POINTS = {
+  p2026: { name: "The Chase (2026)", years: "2026", table: [55, 35, 34, 33, 32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 1, 1, 1, 1, 1, 1, 1], led: 0, most: 0, note: "55 for the win, 35 for 2nd, 34 for 3rd, then one less per spot down to 1. No playoff bonus points, no win-and-in: the top drivers in points make the Chase.", chase: {"winLocks": false} },
+  p2017: { name: "Stage era (2017-2025)", years: "2017-2025", table: [40, 35, 34, 33, 32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 1, 1, 1, 1, 1, 1, 1], led: 0, most: 0, note: "40 for the win, 35 for 2nd, 34 for 3rd, then one less per spot down to 1. A win puts you in the playoffs.", chase: {"winLocks": true} },
+  p2016: { name: "2016 (40-car fields)", years: "2016", table: [43, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 1, 1, 1], led: 1, most: 1, note: "40 for 1st plus 3 for the win, 39 for 2nd down to 1. +1 for leading a lap, +1 for leading the most." },
+  p2011: { name: "2011-2015", years: "2011-2015", table: [46, 42, 41, 40, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1], led: 1, most: 1, note: "43 for 1st plus 3 for the win, 42 for 2nd down to 1 for 43rd. +1 for leading a lap, +1 for leading the most." },
+  chase07: { name: "Chase era (2007-2010)", years: "2007-2010", table: [185, 170, 165, 160, 155, 150, 146, 142, 138, 134, 130, 127, 124, 121, 118, 115, 112, 109, 106, 103, 100, 97, 94, 91, 88, 85, 82, 79, 76, 73, 70, 67, 64, 61, 58, 55, 52, 49, 46, 43, 40, 37, 34], led: 5, most: 5, note: "Winston Cup points with 185 for the win. +5 for leading a lap, +5 for leading the most." },
+  chase04: { name: "Chase era (2004-2006)", years: "2004-2006", table: [180, 170, 165, 160, 155, 150, 146, 142, 138, 134, 130, 127, 124, 121, 118, 115, 112, 109, 106, 103, 100, 97, 94, 91, 88, 85, 82, 79, 76, 73, 70, 67, 64, 61, 58, 55, 52, 49, 46, 43, 40, 37, 34], led: 5, most: 5, note: "Winston Cup points with 180 for the win. +5 for leading a lap, +5 for leading the most." },
+  winston: { name: "Winston Cup (1975-2003)", years: "1975-2003", table: [175, 170, 165, 160, 155, 150, 146, 142, 138, 134, 130, 127, 124, 121, 118, 115, 112, 109, 106, 103, 100, 97, 94, 91, 88, 85, 82, 79, 76, 73, 70, 67, 64, 61, 58, 55, 52, 49, 46, 43, 40, 37, 34], led: 5, most: 5, note: "175 for the win, 170, 165, 160... down to 34 for 43rd. +5 for leading a lap, +5 for leading the most. Champion is simply the points leader." },
+  arca: { name: "ARCA (2020-today)", years: "2020-", table: [46, 42, 41, 40, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1], led: 1, most: 1, note: "43 for 1st plus 3 for the win, 42 for 2nd down to 1. +1 for leading a lap, +1 for leading the most." },
+  arca2019: { name: "ARCA (2019 and before)", years: "2019", table: [235, 220, 215, 210, 205, 200, 195, 190, 185, 180, 175, 170, 165, 160, 155, 150, 145, 140, 135, 130, 125, 120, 115, 110, 105, 100, 95, 90, 85, 80, 75, 70, 65, 60, 55, 50, 45, 40, 35, 30, 25, 25, 25], led: 5, most: 5, note: "235 for the win, 220 for 2nd, then 5 less per spot. +5 for leading a lap, +5 for leading the most." },
+  simple: { name: 'One point per car beaten', years: '', table: null, led: 0, most: 0, note: 'Last place gets 1, every car you beat is worth one more.' },
+  custom: { name: 'My own system', years: '', table: null, led: 0, most: 0, note: 'Your own points list and bonuses.' }
+};
+J.POINTS_ORDER = ['p2026', 'p2017', 'p2016', 'p2011', 'chase07', 'chase04', 'winston', 'arca', 'arca2019', 'simple', 'custom'];
+// the season's points system: { template, table (custom only), led, most }
+J.seasonPoints = function (S) { var p = S.points || {}; var t = J.POINTS[p.template] || J.POINTS.p2017; return { template: J.POINTS[p.template] ? p.template : 'p2017', name: t.name, table: p.template === 'custom' ? (p.table || []) : t.table, led: p.template === 'custom' ? (+p.led || 0) : t.led, most: p.template === 'custom' ? (+p.most || 0) : t.most }; };
+J.templatePoints = function (id, pos, n, custom) {
+  var t = J.POINTS[id]; if (!t) return J.nascarPts(pos);
+  if (id === 'simple') return Math.max(1, n - pos + 1);
+  var tab = id === 'custom' ? custom || [] : t.table;
+  return tab[pos - 1] != null ? tab[pos - 1] : (tab.length ? tab[tab.length - 1] : 0);
+};
 
 /* ---------- series, tracks, outlets, figures ---------- */
 J.SERIES = {
   cup: { id: 'cup', label: 'Cup Series', short: 'CUP', chaseSize: 16, regularRaces: 26, winLocks: true },
   xfinity: { id: 'xfinity', label: "O'Reilly Auto Parts Series", short: "O'REILLY", chaseSize: 12, regularRaces: 26, winLocks: true }, // id kept as 'xfinity' so saved leagues and published files keep working
-  truck: { id: 'truck', label: 'Truck Series', short: 'TRUCKS', chaseSize: 10, regularRaces: 16, winLocks: true }
+  truck: { id: 'truck', label: 'Craftsman Truck Series', short: 'TRUCKS', chaseSize: 10, regularRaces: 16, winLocks: true },
+  arca: { id: 'arca', label: 'ARCA Menards Series', short: 'ARCA', chaseSize: 0, regularRaces: 20, winLocks: false }
 };
+J.SERIES_ORDER = ['cup', 'xfinity', 'truck', 'arca'];
+J.APP_NAME = 'Virtual NASCAR';
 J.TYPES = { super: 'Superspeedway', inter: 'Intermediate', short: 'Short track', road: 'Road course', unique: 'Flat / unique' };
 J.TYPE_KEYS = Object.keys(J.TYPES);
 J.guessType = function (name) {
@@ -70,11 +97,20 @@ J.starterSchedule = function (seriesId) {
   return list.map(function (r, i) { r.id = 's' + (i + 1); return r; });
 };
 
-J.OUTLETS = {
-  wire: { id: 'wire', name: 'Checkered Wire', tag: 'Race coverage', color: '#1f4fb4', staff: ['Jamie Kowalski', 'Ross Delgado'] },
-  silly: { id: 'silly', name: 'Silly Season Daily', tag: 'Contracts, rides and rumors', color: '#e3202c', staff: ['Marcy Teague', 'Cole Whitaker'] },
-  notes: { id: 'notes', name: 'Pit Notes', tag: 'Analysis and features', color: '#b88a00', staff: ['Wes Ostrander', 'Priya Nandakumar'] }
+J.OUTLET_BASE = {
+  wire: { id: 'wire', name: 'Speedway Herald', tag: 'Race coverage', color: '#1f4fb4', staff: ['Jamie Kowalski', 'Ross Delgado'] },
+  silly: { id: 'silly', name: 'The Garage Insider', tag: 'Contracts, rides and rumors', color: '#e3202c', staff: ['Marcy Teague', 'Cole Whitaker'] },
+  notes: { id: 'notes', name: 'The Pit Board', tag: 'Analysis and features', color: '#b88a00', staff: ['Wes Ostrander', 'Priya Nandakumar'] }
 };
+J.OUTLETS = JSON.parse(JSON.stringify(J.OUTLET_BASE));
+// each league can rename its outlets (League page); everything reads J.OUTLETS, so point it at the open league's names
+J.useOutlets = function (S) {
+  Object.keys(J.OUTLET_BASE).forEach(function (k) {
+    var b = J.OUTLET_BASE[k], o = (S && S.outletNames && S.outletNames[k]) || {};
+    J.OUTLETS[k] = { id: k, name: o.name || b.name, tag: o.tag || b.tag, color: b.color, staff: (o.staff && o.staff.length ? o.staff : b.staff).slice() };
+  });
+};
+J.outlet = function (S, id) { return J.OUTLETS[id] || J.OUTLETS.wire; };
 J.FIGURES = {
   ray: { id: 'ray', name: 'Ray Calloway', handle: '@RayCallowayRaces', badge: 'Reporter', followers: '412K', color: '#2f6fff', bio: 'Pit road reporter. Post-race interviews, facts first.', voice: 'beat reporter: short factual posts, quotes drivers, "per" and "told me", corrects rumors, never takes sides' },
   tommy: { id: 'tommy', name: 'Tommy Bishop', handle: '@TurnThreeTommy', badge: 'YouTuber', followers: '1.1M', color: '#e3202c', bio: 'Racing YouTuber. New video every race week. Hot takes included.', voice: 'loud YouTuber: big confident takes, plugs his next video, loves a poll, owns his bad predictions with a joke' },
@@ -88,25 +124,33 @@ J.FIGURES = {
   memes: { id: 'memes', name: 'Caution Clock Memes', handle: '@CautionClockMemes', badge: 'Memes', followers: '305K', color: '#eab308', bio: 'Shitposting about left turns since 2019.', voice: 'meme account: one-line jokes, "nobody: / driver:" formats, describes the meme in words, never mean about anything but racing' }
 };
 J.STANCE = { 2: 'superfan', 1: 'fan', '-1': 'hater', '-2': 'superhater' };
+J.FIGURE_BASE = JSON.parse(JSON.stringify(J.FIGURES));
+// a league can give its media personalities new names (Garage Tools, Regenerate); roles and voices stay
+J.useFigures = function (S) {
+  Object.keys(J.FIGURE_BASE).forEach(function (k) { var b = J.FIGURE_BASE[k], o = (S && S.figureOverrides && S.figureOverrides[k]) || {}; J.FIGURES[k] = Object.assign({}, b, o); });
+};
 
 /* ---------- league (one per series) ---------- */
 J.newLeague = function (seriesId, name) {
   var s = J.SERIES[seriesId] || J.SERIES.cup;
   return J.normalize({
     v: 3, id: s.id, series: { id: s.id, label: s.label, short: s.short },
-    league: { name: name || "Jet's Sim Series" },
+    league: { name: name || J.APP_NAME },
     chase: { name: 'The Chase', size: s.chaseSize, regularRaces: s.regularRaces, winLocks: s.winLocks },
-    schedule: J.starterSchedule(s.id)
+    schedule: J.starterSchedule(s.id),
+    points: { template: s.id === 'arca' ? 'arca' : 'p2026' }
   });
 };
 J.normalize = function (S) {
   S = S || {};
   var sid = (S.series && S.series.id) || S.id || 'cup';
   var base = J.SERIES[sid] || J.SERIES.cup;
-  S.v = 3; S.id = sid;
+  S.v = 3; S.id = S.archived && S.id ? S.id : sid; // past seasons keep their own id, like cup-2025
   S.series = S.series || { id: base.id, label: base.label, short: base.short };
   if (J.SERIES[sid]) { S.series.label = base.label; S.series.short = base.short; } // series names follow the current official names
-  S.league = S.league || { name: "Jet's Sim Series" };
+  if (sid === 'truck' && S.season >= 2027) S.series.label = 'FedEx Freight Truck Series'; // the Truck Series' name from 2027 on
+  S.league = S.league || { name: J.APP_NAME };
+  if (S.league.name === "Jet's Sim Series") S.league.name = J.APP_NAME; // the league's new name
   S.chase = S.chase || {};
   if (!S.chase.name) S.chase.name = 'The Chase';
   if (!S.chase.size) S.chase.size = base.chaseSize;
@@ -118,12 +162,35 @@ J.normalize = function (S) {
   S.races.forEach(function (r, i) { if (!r.id) r.id = 'r' + i; r.meta = r.meta || {}; r.rows = r.rows || []; });
   ['articles', 'posts', 'fans', 'media', 'interviews', 'sessions', 'silly'].forEach(function (k) { S[k] = Array.isArray(S[k]) ? S[k] : []; });
   S.sessions.forEach(function (x) { x.rows = x.rows || []; x.meta = x.meta || {}; });
-  S.rep = S.rep || {};
+  S.rep = S.rep || {}; S.teams = S.teams || {}; S.contracts = S.contracts || {};
   S.ai = S.ai || {};
   S.announcement = S.announcement || { text: '', date: '' };
   S.updatedAt = S.updatedAt || Date.now();
   if (!(S.clock >= 2)) J.migrateClock(S);
+  if (S.clock === 2) { S.clock = 3; J.realignAll(S); }
   return S;
+};
+
+/* ---------- seasons: the current one has the series id (cup), past ones are kept as cup-2025 etc. ---------- */
+J.seasonIndex = {}; // public site: filled from data/index.json
+J.seasonsFor = function (seriesId) {
+  var out = [];
+  if (J.leagues) Object.keys(J.leagues).forEach(function (k) { var L = J.leagues[k]; if (L.series.id === seriesId) out.push({ id: k, year: J.seasonYear(L), label: J.seasonYear(L) + (L.archived ? (L.cancelled ? ' (cancelled)' : '') : ' (current)'), current: !L.archived }); });
+  else (J.seasonIndex[seriesId] || []).forEach(function (x) { out.push(x); });
+  return out.sort(function (a, b) { return (b.current ? 1 : 0) - (a.current ? 1 : 0) || String(b.year).localeCompare(String(a.year)); });
+};
+// a new season for the same series: carries over the league, fans, reputations, open silly season stories and settings
+J.nextSeason = function (prev, o) {
+  o = o || {};
+  var L = J.newLeague(prev.series.id, prev.league.name);
+  L.season = o.year || (parseInt(J.seasonYear(prev), 10) + 1);
+  L.chase = JSON.parse(JSON.stringify(prev.chase));
+  if (prev.points) L.points = JSON.parse(JSON.stringify(prev.points));
+  if (prev.outletNames) L.outletNames = JSON.parse(JSON.stringify(prev.outletNames));
+  L.fans = prev.fans; L.rep = prev.rep; L.teams = prev.teams; L.contracts = prev.contracts;
+  L.silly = (prev.silly || []).filter(function (x) { return x.stage !== 'confirmed' && x.stage !== 'dead'; });
+  L.schedule = o.schedule || prev.schedule.map(function (r) { var x = JSON.parse(JSON.stringify(r)); x.id = x.id; if (/^\d{4}-/.test(x.date || '')) x.date = String(L.season) + x.date.slice(4); x.note = ''; return x; });
+  return J.normalize(L);
 };
 
 /* ---------- season maths ---------- */
@@ -161,25 +228,39 @@ J.raceInfo = function (race) {
   return { rows: rows, winner: winner, laps: laps, mover: mover, ledMost: ledMost, dnfs: dnfs, poleName: poleName, poleRow: poleRow, margin: margin, cautions: meta.cautions, leadChanges: meta.leadChanges, leadDrivers: meta.leadDrivers };
 };
 J.nextRound = function (S) { var done = {}; S.races.forEach(function (r) { done[r.sid] = 1; }); return S.schedule.find(function (r) { return !done[r.id]; }) || null; };
-J.seasonYear = function (S) { var r = S.races[S.races.length - 1]; var y = r && r.date ? r.date.slice(0, 4) : ''; return /^\d{4}$/.test(y) ? y : String(new Date().getFullYear()); };
+J.seasonYear = function (S) { if (S.season) return String(S.season); var r = S.races[S.races.length - 1]; var y = r && r.date ? r.date.slice(0, 4) : ''; return /^\d{4}$/.test(y) ? y : String(new Date().getFullYear()); };
 J.raceType = function (S, race) { var sc = S.schedule.find(function (x) { return x.id === race.sid; }); return (sc && sc.type) || J.guessType(race.track || race.name); };
-J.pointsFor = function (S, pos, n) {
-  var last = S.races[S.races.length - 1], mode = last && last.mode;
-  if (mode === 'simple') return Math.max(1, n - pos + 1);
-  if (mode === 'custom' && last.custom) { var a = last.custom.split(',').map(function (x) { return Number(x.trim()); }); return isFinite(a[pos - 1]) ? a[pos - 1] : 0; }
-  return J.nascarPts(pos);
-};
+J.pointsFor = function (S, pos, n) { var sp = J.seasonPoints(S); return J.templatePoints(sp.template, pos, n, sp.table); };
 /* ---------- story dates: news is dated to the race it is about ----------
    preview: race day 9 AM. recap: race night. analysis: the next day. silly season: midweek. Never later than now
    for things that already happened; previews may be dated ahead (the commissioner asked for that). */
-J.roundDate = function (S, sid) {
+J.rawRoundDate = function (S, sid) {
   var race = S.races.find(function (r) { return sid && r.sid === sid; }), r = S.schedule.find(function (x) { return x.id === sid; });
   var d = (race && race.date) || (r && r.date) || ''; return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : '';
+};
+// The day a round's stories and fan posts are dated. Same as its date, except when two rounds sit on the same day (or
+// out of order) in the schedule: then the later one is nudged to 3 days after the one before, so the two weekends never mix.
+J.roundDate = function (S, sid) {
+  var prev = 0, out = '';
+  for (var i = 0; i < S.schedule.length; i++) {
+    var d = J.rawRoundDate(S, S.schedule[i].id); if (!d) { if (S.schedule[i].id === sid) return ''; continue; }
+    var t = new Date(d + 'T12:00:00').getTime(); if (prev && t < prev + 3 * 864e5) t = prev + 3 * 864e5; prev = t;
+    if (S.schedule[i].id === sid) { var x = new Date(t); out = x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); return out; }
+  }
+  return J.rawRoundDate(S, sid);
+};
+// Re-date every race weekend that has something in it (after any date change; nudges can shift later rounds too)
+J.realignAll = function (S) { if (!J.dated(S)) return; var did = {}; S.races.forEach(function (r) { if (r.sid) did[r.sid] = 1; }); S.sessions.forEach(function (x) { if (x.sid) did[x.sid] = 1; }); S.articles.forEach(function (a) { if (a.preSid) did[a.preSid] = 1; }); S.schedule.forEach(function (r) { if (did[r.id]) J.alignRound(S, r.id); }); };
+// Rounds whose date is the same as, or before, the round before them (shown as a warning in Edit Schedule and Import)
+J.dateClashes = function (S) {
+  var out = {}, prev = null;
+  S.schedule.forEach(function (r) { var d = J.rawRoundDate(S, r.id); if (!d) return; if (prev && d <= prev.d) out[r.id] = prev; prev = { id: r.id, d: d, name: r.name }; });
+  return out;
 };
 J.atLocal = function (day, h, m) { var d = new Date(day + 'T00:00:00'); d.setHours(h, m || 0, 0, 0); return d.getTime(); };
 J.storyTime = function (S, kind, o) {
   o = o || {}; var now = Date.now(), day = '';
-  if (o.race && /^\d{4}-\d{2}-\d{2}$/.test(o.race.date || '')) day = o.race.date;
+  if (o.race && /^\d{4}-\d{2}-\d{2}$/.test(o.race.date || '')) day = (o.race.sid && J.roundDate(S, o.race.sid)) || o.race.date;
   else if (o.sid) day = J.roundDate(S, o.sid);
   if (!day) return now - (o.slot || 0) * 60000;
   var t;
@@ -208,14 +289,14 @@ J.leagueNow = function (S) {
   var see = function (ts) { if (ts && ts <= cap && ts > t) t = ts; };
   S.articles.forEach(function (a) { see(a.ts); }); S.posts.forEach(function (p) { see(p.ts); });
   S.sessions.forEach(function (x) { see(J.sessionTime(S, x)); });
-  S.races.forEach(function (r) { if (ISO.test(r.date || '')) see(J.atLocal(r.date, 21, 30)); });
+  S.races.forEach(function (r) { if (ISO.test(r.date || '')) see(J.storyTime(S, 'recap', { race: r }) - 10 * 60000); });
   if (!t) { var first = S.schedule.find(function (x) { return ISO.test(x.date || ''); }); t = first ? J.atLocal(first.date, -72 + 12, 0) : Date.now(); }
   return Math.min(t + 60000, cap === Infinity ? t + 60000 : cap);
 };
 // a midweek moment between the last race and the next one (for "this week" news)
 J.weekTime = function (S) {
   var now = J.leagueNow(S); if (!J.dated(S)) return now;
-  var last = S.races[S.races.length - 1], mid = last && ISO.test(last.date || '') ? J.atLocal(last.date, 72 + 11, 0) : 0;
+  var last = S.races[S.races.length - 1], mid = last && ISO.test(last.date || '') ? J.storyTime(S, 'recap', { race: last }) + (72 + 11 - 21) * 3600000 - 40 * 60000 : 0;
   var nx = J.nextRound(S), nd = nx && J.roundDate(S, nx.id), cap = nd ? J.atLocal(nd, -24 + 9, 0) : Infinity;
   return Math.max(now, Math.min(mid, cap));
 };
@@ -223,7 +304,7 @@ J.weekTime = function (S) {
 // One-time move of things written before the league calendar existed (dated by the real clock) onto the league calendar.
 // Practice/qualifying imports and race recaps are the anchors: their real import time and their league time are both known.
 J.migrateClock = function (S) {
-  if (S.clock >= 2) return false; S.clock = 2;
+  if (S.clock >= 2) return false; S.clock = 3;
   if (!J.dated(S)) return false;
   var A = [];
   S.sessions.forEach(function (x) { if (x.ts) A.push({ r: x.ts, l: J.sessionTime(S, x) }); });
@@ -306,6 +387,27 @@ J.sillyPhase = function (S) {
   if (run < cut * 0.55) return P('spring', 'Spring', 0.6, 'talks', 'Spring. Rumor season heats up. Drivers in contract years get asked about it every week; established drivers sometimes sign extensions; teams start "talks". Big moves are rumors or talks, not announcements yet.');
   return P('summer', 'Peak silly season', 0.9, 'confirmed', 'Peak silly season, the stretch before the field for ' + S.chase.name + ' is set. In real NASCAR this is when most of next year is confirmed: extensions, team switches, retirements, promotions from the lower series. Earlier rumors can now be confirmed or fall apart. Announcements come midweek or at a Friday press conference at the track.');
 };
+/* ---------- what people talk about at each point of the season (modeled on NASCAR Twitter/X, r/NASCAR, YouTube,
+   podcasts and the big NASCAR sites). The cut line is background noise most of the year: fans only start living on it about
+   four races out, the media a little before that. playoff: 0 = nobody brings it up, 1 = analysts and stats accounts only,
+   2 = the media's main storyline and a growing fan topic, 3 = everything. ---------- */
+J.theChase = function (S) { var n = S.chase.name || 'the Chase'; return /^the\s/i.test(n) ? 'the ' + n.slice(4) : 'the ' + n; };
+J.talkPhase = function (S) {
+  var total = Math.max(S.schedule.length, S.races.length) || 1, run = S.races.length, cut = Math.min(S.chase.regularRaces, total), left = cut - run, C = S.chase.name, T = J.theChase(S), Tc = T.charAt(0).toUpperCase() + T.slice(1);
+  var P = function (id, label, playoff, fans, media) { return { id: id, label: label, playoff: playoff, fans: fans, media: media, run: run, total: total, cut: cut, left: left }; };
+  if (run === 0) return P('preseason', 'Preseason', 0, 'Season-opener hype. New paint schemes and rides, rookies, bold predictions nobody will remember, "it\'s the superspeedway lottery, anything can happen", people counting down to green flag. Nobody talks points or ' + T + '.', 'Season previews, storylines to watch, new driver and team pairings, predictions. No points talk yet.');
+  if (run >= total) return P('offseason', 'Offseason', 1, 'Offseason. Arguing about whether the champion deserved it, season grades, best and worst race of the year, favorite moments, silly season moves, complaints about next year\'s schedule, "how many days until the opener".', 'Season reviews, driver grades, top moments, offseason moves.');
+  if (run === total - 1) return P('finale', 'Championship week', 3, 'Title week. Picks for the champion, legacy talk, the format debate (old-heads hate deciding it in one race), "last race of the year" feelings, drivers with nothing to lose playing spoiler.', 'Title contender breakdowns, the path to the championship for each driver, final-race storylines.');
+  if (left < 0) return P('playoffs', C, 3, Tc + ' is on. Every week is elimination math: who is above or below the line, must-win talk, "win and you\'re in", contenders who had a bad day, the format debate (some love the drama, old-heads hate it), drivers out of ' + T + ' playing spoiler. Silly season talk fades.', C + ' standings and scenarios every week: who is safe, who needs a win, what each contender needs.');
+  if (left === 0) return P('cutset', 'Field just set', 3, Tc + ' field was JUST set. Heartbreak and celebration: who made it, who missed it by a few points, who backed in, "points racing paid off" vs "should have won a race", predictions for ' + T + '.', 'Who made ' + T + ', who missed it and why, early title favorites.');
+  if (left <= 1) return P('cutrace', 'Cut race next', 3, 'The cut race is next. It is all anyone talks about: the bubble, the exact points gaps, must-win for the drivers outside, "points racing vs going for the win", nerves, wild scenarios. Even casual fans are doing math.', 'Bubble watch, cut-race scenarios, what each bubble driver needs.');
+  if (left <= 4) return P('bubble', 'Bubble watch', 2, Tc + ' is finally a real topic: about four races out, so fans start bubble-watching. Who is in danger, "my guy needs a win", winless drivers feeling the heat, stage points suddenly mattering, someone posting the points gaps. Still plenty of normal race talk.', 'Bubble watch pieces start: the cut line, who is safe with a win, who is in danger, "races left" countdowns.');
+  if (left <= 6) return P('approach', 'Cut line on the horizon', 1, 'Fans still talk race by race. The cut line only comes up as an aside, mostly from stats accounts and the analyst, or someone saying "it\'s getting late for my driver". Do not make it a main topic yet.', 'Analysts start the "playoff picture" piece now and then; most coverage is still about the races.');
+  if (run <= 4) return P('opening', 'Opening stretch', 0, 'Opening stretch. Overreaction culture: one good run and "X IS BACK", one bad run and "washed", replies pushing back with "it\'s been ' + run + ' race' + (run === 1 ? '' : 's') + '" and "small sample size". Who looks fast, new rides, rookies, first-time winners, the broadcast, track-specific gripes. Points mean nothing yet; nobody talks about ' + T + ' or the cut line (at most a joke about the points leader after ' + run + ' race' + (run === 1 ? '' : 's') + ').', 'Early-season takeaways, who looks fast, surprises, rookies. Points tables are a footnote. No cut-line or ' + T + ' math.');
+  return P('midseason', 'Midseason', 0, 'The long middle of the season. Narratives settle: who is fast, who is winless and getting asked about it, grudges from earlier races, slumps, track-type specialists, road course ringers, weather, broadcast complaints, fantasy leagues, silly season rumors creeping in. ' + T + ' and the cut line are background noise: fans basically do not bring them up.', 'Weekly formats rotate: power rankings, winners and losers, "what we learned", by-the-numbers, trends at this kind of track, a feature on a driver. The cut line is not the story yet.');
+};
+J.talkLine = function (S) { var t = J.talkPhase(S); return 'WHERE THE SEASON IS: ' + t.label + ' (race ' + t.run + ' of ' + t.total + (t.left > 0 ? ', ' + t.left + ' before ' + J.theChase(S) + ' cut' : '') + '). WHAT REAL NASCAR FANS TALK ABOUT RIGHT NOW: ' + t.fans; };
+
 J.sillyActive = function (S) { return (S.silly || []).filter(function (x) { return x.stage !== 'confirmed' && x.stage !== 'dead'; }); };
 
 /* ---------- practice / qualifying / happy hour ---------- */
@@ -319,8 +421,111 @@ J.roster = function (S) {
   var out = J.agg(S.races).map(function (d) { return { key: d.key, name: d.name, car: d.car, raced: true }; }), seen = {};
   out.forEach(function (d) { seen[d.key] = 1; });
   (S.sessions || []).slice().sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); }).forEach(function (x) { x.rows.forEach(function (r) { var k = J.driverKey(r.driver); if (k && !seen[k]) { seen[k] = 1; out.push({ key: k, name: String(r.driver).trim(), car: r.car || '', raced: false }); } }); });
+  if (S.preseason && S.preseason.rows) S.preseason.rows.forEach(function (r) { var k = J.driverKey(r.driver); if (k && !seen[k]) { seen[k] = 1; out.push({ key: k, name: String(r.driver).trim(), car: r.car || '', raced: false }); } });
   return out;
 };
+/* ---------- teams, contracts, happiness (shared: the website shows them too) ----------
+   S.teams { id: { id, name, color, base, mfr } }   S.contracts { driverKey: { team, through, car } }
+   Happiness is worked out from the data every time (form, wins, teammate, contract year, rumors), so it always matches
+   what happened on track. */
+J.slug = function (s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'team'; };
+J.TEAM_COLORS = ['#e3202c', '#2f6fff', '#ffc20e', '#22c55e', '#a855f7', '#f97316', '#06b6d4', '#ec4899', '#94a3b8', '#14b8a6', '#eab308', '#8b5cf6'];
+J.seasonNum = function (S) { return parseInt(J.seasonYear(S), 10) || new Date().getFullYear(); };
+J.ensureContracts = function (S, lookup) {
+  S.teams = S.teams || {}; S.contracts = S.contracts || {};
+  var yr = J.seasonNum(S), changed = 0, ds = J.roster(S), lastRow = {};
+  S.races.forEach(function (r) { r.rows.forEach(function (x) { lastRow[J.driverKey(x.driver)] = x; }); });
+  ds.forEach(function (d) {
+    var c = S.contracts[d.key], rand = J.rng('contract' + S.series.id + d.key);
+    var known = lookup && lookup(d.name), rowTeam = lastRow[d.key] && lastRow[d.key].team;
+    if (c && !(known && c.auto && !c.team)) return;
+    var tname = (known && known.team) || rowTeam || '', tid = tname ? J.slug(tname) : '';
+    if (tid && !S.teams[tid]) S.teams[tid] = { id: tid, name: tname, color: (known && known.color) || J.TEAM_COLORS[Object.keys(S.teams).length % J.TEAM_COLORS.length], base: (known && known.base) || '', mfr: (known && known.mfr) || '' };
+    S.contracts[d.key] = { team: tid, through: yr + [0, 0, 1, 1, 1, 2, 2, 3][Math.floor(rand() * 8)], car: (known && known.number) || d.car || '', base: 52 + Math.floor(rand() * 26), auto: true };
+    changed++;
+  });
+  return changed;
+};
+J.teamOf = function (S, key) { var c = S.contracts && S.contracts[key]; return c && c.team && S.teams && S.teams[c.team] ? S.teams[c.team] : null; };
+J.teamDrivers = function (S, tid) { if (!tid) return []; return Object.keys(S.contracts || {}).filter(function (k) { return S.contracts[k].team === tid; }); };
+J.contractInfo = function (S, key) {
+  var c = (S.contracts || {})[key]; if (!c) return null;
+  var yr = J.seasonNum(S), left = c.through - yr;
+  return { team: J.teamOf(S, key), through: c.through, left: left, label: left < 0 ? 'Free agent' : left === 0 ? 'Final year (through ' + c.through + ')' : 'Signed through ' + c.through, status: left < 0 ? 'free' : left === 0 ? 'expiring' : left === 1 ? 'short' : 'long' };
+};
+J.HAPPY_LABEL = function (s) { return s >= 80 ? 'Thrilled' : s >= 65 ? 'Happy' : s >= 50 ? 'Content' : s >= 35 ? 'Frustrated' : 'Unhappy'; };
+J.happiness = function (S, key) {
+  var c = (S.contracts || {})[key]; if (!c) return null;
+  var ds = J.agg(S.races), d = ds.find(function (x) { return x.key === key; }), score = c.base || 60, why = [];
+  if (d && d.starts) {
+    var hist = d.hist.slice(-5), avg5 = hist.reduce(function (a, h) { return a + h.pos; }, 0) / Math.max(1, hist.length), avg = d.fin / d.starts;
+    var team = J.teamDrivers(S, c.team).filter(function (k) { return k !== key; }).map(function (k) { return ds.find(function (x) { return x.key === k; }); }).filter(function (x) { return x && x.starts; });
+    if (d.wins) { score += Math.min(16, d.wins * 6); why.push(J.plural(d.wins, 'win') + ' this season'); }
+    if (hist.length >= 3) {
+      var trend = avg - avg5; score += Math.max(-12, Math.min(12, trend * 1.4));
+      if (trend > 3) why.push('running better lately (' + avg5.toFixed(1) + ' average finish in the last ' + hist.length + ')');
+      else if (trend < -3) why.push('struggling lately (' + avg5.toFixed(1) + ' average finish in the last ' + hist.length + ')');
+    }
+    var dnf = hist.filter(function (h) { return J.isDnf({ status: h.status }); }).length; if (dnf >= 2) { score -= dnf * 3; why.push(dnf + ' DNFs in the last ' + hist.length); }
+    if (team.length) {
+      var tavg = team.reduce(function (a, t) { return a + t.fin / t.starts; }, 0) / team.length, gap = tavg - avg;
+      score += Math.max(-10, Math.min(8, gap * 0.8));
+      if (gap > 4) why.push('beating the teammates'); else if (gap < -4) why.push('behind the teammates');
+    }
+  }
+  var rep = S.rep && S.rep[key]; if (rep && rep.score != null) score += (rep.score - 50) / 8;
+  var yr = J.seasonNum(S); if (c.through <= yr) { score -= 5; why.push('playing out a contract year'); }
+  var sl = (S.silly || []).filter(function (x) { return (x.drivers || []).some(function (n) { return J.driverKey(n) === key; }) && x.stage !== 'dead'; }).pop();
+  if (sl && /talks|close/.test(sl.stage)) { score -= 8; why.push('linked with a move (' + J.SILLY_LABEL[sl.stage].toLowerCase() + ')'); }
+  score = Math.round(Math.max(5, Math.min(98, score)));
+  return { score: score, label: J.HAPPY_LABEL(score), why: why };
+};
+// Who is likely to change rides next season, and where to. Built from contracts, happiness, form and the rumor mill.
+J.STAGE_WEIGHT = { whisper: 0.05, rumor: 0.12, talks: 0.25, close: 0.45, confirmed: 1, dead: -0.2 };
+J.sillyPredictions = function (S, cross) {
+  var ds = J.agg(S.races), yr = J.seasonNum(S), byKey = {}; ds.forEach(function (d, i) { byKey[d.key] = { d: d, rank: i + 1 }; });
+  var out = [];
+  Object.keys(S.contracts || {}).forEach(function (k) {
+    var ci = J.contractInfo(S, k), h = J.happiness(S, k), info = byKey[k]; if (!ci) return;
+    var p = ci.status === 'free' ? 0.7 : ci.status === 'expiring' ? 0.4 : ci.status === 'short' ? 0.12 : 0.04, why = [];
+    if (ci.status === 'expiring') why.push('contract runs out after ' + ci.through);
+    if (h && h.score < 50) { p += (50 - h.score) / 100; why.push(h.label.toLowerCase() + ' with the team'); }
+    var sl = (S.silly || []).filter(function (x) { return (x.drivers || []).some(function (n) { return J.driverKey(n) === k; }); }).pop();
+    if (sl) { p += J.STAGE_WEIGHT[sl.stage] || 0; why.push('in the rumor mill: ' + J.SILLY_LABEL[sl.stage].toLowerCase()); }
+    var team = ci.team, teamRank = team ? (function () { var ks = J.teamDrivers(S, team.id), best = 99; ks.forEach(function (x) { if (byKey[x] && byKey[x].rank < best && x !== k) best = byKey[x].rank; }); return best; })() : 99;
+    if (info && info.rank <= 8 && teamRank > 15) { p += 0.1; why.push('a top driver on a smaller team'); }
+    p = Math.max(0.02, Math.min(sl && sl.stage === 'confirmed' ? 1 : 0.95, p));
+    out.push({ key: k, name: info ? info.d.name : k, car: (S.contracts[k].car || (info && info.d.car) || ''), team: team, p: p, why: why, contract: ci, happy: h, rank: info ? info.rank : null, storyline: sl || null });
+  });
+  out.sort(function (a, b) { return b.p - a.p; });
+  // seats likely to open = teams of drivers likely to leave; match strong movers to the best open seats
+  var seats = out.filter(function (x) { return x.p >= 0.35 && x.team; }).map(function (x) { return { team: x.team, from: x.name }; });
+  out.forEach(function (x) {
+    if (x.storyline && x.storyline.stage !== 'dead' && x.storyline.team) { x.dest = [x.storyline.team]; return; }
+    x.dest = seats.filter(function (s) { return !x.team || s.team.id !== x.team.id; }).slice(0, 2).map(function (s) { return s.team.name; });
+    if (!x.dest.length && cross && cross.up) x.dest = ['a ride in the ' + cross.up];
+  });
+  return out;
+};
+// stars of the other series (for cross-series rumors): best average finish with 2+ starts
+J.seriesStars = function (S, n) {
+  return J.agg(S.races).filter(function (d) { return d.starts >= 2; }).map(function (d) { return { name: d.name, car: d.car, wins: d.wins, avg: d.fin / d.starts, pts: d.pts }; }).sort(function (a, b) { return a.avg - b.avg; }).slice(0, n || 5);
+};
+J.LADDER = ['arca', 'truck', 'xfinity', 'cup'];
+// The other series in this league family (the app knows all of them; the website gets a summary baked in when publishing)
+J.crossCompute = function (S) {
+  if (!J.leagues) return null;
+  var i = J.LADDER.indexOf(S.series.id), cur = function (id) { return J.leagues[id] && !J.leagues[id].archived ? J.leagues[id] : null; };
+  var down = i > 0 ? cur(J.LADDER[i - 1]) : null, up = i >= 0 && i < J.LADDER.length - 1 ? cur(J.LADDER[i + 1]) : null;
+  var heads = [];
+  J.SERIES_ORDER.forEach(function (id) { var L = cur(id); if (!L || L.series.id === S.series.id) return; L.articles.slice().sort(function (a, b) { return b.ts - a.ts; }).slice(0, 3).forEach(function (a) { heads.push({ series: L.series.label, sid: id, headline: a.headline, outlet: a.outlet, ts: a.ts }); }); });
+  heads.sort(function (a, b) { return b.ts - a.ts; });
+  var drivers = {};
+  J.roster(S).forEach(function (d) { J.SERIES_ORDER.forEach(function (id) { var L = cur(id); if (!L || L.series.id === S.series.id) return; var ds = J.agg(L.races), x = ds.find(function (q) { return q.key === d.key; }); if (x) (drivers[d.key] = drivers[d.key] || []).push({ series: L.series.label, line: 'P' + (ds.indexOf(x) + 1) + ' in points, ' + J.plural(x.wins, 'win') + ' in ' + J.plural(x.starts, 'start') }); }); });
+  return { down: down ? down.series.id : '', downLabel: down ? down.series.label : '', stars: down ? J.seriesStars(down, 5) : [], up: up ? up.series.label : '', upOpen: up ? J.sillyPredictions(up).filter(function (x) { return x.p >= 0.35 && x.team; }).slice(0, 4).map(function (x) { return { team: x.team.name, from: x.name }; }) : [], headlines: heads.slice(0, 6), drivers: drivers };
+};
+J.crossFor = function (S) { return S.cross || J.crossCompute(S); };
+J.otherSeriesFor = function (S, name) { var c = J.crossFor(S); return (c && c.drivers && c.drivers[J.driverKey(name)]) || []; };
 J.findDriver = function (S, name) {
   var ds = J.roster(S); if (!name || !ds.length) return null;
   var k = J.driverKey(name), hit = ds.find(function (d) { return d.key === k; });
@@ -457,6 +662,36 @@ J.sessionBoost = function (S, sid, T) {
   });
   return { boost: out, used: used };
 };
+// Auto-sim one race from the season so far (track-type form, practice/qualifying, wreck risk). Returns result rows like an import.
+J.simRace = function (S, round, seed) {
+  var T = round.type || J.guessType(round.track || round.name), D = J.ratings(S), sb = J.sessionBoost(S, round.id, T);
+  var field = {}; J.sessionsFor(S, round.id).forEach(function (x) { x.rows.forEach(function (r) { field[J.driverKey(r.driver)] = r; }); });
+  J.roster(S).forEach(function (d) { if (!D[d.key]) { var sk = {}; J.TYPE_KEYS.forEach(function (t) { sk[t] = 0.42; }); D[d.key] = { key: d.key, name: d.name, car: d.car, n: 0, overall: 0.42, skill: sk, dnfRate: 0.08, byType: {} }; } });
+  var arr = Object.keys(D).map(function (k) { return D[k]; });
+  if (Object.keys(field).length >= 10) arr = arr.filter(function (d) { return field[d.key]; });
+  else { var last = S.races[S.races.length - 1], n = last ? last.rows.length : 38; arr.sort(function (a, b) { return b.n - a.n || b.overall - a.overall; }); arr = arr.slice(0, Math.max(n, Math.min(arr.length, 36))); }
+  if (arr.length < 3) return null;
+  arr.forEach(function (d) { d.boost = sb.boost[d.key] || 0; var c = S.contracts && S.contracts[d.key]; if (c && c.car) d.car = c.car; });
+  var rand = J.rng('sim' + S.id + round.id + (seed || Date.now())), res = simOne(arr, T, rand);
+  var LAPS = { super: 188, inter: 200, short: 300, road: 70, unique: 200 }, sameTrack = S.races.filter(function (r) { return r.track && r.track === round.track; }).pop();
+  var laps = sameTrack && sameTrack.rows[0] && sameTrack.rows[0].laps ? sameTrack.rows[0].laps : LAPS[T];
+  var q = J.sessionOf(S, round.id, 'qualifying'), qpos = {}; if (q) q.rows.forEach(function (r) { qpos[J.driverKey(r.driver)] = r.position; });
+  var starts = arr.map(function (d, i) { return { i: i, z: qpos[d.key] ? -qpos[d.key] : (d.skill[T] - 0.5) * 3 + gauss(rand) * 1.2 }; }).sort(function (a, b) { return qpos[arr[a.i].key] || qpos[arr[b.i].key] ? a.z < b.z ? 1 : -1 : b.z - a.z; });
+  var startOf = {}; starts.forEach(function (s, p) { startOf[s.i] = qpos[arr[s.i].key] || p + 1; });
+  // laps led: the front runners share most of them, the winner usually the most
+  var ledPool = res.slice(0, 8).filter(function (o) { return !o.dnf; }), w = ledPool.map(function (o, p) { return Math.max(0.05, Math.exp(o.z / 1.4) * (p === 0 ? 1.8 : 1)); }), wt = w.reduce(function (a, b) { return a + b; }, 0), led = {}, left = laps;
+  ledPool.forEach(function (o, p) { var x = p === ledPool.length - 1 ? left : Math.round(laps * w[p] / wt); x = Math.min(x, left); led[o.i] = x; left -= x; });
+  var STAT = ['Accident', 'Accident', 'Accident', 'Engine', 'DVP', 'Suspension', 'Transmission', 'Overheating'];
+  var rows = res.map(function (o, p) {
+    var d = arr[o.i], lapsDone = o.dnf ? Math.max(1, Math.floor(laps * (0.05 + rand() * 0.9))) : p < 18 ? laps : laps - Math.floor(Math.max(0, (p - 14) / 7 + rand() * 1.4));
+    var interval = p === 0 ? '' : o.dnf ? '' : lapsDone < laps ? '-' + (laps - lapsDone) + ' lap' + (laps - lapsDone > 1 ? 's' : '') : '-' + (p * 0.35 + rand() * 1.2).toFixed(3);
+    return { position: p + 1, start: startOf[o.i], driver: d.name, car: d.car || '', team: '', laps: lapsDone, lapsLed: led[o.i] || 0, status: o.dnf ? J.pick(rand, STAT) : 'Running', interval: interval };
+  });
+  // a DNF can't finish ahead of a running car
+  var run = rows.filter(function (r) { return r.status === 'Running'; }), out = rows.filter(function (r) { return r.status !== 'Running'; }).sort(function (a, b) { return b.laps - a.laps; });
+  rows = run.concat(out).map(function (r, i) { r.position = i + 1; return r; });
+  return { rows: rows, laps: laps, cautions: Math.round((T === 'super' ? 9 : T === 'short' ? 10 : T === 'road' ? 4 : 7) * (0.5 + rand())), simmed: true };
+};
 J.raceOutlook = function (S) {
   var nx = J.nextRound(S); if (!nx) return { none: true };
   var T = nx.type || J.guessType(nx.track || nx.name);
@@ -542,6 +777,18 @@ J.driftFans = function (S) {
 };
 
 /* ---------- posts / threads ---------- */
+// Keep the Garage a sensible size: the newest `max` threads, plus up to 3 per story (so older stories keep their reactions)
+J.trimThreads = function (S, max, fresh) {
+  var ths = J.threadsOf(S); if (ths.length <= max) return;
+  var keep = {}, per = {}, arts = {}; S.articles.forEach(function (a) { arts[a.id] = 1; });
+  (fresh || []).forEach(function (t) { keep[t] = 1; });
+  ths.forEach(function (t, i) {
+    var a = t.ref && t.ref.type === 'article' && arts[t.ref.id] ? t.ref.id : null;
+    if (a) per[a] = (per[a] || 0) + 1;
+    if (i < max || (a && per[a] <= 3)) keep[t.id] = 1;
+  });
+  S.posts = S.posts.filter(function (p) { return keep[p.thread]; });
+};
 J.threadsOf = function (S) {
   var byT = {};
   S.posts.forEach(function (p) { (byT[p.thread] = byT[p.thread] || []).push(p); });
@@ -552,7 +799,7 @@ J.threadsOf = function (S) {
   }).sort(function (a, b) { return b.root.ts - a.root.ts; });
 };
 J.postAuthor = function (S, p) {
-  if (p.by.type === 'figure') { var f = J.FIGURES[p.by.id]; return f ? { figure: true, name: f.name, handle: f.handle, badge: f.badge, color: f.color } : null; }
+  if (p.by.type === 'figure') { var f = J.FIGURES[p.by.id]; return f ? { figure: true, id: p.by.id, name: f.name, handle: f.handle, badge: f.badge, color: f.color } : null; }
   var fan = S.fans.find(function (x) { return x.id === p.by.id; }); if (!fan) return null;
   return { figure: false, fan: fan, name: fan.name || fan.handle, handle: (fan.platform === 'forum' ? 'u/' : '@') + fan.handle, color: fan.color || '#5b6a86' };
 };

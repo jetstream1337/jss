@@ -1,4 +1,4 @@
-/* Jet's Sim Series - race import (commissioner only). Parser ported from the tested beta. */
+/* Virtual NASCAR - race import (commissioner only). Parser ported from the tested beta. */
 (function () {
 'use strict';
 var J = window.JSS, $ = J.$, esc = J.esc, P = J.parse = {};
@@ -106,9 +106,12 @@ P.score = function (rows, mode, bonus, custom) {
     var p;
     if (mode === 'file') p = r.filePoints != null ? r.filePoints : J.nascarPts(r.position);
     else if (mode === 'simple') p = Math.max(1, n - r.position + 1);
-    else if (mode === 'custom') p = isFinite(arr[r.position - 1]) ? arr[r.position - 1] : 0;
+    else if (mode === 'custom') { var ca = arr.filter(function (x) { return isFinite(x); }); p = ca.length ? (ca[r.position - 1] != null ? ca[r.position - 1] : ca[ca.length - 1]) : 0; }
+    else if (J.POINTS[mode]) p = J.templatePoints(mode, r.position, n, arr);
     else p = J.nascarPts(r.position);
-    if (bonus && mode !== 'file') { if (r.lapsLed > 0) p += 1; if (maxLed > 0 && r.lapsLed === maxLed) p += 1; }
+    var T = J.POINTS[mode], led = T && mode !== 'custom' ? T.led : (bonus ? 1 : 0), most = T && mode !== 'custom' ? T.most : (bonus ? 1 : 0);
+    if (mode === 'custom' && J.S && J.S.points && J.S.points.template === 'custom') { led = +J.S.points.led || 0; most = +J.S.points.most || 0; }
+    if (mode !== 'file') { if (led && r.lapsLed > 0) p += led; if (most && maxLed > 0 && r.lapsLed === maxLed) p += most; }
     var o = {}; Object.keys(r).forEach(function (k) { o[k] = r[k]; }); o.points = p; return o;
   });
 };
@@ -128,8 +131,8 @@ J.readFileText = function (f) { return new Promise(function (res, rej) { var r =
 var imp = null;          // { source, file, meta, sessions?, rows?, form, edit:{}, del:{} }
 J.importType = 'race';   // race | qualifying | practice | happy
 J.coverageRun = null;    // { title, steps:[{id,label,state,detail}], done, fails }
-var TYPES = [['race', 'Race results'], ['qualifying', 'Qualifying'], ['practice', 'Practice'], ['happy', 'Happy Hour']];
-var STEP_LABELS = { recap: 'Race recap article (Checkered Wire)', news: 'Newsroom stories (Pit Notes, Silly Season Daily)', prenews: 'Race preview stories from the newsroom', fans: 'Fan reactions in The Garage', hype: 'Fans hyping up the race in The Garage', outlooks: 'Chase, Race and Season outlook commentary', drift: 'Fans changing sides' };
+var TYPES = [['race', 'Race results'], ['qualifying', 'Qualifying'], ['practice', 'Practice'], ['happy', 'Happy Hour'], ['test', 'Preseason test']];
+var STEP_LABELS = { recap: 'Race recap article', news: 'Newsroom stories (analysis and silly season)', prenews: 'Preview stories from the newsroom', fans: 'Fan reactions in The Garage', hype: 'Fans hyping up the race in The Garage', outlooks: 'Chase, Race and Season outlook commentary', drift: 'Fans changing sides' };
 function typeLabel(t) { return t === 'race' ? 'Race' : J.SESSIONS[t]; }
 
 function coverageHtml() {
@@ -140,13 +143,19 @@ function coverageHtml() {
 }
 function paintCoverage() { var el = $('covPanel'); if (el) el.outerHTML = coverageHtml(); else if (J.route().name === 'import' && $('covSlot')) $('covSlot').innerHTML = coverageHtml(); }
 J.acts.covDismiss = function () { J.coverageRun = null; var el = $('covPanel'); if (el) el.remove(); };
+// A race on the same day as another race weekend mixes their stories and fan posts together
+function dateWarn(f) {
+  var S = J.S, other = S.races.find(function (r) { return r.date === f.date && r.sid !== f.round; });
+  return '<p class="schwarn" id="impDateWarn"' + (other ? '' : ' hidden') + '>' + (other ? J.esc(other.name) + ' is already on ' + J.esc(J.fmtDate(f.date)) + '. Pick this race\'s own date so the two weekends do not get mixed together.' : '') + '</p>';
+}
 function startRun(title, kind, steps) {
   if (J.coverageRun && !J.coverageRun.done) { J.toast('The AI is still working on the last import. Try again in a minute.', true); return null; }
   var c = J.coverageRun = { title: title, kind: kind, done: false, fails: 0, steps: steps.map(function (k) { return { id: k, label: STEP_LABELS[k], state: '', detail: '' }; }) };
+  if (J.publisher) J.publisher.hold(true); // publish once when the AI is done, not after every step
   paintCoverage(); return c;
 }
 function stepFn(c) { return function (name, state, detail) { var s = c.steps.find(function (x) { return x.id === name; }); if (s) { s.state = state; s.detail = detail || ''; } if (state !== 'run') J.save({ render: false, quiet: true }); paintCoverage(); }; }
-function finishRun(c, fails) { c.done = true; c.fails = fails; J.save({ render: J.route().name !== 'import' && J.route().name !== 'studio' }); paintCoverage(); J.toast(fails ? 'Finished with ' + J.plural(fails, 'problem') + '.' : 'Done. It is on the site.', !!fails); }
+function finishRun(c, fails) { c.done = true; c.fails = fails; if (J.publisher) J.publisher.hold(false); J.save({ render: J.route().name !== 'import' && J.route().name !== 'studio' }); paintCoverage(); J.toast(fails ? 'Finished with ' + J.plural(fails, 'problem') + '.' : 'Done. It is on the site.', !!fails); }
 
 J.runCoverage = async function (race) {
   var S = J.S, c = startRun('Race coverage: ' + race.name, 'race', ['recap'].concat(J.settings.autoNews !== false ? ['news'] : []).concat(['fans', 'outlooks', 'drift'])); if (!c) return;
@@ -162,7 +171,7 @@ J.runSessionCoverage = async function (sess) {
   if (steps.indexOf('prenews') >= 0) { step('prenews', 'run'); try { var again = S.articles.some(function (a) { return a.desk && a.preSid === sess.sid; }), st = J.dated(S) ? J.sessionTime(S, sess) : 0; var made = await J.ai.newsCycle(S, { phase: 'pre', sid: sess.sid, only: again ? ['wire'] : null, at: st ? st + 40 * 60000 : 0 }); step('prenews', 'ok', made.length + (made.length === 1 ? ' story' : ' stories')); } catch (e) { fails++; step('prenews', 'err', e.message); } }
   step('hype', 'run');
   try {
-    var n = await J.ai.threads(S, { facts: J.ai.sessionFacts(S, sess.sid), focus: top, ref: { type: 'session', id: sess.id }, at: J.dated(S) ? J.sessionTime(S, sess) + 12 * 60000 : 0, task: 'The race has NOT happened yet. ' + J.SESSIONS[sess.type] + ' just finished. Write 5 to 7 threads of pre-race talk: reactions to who was fast and who was slow, hype and predictions for the race, someone mad about where their driver ended up, a fantasy or betting pick, a "practice speed means nothing" argument, a media figure with an observation. Never say who won the race.' });
+    var n = await J.ai.sessionHype(S, sess, J.dated(S) ? J.sessionTime(S, sess) + 12 * 60000 : 0);
     step('hype', 'ok', n + ' posts');
   } catch (e) { fails++; step('hype', 'err', e.message); }
   if (S.races.length) { step('outlooks', 'run'); try { await J.ai.outlooks(S); step('outlooks', 'ok'); } catch (e) { fails++; step('outlooks', 'err', e.message); } }
@@ -179,6 +188,7 @@ J.routes['import'] = function (S) {
   }).join('') + '</div>';
   return J.phead('Import Results', 'Race results update the standings. Practice and qualifying get the fans talking before the race.')
     + '<div id="covSlot">' + coverageHtml() + '</div>'
+    + (S.races.length || J.sessionsFor ? J.simPanel(S) : '')
     + '<section class="panel"><h3 style="font-size:20px;margin-bottom:10px">What are you importing?</h3>' + chips
     + '<div class="drop" id="drop"><strong>Drop the file or screenshot here</strong><p>The standings file NR2003 saves in <b>exports_imports</b> (ends in .html) has practice, qualifying, happy hour and the race in it. A CSV, a pasted list, or a <b>screenshot</b> of the results screen also works.' + (hasKey ? '' : ' Screenshots need the AI key (Gemini is free) in Settings.') + '</p>'
     + '<div class="row" style="justify-content:center"><button class="btn" data-act="impPick">Choose file</button><button class="btn ghost" data-act="impShot">Screenshot</button><button class="btn ghost" data-act="impPasteToggle">Paste results</button><button class="btn ghost" data-act="impTemplate">CSV template</button></div>'
@@ -215,7 +225,7 @@ function defaultRound(S, track, type) {
 }
 function setupForm(track, date) {
   var S = J.S, round = defaultRound(S, track, J.importType);
-  imp.form = { round: round ? round.id : '', name: round ? round.name : (track || 'Race'), track: round ? (round.track || track || '') : (track || ''), date: (round && /^\d{4}-\d{2}-\d{2}$/.test(round.date || '') ? round.date : '') || date || J.todayISO(), mode: (S.races[S.races.length - 1] || {}).mode || 'nascar', bonus: false, custom: '' };
+  imp.form = { round: round ? round.id : '', name: round ? round.name : (track || 'Race'), track: round ? (round.track || track || '') : (track || ''), date: (round && /^\d{4}-\d{2}-\d{2}$/.test(round.date || '') ? round.date : '') || date || J.todayISO(), mode: J.seasonPoints(S).template, bonus: false, custom: S.points && S.points.template === 'custom' ? (S.points.table || []).join(',') : '' };
   imp.edit = {}; imp.del = {};
 }
 function loadText(text, name) {
@@ -276,14 +286,16 @@ document.addEventListener('paste', function (e) {
 });
 function rowsNow() {
   if (!imp) return [];
-  var base = imp.source === 'nr2003' ? ((imp.sessions[J.importType] || {}).rows || []) : (imp.rows || []);
+  var key = J.importType === 'test' && imp.source === 'nr2003' ? (['race', 'practice', 'qualifying', 'happy'].filter(function (k) { return imp.sessions[k] && !imp.sessions[k].empty; })[0] || 'race') : J.importType;
+  var base = imp.source === 'nr2003' ? ((imp.sessions[key] || {}).rows || []) : (imp.rows || []);
   return base.map(function (r, i) { if (imp.del[J.importType + i]) return null; var o = Object.assign({}, r); if (imp.edit[J.importType + i] != null) { o.driver = imp.edit[J.importType + i]; o._new = false; } o._i = i; return o; }).filter(Boolean);
 }
 function metaNow() { var m = Object.assign({}, imp.meta); if (imp.source === 'nr2003' && imp.sessions[J.importType]) Object.assign(m, imp.sessions[J.importType].meta); return m; }
 function readForm() {
   if (!imp) return; var f = imp.form, g = function (id) { return $(id); };
   if (g('impRound')) { f.round = g('impRound').value; f.date = g('impDate').value; }
-  if (g('impName')) { f.name = g('impName').value; f.track = g('impTrack').value; f.mode = g('impScoring').value; f.bonus = g('impBonus').checked; f.custom = g('impCustom').value; }
+  if (g('impName')) { f.name = g('impName').value; f.track = g('impTrack').value; if (g('impScoring')) { f.mode = g('impScoring').value; f.bonus = g('impBonus').checked; f.custom = g('impCustom').value; } }
+  if (g('impDate') && !g('impRound')) f.date = g('impDate').value;
 }
 function nameCell(r) { return '<input class="nmin" data-ri="' + r._i + '" value="' + esc(r.driver) + '" aria-label="Driver name">' + (r._new ? ' <span class="chip y">NEW</span>' : '') + '<button class="xrow" data-act="impDelRow" data-ri="' + r._i + '" aria-label="Remove row" title="Remove this row">&#10005;</button>'; }
 function renderPreview() {
@@ -309,10 +321,10 @@ function renderPreview() {
       + '<div class="field"><label for="impRound">Schedule round</label><select id="impRound">' + opts + '</select></div>'
       + '<div class="field"><label for="impName">Race name</label><input id="impName" value="' + esc(f.name) + '"></div>'
       + '<div class="field"><label for="impTrack">Track</label><input id="impTrack" value="' + esc(f.track) + '"></div>'
-      + '<div class="field"><label for="impDate">Date</label><input id="impDate" type="date" value="' + esc(f.date) + '"></div>'
-      + '<div class="field"><label for="impScoring">Points</label><select id="impScoring"><option value="nascar"' + (f.mode === 'nascar' ? ' selected' : '') + '>NASCAR style (40, 35, 34...)</option><option value="file"' + (f.mode === 'file' ? ' selected' : '') + '>Use the points in the file</option><option value="simple"' + (f.mode === 'simple' ? ' selected' : '') + '>One per car beaten</option><option value="custom"' + (f.mode === 'custom' ? ' selected' : '') + '>My own list</option></select></div>'
+      + '<div class="field"><label for="impDate">Date</label><input id="impDate" type="date" value="' + esc(f.date) + '"></div>' + dateWarn(f)
+      + '<div class="field"><label for="impScoring">Points</label><select id="impScoring">' + J.POINTS_ORDER.concat(['file']).map(function (k) { var nm = k === 'file' ? 'Use the points in the file' : J.POINTS[k].name; return '<option value="' + k + '"' + (f.mode === k || (f.mode === 'nascar' && k === 'p2017') ? ' selected' : '') + '>' + esc(nm) + (k === J.seasonPoints(S).template ? ' (season default)' : '') + '</option>'; }).join('') + '</select></div>'
       + '<div class="field"' + (f.mode === 'custom' ? '' : ' hidden') + '><label for="impCustom">Points for P1, P2, P3... (commas)</label><input id="impCustom" value="' + esc(f.custom) + '" placeholder="43,38,36,35"></div></div>'
-      + '<label class="check"' + (f.mode === 'file' ? ' hidden' : '') + '><input type="checkbox" id="impBonus"' + (f.bonus ? ' checked' : '') + '> Bonus points: +1 for leading a lap, +1 more for leading the most laps</label>'
+      + '<p class="fine">' + esc(f.mode === 'file' ? 'Points come straight from the NR2003 file.' : (J.POINTS[f.mode] || J.POINTS.p2017).note) + ' Change the season\'s system on the League page.</p><input type="checkbox" id="impBonus" hidden' + (f.bonus ? ' checked' : '') + '>'
       + (meta.pole || meta.weather || meta.cautions != null ? '<div class="chips" style="margin:6px 0 0;padding:10px 0;background:none;border:0">' + (meta.pole ? '<span class="chip">Pole <b>' + esc(meta.pole) + '</b></span>' : '') + (meta.weather ? '<span class="chip">Weather <b>' + esc(meta.weather) + '</b></span>' : '') + (meta.cautions != null ? '<span class="chip">Cautions <b>' + meta.cautions + '</b></span>' : '') + (meta.leadChanges != null ? '<span class="chip">Lead changes <b>' + meta.leadChanges + '</b></span>' : '') + '</div>' : '')
       + (extra.length ? '<p class="sub" style="margin:4px 0 0">' + esc(extra.join(' and ')) + ' from this file will be saved with the race too.</p>' : '')
       + warns.map(function (w) { return '<div class="warn">' + esc(w) + '</div>'; }).join('')
@@ -323,6 +335,18 @@ function renderPreview() {
       + '</tbody></table></div></div>';
     return;
   }
+  if (t === 'test') {
+    var had = S.preseason && S.preseason.rows && S.preseason.rows.length;
+    el.innerHTML = '<section class="panel"><h3>Check the preseason test</h3><p class="sub">A test session before the season starts. It never counts in the standings. It shows the app your roster so the newsroom can write preseason stories about what to expect from every driver, and fans can start arguing.' + (had ? ' This replaces the test you imported before.' : '') + '</p><div class="fgrid">'
+      + '<div class="field"><label for="impName">Name</label><input id="impName" value="' + esc(f.name && f.name !== 'Race' ? f.name : 'Preseason test') + '"></div>'
+      + '<div class="field"><label for="impTrack">Track</label><input id="impTrack" value="' + esc(f.track) + '"></div>'
+      + '<div class="field"><label for="impDate">Date</label><input id="impDate" type="date" value="' + esc(f.date) + '"></div></div>'
+      + warns.map(function (w) { return '<div class="warn">' + esc(w) + '</div>'; }).join('')
+      + '<div class="row"><button class="btn" data-act="impConfirm">Save test (' + rows.length + ' drivers)</button><button class="btn ghost" data-act="impCancel">Cancel</button>'
+      + (hasKey ? '<label class="check" style="margin:0 0 0 6px"><input type="checkbox" id="impCover" checked> Write preseason stories and fan posts</label>' : '') + '</div></section>'
+      + '<div class="card"><div class="tw"><table class="data"><thead><tr><th>Pos</th><th>Car</th><th>Driver</th><th>Time</th></tr></thead><tbody>' + rows.map(function (r) { return '<tr><td class="rank">' + r.position + '</td><td><span class="car">' + esc(r.car || '-') + '</span></td><td>' + nameCell(r) + '</td><td>' + esc(r.time || r.speed || '-') + '</td></tr>'; }).join('') + '</tbody></table></div></div>';
+    return;
+  }
   // practice / qualifying / happy hour
   if (f.round && done[f.round]) warns.push('That race has already been run. ' + J.SESSIONS[t] + ' for it will still be saved and shown with its results.');
   if (f.round && J.sessionOf(S, f.round, t)) warns.push('This round already has ' + J.SESSIONS[t].toLowerCase() + '. Importing replaces it.');
@@ -330,7 +354,7 @@ function renderPreview() {
   opts = '<option value="">Pick a race</option>' + S.schedule.map(function (r, i) { return '<option value="' + esc(r.id) + '"' + (r.id === f.round ? ' selected' : '') + '>' + (i + 1) + '. ' + esc(r.name) + (done[r.id] ? ' (already run)' : '') + '</option>'; }).join('');
   el.innerHTML = '<section class="panel"><h3>Check ' + esc(J.SESSIONS[t].toLowerCase()) + '</h3><div class="fgrid">'
     + '<div class="field"><label for="impRound">For which race</label><select id="impRound">' + opts + '</select></div>'
-    + '<div class="field"><label for="impDate">Date</label><input id="impDate" type="date" value="' + esc(f.date) + '"></div></div>'
+    + '<div class="field"><label for="impDate">Date</label><input id="impDate" type="date" value="' + esc(f.date) + '"></div></div>' + dateWarn(f)
     + (meta.weather ? '<div class="chips" style="margin:6px 0 0;padding:10px 0;background:none;border:0"><span class="chip">Weather <b>' + esc(meta.weather) + '</b></span>' + (t === 'qualifying' && rows[0] ? '<span class="chip">Pole <b>' + esc(rows[0].driver) + '</b></span>' : '') + '</div>' : (t === 'qualifying' && rows[0] ? '<div class="chips" style="margin:6px 0 0;padding:10px 0;background:none;border:0"><span class="chip">Pole <b>' + esc(rows[0].driver) + '</b></span></div>' : ''))
     + warns.map(function (w) { return '<div class="warn">' + esc(w) + '</div>'; }).join('')
     + '<div class="row"><button class="btn" data-act="impConfirm"' + (f.round ? '' : ' disabled') + '>Save ' + esc(J.SESSIONS[t].toLowerCase()) + ' (' + rows.length + ' drivers)</button><button class="btn ghost" data-act="impCancel">Cancel</button>'
@@ -345,6 +369,7 @@ document.addEventListener('change', function (e) {
   if (t.classList && t.classList.contains('nmin')) { var v = t.value.trim(); if (v) imp.edit[J.importType + t.dataset.ri] = v; renderPreview(); return; }
   if (!t.id || !/^imp(Round|Name|Track|Date|Scoring|Bonus|Custom)$/.test(t.id)) return;
   if (t.id === 'impRound' && $('impName')) { var r = J.S.schedule.find(function (x) { return x.id === t.value; }); if (r) { $('impName').value = r.name; if (r.track) $('impTrack').value = r.track; } }
+  if ((t.id === 'impRound' || t.id === 'impDate') && $('impDateWarn')) setTimeout(function () { var el = $('impDateWarn'), d = $('impDate') && $('impDate').value, rd = $('impRound') && $('impRound').value, o = J.S.races.find(function (r) { return r.date === d && r.sid !== rd; }); el.hidden = !o; el.textContent = o ? o.name + ' is already on ' + J.fmtDate(d) + '. Pick this race\'s own date so the two weekends do not get mixed together.' : ''; }, 0);
   if (t.id === 'impRound' && $('impDate')) { var rd = J.S.schedule.find(function (x) { return x.id === t.value; }); if (rd && /^\d{4}-\d{2}-\d{2}$/.test(rd.date || '')) $('impDate').value = rd.date; }
   readForm(); renderPreview();
 });
@@ -375,6 +400,12 @@ J.acts.impConfirm = function () {
   var t = J.importType, f = imp.form, rows = rowsNow().map(cleanRow), meta = metaNow();
   var cover = $('impCover') ? $('impCover').checked : false, src = imp.source === 'nr2003' ? 'NR2003 export' : imp.source === 'shot' ? 'Screenshot' : imp.meta.source;
   if (!rows.length) return;
+  if (t === 'test') {
+    S.preseason = { name: String(f.name || 'Preseason test').trim(), track: String(f.track || '').trim(), date: f.date || J.todayISO(), rows: rows.map(function (r) { return { position: r.position, car: r.car || '', driver: r.driver, time: r.time || '', speed: r.speed || '' }; }), ts: Date.now() };
+    imp = null; J.save({ render: true }); J.toast('Preseason test saved. It does not count in the standings.');
+    if (cover && J.ai && J.ai.hasKey()) J.runPreseasonCoverage();
+    return;
+  }
   if (t !== 'race') {
     if (!f.round) { msg('Pick which race this is for.', true); return; }
     var sess = saveSession(S, t, f.round, rows, meta, src, f.date);
@@ -388,10 +419,14 @@ J.acts.impConfirm = function () {
     return;
   }
   var name = String(f.name).trim(); if (!name) { msg('Give the race a name first.', true); return; }
+  commitRace(S, f, rows, meta, src, cover, name);
+};
+// save a race (imported or auto-simmed) and run the coverage
+function commitRace(S, f, rows, meta, src, cover, name) {
   var race = { id: J.uid('r'), sid: f.round || '', name: name, track: String(f.track).trim(), date: f.date || J.todayISO(), mode: f.mode, bonus: f.bonus, custom: f.custom, seed: 0, meta: Object.assign({ source: src }, meta), rows: P.score(rows, f.mode, f.bonus, f.custom) };
   delete race.meta.date; race.meta.track = race.meta.track || race.track;
   if (race.sid && !S.schedule.some(function (x) { return x.id === race.sid; })) race.sid = '';
-  if (imp.source === 'nr2003' && race.sid) ['practice', 'qualifying', 'happy'].forEach(function (k) { var x = imp.sessions[k]; if (x && !x.empty && !J.sessionOf(S, race.sid, k)) saveSession(S, k, race.sid, x.rows, Object.assign({}, imp.meta, x.meta), src, race.date); });
+  if (imp && imp.source === 'nr2003' && race.sid) ['practice', 'qualifying', 'happy'].forEach(function (k) { var x = imp.sessions[k]; if (x && !x.empty && !J.sessionOf(S, race.sid, k)) saveSession(S, k, race.sid, x.rows, Object.assign({}, imp.meta, x.meta), src, race.date); });
   if (!race.meta.pole && race.sid) { var q = J.sessionOf(S, race.sid, 'qualifying'); if (q && q.rows[0]) race.meta.pole = q.rows[0].driver; }
   S.races.push(race);
   S.races.sort(function (a, b) { return String(a.date).localeCompare(String(b.date)); });
@@ -404,6 +439,27 @@ J.acts.impConfirm = function () {
   J.save({ render: true });
   J.toast('Imported ' + name + '. Standings updated.');
   if (cover && J.ai && J.ai.hasKey()) J.runCoverage(race);
+}
+
+/* ---------- auto-sim: race the next round without NR2003, from the season so far ---------- */
+J.acts.autoSim = function () {
+  var S = J.S, nx = J.nextRound(S); if (!nx) { J.toast('Every race on the schedule has been run.', true); return; }
+  var sim = J.simRace(S, nx); if (!sim) { J.toast('Import at least one race, practice or test session first so the sim knows the drivers.', true); return; }
+  var sp = J.seasonPoints(S), cover = !!(J.ai && J.ai.hasKey() && J.settings.autoCoverage !== false);
+  if (!confirm('Auto-sim the ' + nx.name + '? The results come from how each driver has run this season (and at this kind of track), plus practice and qualifying if you imported them. It counts in the standings like a real race.')) return;
+  var f = { round: nx.id, name: nx.name, track: nx.track || '', date: (/^\d{4}-\d{2}-\d{2}$/.test(nx.date || '') ? nx.date : J.todayISO()), mode: sp.template, bonus: false, custom: sp.template === 'custom' ? (S.points.table || []).join(',') : '' };
+  commitRace(S, f, sim.rows, { cautions: sim.cautions, laps: sim.laps, simmed: true }, 'Auto-sim', cover, nx.name);
+};
+J.runPreseasonCoverage = async function () {
+  var S = J.S, c = startRun('Preseason stories', 'preseason', ['prenews', 'fans']); if (!c) return;
+  var fails = 0, step = stepFn(c);
+  try { var made = await J.ai.newsCycle(S, { phase: 'preseason' }); step('prenews', 'ok', J.plural(made.length, 'story', 'stories')); } catch (e) { fails++; step('prenews', 'err', e.message); }
+  try { var n = await J.ai.threads(S, { facts: J.ai.preseasonFacts(S), focus: [], ref: { type: 'week', id: 'preseason' }, task: 'The season has not started. Write 6 to 8 threads of preseason talk: reactions to the test session speeds, bold predictions for the season, who will win the opener, someone hyped about a new ride or a rookie, someone doubting a driver everyone else likes, a fantasy draft argument. Nobody knows any results yet.' }); step('fans', 'ok', J.plural(n, 'post')); } catch (e) { fails++; step('fans', 'err', e.message); }
+  finishRun(c, fails); J.save({ render: false });
+};
+J.simPanel = function (S) {
+  var nx = J.nextRound(S); if (!nx) return '';
+  return '<section class="panel simp"><div><h3>Auto-sim the next race</h3><p class="sub">No time to run ' + esc(nx.name) + '? The app can race it for you from the season so far: each driver\'s form at this kind of track, practice and qualifying if you imported them, and some luck. It counts like a real race and gets full AI coverage.</p></div><button class="btn sm" data-act="autoSim">Auto-sim ' + esc(nx.name) + '</button></section>';
 };
 
 /* drop a file anywhere in the window */

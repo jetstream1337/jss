@@ -1,4 +1,4 @@
-/* Jet's Sim Series - Story Studio (commissioner only): photos/video + headline -> article */
+/* Virtual NASCAR - Story Studio (commissioner only): photos/video + headline -> article */
 (function () {
 'use strict';
 var J = window.JSS, $ = J.$, esc = J.esc;
@@ -183,7 +183,7 @@ J.acts.stPublish = async function () {
   var preSid = /^pre:/.test(st.raceId) ? st.raceId.slice(4) : '', raceId = preSid ? '' : st.raceId, ids = await saveItems(S, raceId, st.highlights);
   var race = S.races.find(function (r) { return r.id === raceId; }) || null;
   var ts = preSid ? J.storyTime(S, 'preview', { sid: preSid }) : race ? J.storyTime(S, st.outlet === 'silly' ? 'silly' : 'recap', { race: race }) + 15 * 60000 : J.leagueNow(S);
-  var art = J.ai.applyArticle(S, { article: a, interviews: ivs, reputation: reps }, { outlet: st.outlet, raceId: raceId, preSid: preSid, media: ids, ts: ts });
+  var art = J.ai.applyArticle(S, { article: a, interviews: ivs, reputation: reps }, { outlet: st.outlet, raceId: raceId, preSid: preSid, media: ids, ts: ts }); art.studio = true;
   if (d.manual) { art.author = 'Commissioner'; }
   var react = st.react && J.ai.hasKey();
   st.items = []; st.draft = null; st.headline = ''; st.notes = '';

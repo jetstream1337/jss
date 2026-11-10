@@ -1,13 +1,14 @@
-/* Jet's Sim Series - commissioner pages and app startup (never published) */
+/* Virtual NASCAR - commissioner pages and app startup (never published) */
 (function () {
 'use strict';
 var J = window.JSS, $ = J.$, esc = J.esc;
-J.seriesList = Object.keys(J.SERIES).map(function (k) { return { id: k, label: J.SERIES[k].label }; });
+J.seriesList = J.SERIES_ORDER.map(function (k) { return { id: k, label: J.SERIES[k].label }; });
 
 /* ---------- saving ---------- */
 var saveT = null;
 J.save = function (o) {
   o = o || {}; var S = J.S; if (!S) return;
+  try { if (!S.archived) J.ensureContracts(S, J.rosterLookup ? J.rosterLookup(S) : null); } catch (e) { console.error(e); }
   S.updatedAt = Date.now();
   if (J.leagues) J.leagues[S.id] = S;
   clearTimeout(saveT);
@@ -26,6 +27,7 @@ J.boot = async function () {
     J.leagues = st.leagues;
     if (!Object.keys(J.leagues).length) { var L = J.newLeague('cup'); J.leagues.cup = L; await J.store.saveLeague(L); }
     J.S = J.leagues[st.active] || J.leagues[Object.keys(J.leagues)[0]];
+    Object.keys(J.leagues).forEach(function (k) { var L = J.leagues[k]; if (!L.archived) { try { J.ensureContracts(L, J.rosterLookup ? J.rosterLookup(L) : null); } catch (e) { console.error(e); } } });
     await J.store.loadBlobs(J.S);
   } catch (e) { console.error(e); J.toast('Could not load your league: ' + e.message, true); J.S = J.S || J.newLeague('cup'); J.leagues = J.leagues || { cup: J.S }; }
   if (!location.hash) location.hash = J.S.races.length ? '#/home' : '#/import';
@@ -35,8 +37,44 @@ J.boot = async function () {
 };
 
 /* ---------- series / leagues ---------- */
+J.acts.switchSeason = async function (id) {
+  var S = J.S, L = J.leagues[id]; if (!L || (S && S.id === id)) return;
+  if (S) await J.store.saveLeague(S);
+  J.S = L; await J.store.setActive(id); await J.store.loadBlobs(J.S);
+  J.render(); J.toast('Opened the ' + J.seasonYear(L) + ' ' + L.series.label + ' season.');
+};
+async function archive(L, cancelled) {
+  var year = J.seasonYear(L), id = L.series.id + '-' + year, n = 2; while (J.leagues[id]) id = L.series.id + '-' + year + '-' + (n++);
+  var old = L.id; L.id = id; L.archived = true; L.season = year; if (cancelled) L.cancelled = true;
+  delete J.leagues[old]; await J.store.deleteLeague(old);
+  J.leagues[id] = L; await J.store.saveLeague(L); return L;
+}
+// Finish (or cancel) the current season of this series and start the next one
+J.acts.seasonNew = async function (el) {
+  var sid = el.dataset.id, cur = J.leagues[sid], cancel = el.dataset.mode === 'cancel'; if (!cur) return;
+  var year = parseInt(J.seasonYear(cur), 10), next = cancel ? year : year + 1;
+  var msg = cancel ? 'Cancel the ' + year + ' ' + cur.series.label + ' season? It is kept under past seasons marked "cancelled" (you can delete it there), and a fresh ' + next + ' season starts with the same league, fans and settings.'
+    : 'Finish the ' + year + ' ' + cur.series.label + ' season and start ' + next + '? ' + year + ' moves to past seasons (still on the website), and ' + next + ' starts with the same league, fans and settings.';
+  if (!confirm(msg)) return;
+  var y = prompt('Year for the new season', String(next)); if (y === null) return; y = parseInt(y, 10) || next;
+  if (J.S && J.S.id === sid) await J.store.saveLeague(J.S);
+  await archive(cur, cancel);
+  var L = J.nextSeason(cur, { year: y }); L.id = sid; J.leagues[sid] = L; await J.store.saveLeague(L);
+  J.S = L; await J.store.setActive(sid); await J.store.loadBlobs(J.S);
+  J.save(); J.toast(cancel ? 'Season cancelled. ' + y + ' is ready.' : y + ' season started. Pick a schedule in Edit Schedule.');
+};
+J.acts.seasonDel = async function (el) {
+  var id = el.dataset.id, L = J.leagues[id]; if (!L) return;
+  if (!L.archived) return J.acts.leagueDel(el);
+  if (!confirm('Delete the ' + J.seasonYear(L) + ' ' + L.series.label + ' season for good? It disappears from the app and the website.')) return;
+  for (var i = 0; i < L.media.length; i++) { try { await J.store.delMedia(L.media[i].id); await J.store.delMedia(L.media[i].id + ':poster'); } catch (e) {} }
+  delete J.leagues[id]; await J.store.deleteLeague(id);
+  if (J.S.id === id) { J.S = J.leagues[L.series.id] || J.leagues[Object.keys(J.leagues)[0]]; await J.store.setActive(J.S.id); await J.store.loadBlobs(J.S); }
+  J.save(); J.toast('Season deleted.');
+};
 J.acts.switchSeries = async function (el) {
   var id = el.value, S = J.S; if (S && id === S.id) return;
+  if (!J.SERIES[id]) return J.acts.switchSeason(id);
   if (!J.leagues[id]) {
     if (!confirm('Start a new ' + J.SERIES[id].label + ' league? It gets its own schedule, standings, news and fans.')) { el.value = S.id; return; }
     J.leagues[id] = J.newLeague(id, S ? S.league.name : '');
@@ -56,22 +94,23 @@ J.acts.preview = function () {
 J.routes.preview = function () { setTimeout(function () { document.body.classList.add('as-public'); J.go('home'); }, 0); return ''; };
 
 /* ---------- sync status in the sidebar ---------- */
+J.acts.pubNow = function (t, e) { if (e && e.preventDefault) e.preventDefault(); J.publisher.run(true).then(function (m) { J.toast(m); }, function (err) { J.toast(err.message, true); }); };
 J.syncStatusHtml = function () {
   var P = J.publisher, s = P ? P.state : { kind: 'off' }, S = J.S;
   var label = { off: 'Website not set up', ok: 'Website up to date', busy: 'Publishing...', pending: 'Changes waiting to publish', err: 'Publishing problem' }[s.kind] || '';
-  var sub = s.kind === 'off' ? '<a href="#/settings" style="color:var(--yellow)">Set it up in Settings</a>' : s.kind === 'err' ? esc(s.msg || '') : s.kind === 'ok' && s.at ? 'Last publish ' + esc(J.agoText(s.at)) : '';
+  var sub = s.kind === 'off' ? '<a href="#/settings" style="color:var(--yellow)">Set it up in Settings</a>' : s.kind === 'err' ? esc(s.msg || '') + ' <a href="#" data-act="pubNow" style="color:var(--yellow)">Try now</a>' : s.kind === 'ok' && s.at ? 'Last publish ' + esc(J.agoText(s.at)) : '';
   return '<div class="sync ' + s.kind + '"><b><i></i>' + label + '</b><small>' + sub + '</small>' + (S ? '<small>Saved ' + esc(J.agoText(S.updatedAt)) + '</small>' : '') + '</div>';
 };
 
 /* ---------- Races ---------- */
-var MODES = { nascar: 'NASCAR style', file: 'Points in the file', simple: 'One per car beaten', custom: 'My own list' };
+var MODES = {}; J.POINTS_ORDER.forEach(function (k) { MODES[k] = J.POINTS[k].name; }); MODES.file = 'Points in the file'; MODES.nascar = J.POINTS.p2017.name;
 J.routes.races = function (S) {
   var list = S.races.slice().reverse();
   return J.phead('Races', S.races.length ? 'Rename, re-date, re-score or remove imported races, practice and qualifying.' : 'No races imported yet.', '<a class="btn sm" href="#/import">Import results</a>')
     + (list.length ? '<section class="panel">' + list.map(function (r) {
       var info = J.raceInfo(r), arts = S.articles.filter(function (a) { return a.raceId === r.id; }).length;
       return '<div class="mrow"><div class="inl" style="flex:1"><input data-race="name" data-id="' + esc(r.id) + '" value="' + esc(r.name) + '" aria-label="Race name" style="min-width:200px;flex:1"><input type="date" data-race="date" data-id="' + esc(r.id) + '" value="' + esc(r.date || '') + '" aria-label="Date">'
-        + '<select data-race="mode" data-id="' + esc(r.id) + '" aria-label="Points">' + Object.keys(MODES).map(function (k) { return '<option value="' + k + '"' + ((r.mode || 'nascar') === k ? ' selected' : '') + '>' + MODES[k] + '</option>'; }).join('') + '</select>'
+        + '<select data-race="mode" data-id="' + esc(r.id) + '" aria-label="Points">' + Object.keys(MODES).filter(function (k) { return k !== 'nascar'; }).map(function (k) { return '<option value="' + k + '"' + ((r.mode === 'nascar' ? 'p2017' : r.mode || 'p2017') === k ? ' selected' : '') + '>' + MODES[k] + '</option>'; }).join('') + '</select>'
         + (r.mode === 'custom' ? '<input data-race="custom" data-id="' + esc(r.id) + '" value="' + esc(r.custom || '') + '" placeholder="43,38,36..." aria-label="Custom points">' : '') + '</div>'
         + '<div class="inl"><small>Won by ' + esc(info.winner.driver) + ', ' + r.rows.length + ' cars, ' + J.plural(arts, 'story') + '</small><a class="btn ghost sm" href="#/results/' + esc(r.id) + '">View</a>' + (J.ai.hasKey() ? '<button class="btn ghost sm" data-act="raceCover" data-id="' + esc(r.id) + '">Write coverage</button>' : '') + '<button class="btn danger sm" data-act="raceDel" data-id="' + esc(r.id) + '">Remove</button></div></div>';
     }).join('') + '</section>' : J.empty('No races yet', 'Import your first race and it shows up here.', '<a class="btn sm" href="#/import">Import a race</a>'))
@@ -90,7 +129,7 @@ document.addEventListener('change', function (e) {
   var t = e.target, f = t.dataset && t.dataset.race; if (!f) return;
   var S = J.S, r = S.races.find(function (x) { return x.id === t.dataset.id; }); if (!r) return;
   if (f === 'name') r.name = t.value.trim() || r.name;
-  else if (f === 'date') { r.date = t.value; S.races.sort(function (a, b) { return String(a.date).localeCompare(String(b.date)); }); if (r.sid) J.alignRound(S, r.sid); }
+  else if (f === 'date') { r.date = t.value; S.races.sort(function (a, b) { return String(a.date).localeCompare(String(b.date)); }); J.realignAll(S); }
   else if (f === 'mode' || f === 'custom') { r[f] = t.value; J.rescoreRace(r); J.toast('Points recalculated for ' + r.name + '.'); }
   J.save({ render: f === 'mode' });
 });
@@ -107,12 +146,15 @@ J.acts.raceCover = function (el) { var r = J.S.races.find(function (x) { return 
 /* ---------- Schedule editor ---------- */
 function typeSel(r) { return '<select data-sch="type" data-id="' + esc(r.id) + '" aria-label="Track type">' + J.TYPE_KEYS.map(function (k) { return '<option value="' + k + '"' + (r.type === k ? ' selected' : '') + '>' + esc(J.TYPES[k]) + '</option>'; }).join('') + '</select>'; }
 J.routes.editschedule = function (S) {
-  var done = {}; S.races.forEach(function (r) { done[r.sid] = 1; });
+  var done = {}; S.races.forEach(function (r) { done[r.sid] = 1; }); var clash = J.dateClashes(S);
+  var warnRow = function (r) { var c = clash[r.id]; if (!c) return ''; var run = S.races.find(function (x) { return x.sid === r.id; }); return '<div class="schwarn" role="note">' + (run && run.date !== r.date ? 'This race was run with the date ' + esc(J.fmtDate(run.date)) + ' (change that on the Races page). ' : '') + 'That is the same day as, or before, ' + esc(c.name) + ' (' + esc(J.fmtDate(c.d)) + (S.races.some(function (x) { return x.sid === c.id && x.date !== (S.schedule.find(function (y) { return y.id === c.id; }) || {}).date; }) ? ', the date it was run with on the Races page' : '') + '). Two race weekends that close get their stories and fan posts mixed together, so give each race its own weekend.</div>'; };
   return J.phead('Edit Schedule', S.schedule.length + ' races. Track type drives the Race Outlook, so set it right.', '<button class="btn ghost sm" data-act="schStarter">Load starter schedule</button>')
-    + '<section class="panel"><div class="schr hdr" style="background:none;border:0;padding:0 10px;font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em"><span>Race name</span><span>Track</span><span>Type</span><span>Date</span><span>Note</span><span></span></div>'
+    + tplPanel(S)
+    + '<section class="panel"><div class="schr hdr" style="background:none;border:0;padding:0 10px;font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em"><span>Race name</span><span>Track</span><span>Type</span><span>Date</span><span>Time (ET)</span><span>TV / streaming</span><span>Note</span><span></span></div>'
     + S.schedule.map(function (r, i) {
-      return '<div class="schr' + (i + 1 === S.chase.regularRaces ? ' cut' : '') + '"><input data-sch="name" data-id="' + esc(r.id) + '" value="' + esc(r.name) + '" aria-label="Race ' + (i + 1) + ' name"><input data-sch="track" data-id="' + esc(r.id) + '" value="' + esc(r.track || '') + '" aria-label="Track">' + typeSel(r) + '<input type="date" data-sch="date" data-id="' + esc(r.id) + '" value="' + esc(r.date || '') + '" aria-label="Date"><input data-sch="note" data-id="' + esc(r.id) + '" value="' + esc(r.note || '') + '" placeholder="' + (done[r.id] ? 'Run' : 'Note') + '" aria-label="Note">'
+      return '<div class="schr' + (i + 1 === S.chase.regularRaces ? ' cut' : '') + '"><input data-sch="name" data-id="' + esc(r.id) + '" value="' + esc(r.name) + '" aria-label="Race ' + (i + 1) + ' name"><input data-sch="track" data-id="' + esc(r.id) + '" value="' + esc(r.track || '') + '" aria-label="Track">' + typeSel(r) + '<input type="date" data-sch="date" data-id="' + esc(r.id) + '" value="' + esc(r.date || '') + '" aria-label="Date"><input type="time" data-sch="time" data-id="' + esc(r.id) + '" value="' + esc(r.time || '') + '" aria-label="Start time (Eastern)"><input data-sch="tv" data-id="' + esc(r.id) + '" value="' + esc([r.tv, r.stream].filter(Boolean).join(' / ')) + '" placeholder="TV / streaming" aria-label="TV and streaming"><input data-sch="note" data-id="' + esc(r.id) + '" value="' + esc(r.note || '') + '" placeholder="' + (done[r.id] ? 'Run' : 'Note') + '" aria-label="Note">'
         + '<div class="inl" style="flex-wrap:nowrap"><button class="btn ghost sm" data-act="schMove" data-d="-1" data-id="' + esc(r.id) + '" aria-label="Move up"' + (i ? '' : ' disabled') + '>&#9650;</button><button class="btn ghost sm" data-act="schMove" data-d="1" data-id="' + esc(r.id) + '" aria-label="Move down"' + (i < S.schedule.length - 1 ? '' : ' disabled') + '>&#9660;</button><button class="btn danger sm" data-act="schDel" data-id="' + esc(r.id) + '" aria-label="Delete"' + (done[r.id] ? ' disabled title="Has a result"' : '') + '>&#10005;</button></div></div>'
+        + warnRow(r)
         + (i + 1 === S.chase.regularRaces ? '<div class="cutrow" style="margin:-2px 0 8px">' + esc(S.chase.name) + ' field is set after race ' + (i + 1) + '</div>' : '');
     }).join('')
     + '<div class="row"><button class="btn sm" data-act="schAdd">Add a race</button></div></section>';
@@ -122,12 +164,52 @@ document.addEventListener('change', function (e) {
   var t = e.target, f = t.dataset && t.dataset.sch; if (!f) return;
   var S = J.S, r = S.schedule.find(function (x) { return x.id === t.dataset.id; }); if (!r) return;
   r[f] = t.value.trim();
+  if (f === 'tv') r.stream = ''; // one box holds both
   if (f === 'track' && t.value.trim()) { var g = J.guessType(t.value); if (g !== r.type) { r.type = g; J.save(); J.toast('Track type set to ' + J.TYPES[g] + '. Change it if that is wrong.'); return; } }
+  if (f === 'date') { J.realignAll(S); J.save(); return; } // stories and fan posts move with the date; warnings update
   J.save({ render: false });
 });
 J.acts.schAdd = function () { var S = J.S; S.schedule.push({ id: J.uid('s'), name: 'New race', track: '', type: 'inter', date: '', note: '' }); J.save(); setTimeout(function () { var x = document.querySelectorAll('[data-sch="name"]'); if (x.length) { x[x.length - 1].focus(); x[x.length - 1].select(); } }, 30); };
 J.acts.schDel = function (el) { var S = J.S; S.schedule = S.schedule.filter(function (x) { return x.id !== el.dataset.id; }); J.save(); };
 J.acts.schMove = function (el) { var l = J.S.schedule, i = l.findIndex(function (x) { return x.id === el.dataset.id; }), j = i + Number(el.dataset.d); if (i < 0 || j < 0 || j >= l.length) return; var t = l[i]; l[i] = l[j]; l[j] = t; J.save(); };
+/* ---------- schedule templates: real series schedules (templates.js) and the commissioner's own ---------- */
+function myTpls() { return (J.settings && J.settings.schedTemplates) || []; }
+function allTpls(S) {
+  var real = (J.SCHEDULE_TEMPLATES || []).slice().sort(function (a, b) { return (a.series === S.series.id ? 0 : 1) - (b.series === S.series.id ? 0 : 1) || b.season - a.season || J.SERIES_ORDER.indexOf(a.series) - J.SERIES_ORDER.indexOf(b.series); });
+  return real.concat(myTpls().map(function (t) { return Object.assign({ mine: true }, t); }));
+}
+function tplPanel(S) {
+  var list = allTpls(S);
+  return '<section class="panel"><h3>Schedule templates</h3><p class="sub">Load a real schedule with every race name, track, date, start time and TV channel filled in, or one you saved. You can still change anything after. Exhibition races (Clash, Duels, All-Star) are left out because they do not pay points.</p>'
+    + '<div class="inl tplrow"><select id="schTplSel" aria-label="Schedule template">' + '<optgroup label="Real schedules">' + list.filter(function (t) { return !t.mine; }).map(function (t) { return '<option value="' + esc(t.id) + '">' + esc(t.label) + ' (' + t.rows.length + ' races)' + (t.series === S.series.id ? '' : ' (other series)') + '</option>'; }).join('') + '</optgroup>'
+    + (myTpls().length ? '<optgroup label="My templates">' + myTpls().map(function (t) { return '<option value="' + esc(t.id) + '">' + esc(t.label) + ' (' + t.rows.length + ' races)</option>'; }).join('') + '</optgroup>' : '') + '</select>'
+    + '<button class="btn sm" data-act="schTpl">Load template</button><button class="btn ghost sm" data-act="schTplSave">Save this schedule as a template</button>' + (myTpls().length ? '<button class="btn ghost sm" data-act="schTplDel">Delete selected (mine only)</button>' : '') + '</div>'
+    + '<label class="check"><input type="checkbox" id="schTplChase" checked> Also use that season\'s ' + esc(S.chase.name) + ' format (how many drivers make it and after which race)</label></section>';
+}
+J.acts.schTpl = function () {
+  var S = J.S, id = $('schTplSel').value, t = allTpls(S).find(function (x) { return x.id === id; }); if (!t) return;
+  var run = S.races.length;
+  if (!confirm('Replace this schedule with ' + t.label + ' (' + t.rows.length + ' races)?' + (run ? ' The ' + J.plural(run, 'race') + ' you already ran stay attached to rounds 1 to ' + run + ' in order.' : ''))) return;
+  var order = {}; S.schedule.forEach(function (r, i) { order[r.id] = i; });
+  var keepIds = S.schedule.map(function (r) { return r.id; });
+  S.schedule = t.rows.map(function (x, i) {
+    var name = x[0] || (String(x[1]).replace(/(International |Motor |Superspeedway|Speedway|Raceway|Motorsports? Park)/g, ' ').replace(/\s+/g, ' ').trim() + ' (name TBA)');
+    return { id: keepIds[i] || J.uid('s'), name: name, track: x[1], city: x[2], date: x[3], time: x[4], tv: x[5], stream: '', type: x[6] || J.guessType(x[1]), note: '' };
+  });
+  if ($('schTplChase').checked && t.cut) { S.chase.regularRaces = t.cut; if (t.size) S.chase.size = t.size; if (t.season >= 2026) S.chase.winLocks = false; }
+  if (!run && t.season) S.season = t.season;
+  J.realignAll(S); J.save(); J.toast(t.label + ' loaded.');
+};
+J.acts.schTplSave = async function () {
+  var S = J.S, nm = prompt('Name for this template', J.seasonYear(S) + ' ' + S.series.label + ' (mine)'); if (!nm) return;
+  var t = { id: 'my-' + Date.now().toString(36), series: S.series.id, season: +J.seasonYear(S) || 0, label: nm, cut: S.chase.regularRaces, size: S.chase.size, rows: S.schedule.map(function (r) { return [r.name, r.track || '', r.city || '', r.date || '', r.time || '', [r.tv, r.stream].filter(Boolean).join(' / '), r.type]; }) };
+  J.settings.schedTemplates = myTpls().concat([t]); await J.saveSettings(); J.refresh(); J.toast('Saved as a template. It is in the list for every series.');
+};
+J.acts.schTplDel = async function () {
+  var id = $('schTplSel').value, t = myTpls().find(function (x) { return x.id === id; }); if (!t) { J.toast('Pick one of your own templates to delete.', true); return; }
+  if (!confirm('Delete the template "' + t.label + '"?')) return;
+  J.settings.schedTemplates = myTpls().filter(function (x) { return x.id !== id; }); await J.saveSettings(); J.refresh();
+};
 J.acts.schStarter = function () {
   var S = J.S; if (S.races.length) { J.toast('You already have results tied to this schedule. Edit it race by race instead.', true); return; }
   if (!confirm('Replace the schedule with the ' + S.series.label + ' starter schedule?')) return;
@@ -137,7 +219,12 @@ J.acts.schStarter = function () {
 /* ---------- League ---------- */
 J.routes.league = function (S) {
   var c = S.chase;
-  var leagues = J.seriesList.map(function (s) { var L = J.leagues[s.id]; return '<div class="mrow"><div><b>' + esc(s.label) + '</b><small>' + (L ? esc(L.league.name) + ', ' + J.plural(L.races.length, 'race') + ' run' + (L.id === S.id ? ' (open now)' : '') : 'Not started') + '</small></div><div class="inl">' + (L ? (L.id !== S.id ? '<button class="btn ghost sm" data-act="leagueOpen" data-id="' + s.id + '">Open</button>' : '') + '<button class="btn danger sm" data-act="leagueDel" data-id="' + s.id + '">Delete</button>' : '<button class="btn sm" data-act="leagueOpen" data-id="' + s.id + '">Start this league</button>') + '</div></div>'; }).join('');
+  var leagues = J.seriesList.map(function (s) {
+    var L = J.leagues[s.id], past = J.seasonsFor(s.id).filter(function (x) { return !x.current; });
+    var head = '<div class="mrow"><div class="sername">' + J.seriesBadge(s.id) + '<div><b>' + esc(s.label) + '</b><small>' + (L ? J.seasonYear(L) + ' season, ' + J.plural(L.races.length, 'race') + ' run' + (L.id === S.id ? ' (open now)' : '') : 'Not started') + '</small></div></div><div class="inl">'
+      + (L ? (L.id !== S.id ? '<button class="btn ghost sm" data-act="leagueOpen" data-id="' + s.id + '">Open</button>' : '') + '<button class="btn sm" data-act="seasonNew" data-id="' + s.id + '">Finish season, start next</button><button class="btn ghost sm" data-act="seasonNew" data-mode="cancel" data-id="' + s.id + '">Cancel season</button><button class="btn danger sm" data-act="leagueDel" data-id="' + s.id + '">Delete</button>' : '<button class="btn sm" data-act="leagueOpen" data-id="' + s.id + '">Start this series</button>') + '</div></div>';
+    return head + past.map(function (x) { var P = J.leagues[x.id]; return '<div class="mrow past"><div><b>' + esc(x.label) + '</b><small>' + J.plural(P.races.length, 'race') + ', ' + J.plural(P.articles.length, 'story', 'stories') + (P.id === S.id ? ' (open now)' : '') + '</small></div><div class="inl">' + (P.id !== S.id ? '<button class="btn ghost sm" data-act="leagueOpen" data-id="' + esc(x.id) + '">Open</button>' : '') + '<button class="btn danger sm" data-act="seasonDel" data-id="' + esc(x.id) + '">Delete season</button></div></div>'; }).join('');
+  }).join('');
   return J.phead('League', S.series.label + ' settings, announcements and backups')
     + '<section class="panel"><h3>Basics</h3><div class="fgrid">'
     + '<div class="field"><label for="lgName">League name</label><input id="lgName" value="' + esc(S.league.name) + '"></div>'
@@ -146,11 +233,44 @@ J.routes.league = function (S) {
     + '<div class="field"><label for="chCut">Field set after race</label><input id="chCut" type="number" min="1" max="60" value="' + c.regularRaces + '"></div></div>'
     + '<label class="check"><input type="checkbox" id="chWins"' + (c.winLocks ? ' checked' : '') + '> A win locks a driver in (win and you are in)</label>'
     + '<div class="row"><button class="btn sm" data-act="lgSave">Save</button></div></section>'
+    + pointsPanel(S) + outletPanel(S)
     + '<section class="panel"><h3>Commissioner note</h3><p class="sub">Shows at the top of the home page.</p><textarea id="annText" placeholder="Example: Martinsville moved to Saturday night.">' + esc(S.announcement.text) + '</textarea><div class="row"><button class="btn sm" data-act="annPost">Post note</button>' + (S.announcement.text ? '<button class="btn ghost sm" data-act="annClear">Remove note</button>' : '') + '</div></section>'
-    + '<section class="panel"><h3>Series</h3><p class="sub">Each series is its own league. Switch between them with the Series box in the sidebar.</p>' + leagues + '</section>'
+    + '<section class="panel"><h3>Series and seasons</h3><p class="sub">Each series has its own schedule, standings, news and fans. Finish a season to move it to past seasons (still viewable in the app and on the website) and start the next one with the same league, fans and settings. Cancel ends a season early and keeps it marked cancelled.</p>' + leagues + '</section>'
     + '<section class="panel"><h3>Backup</h3><p class="sub">Save everything (all series, stories, fans, photos) to one file, or bring a backup back. Your AI key and GitHub token are never put in a backup.</p><div class="row"><button class="btn sm" data-act="bkDown">Download backup</button><button class="btn ghost sm" data-act="bkUp">Restore a backup</button><input type="file" id="bkFile" accept=".json,application/json" hidden></div></section>'
     + '<section class="panel"><h3>Start over</h3><p class="sub">Only for ' + esc(S.series.label) + '. Download a backup first.</p><div class="row"><button class="btn danger sm" data-act="resetResults">Clear results only</button><button class="btn danger sm" data-act="resetSeason">New season (clear everything but the schedule)</button></div></section>';
 };
+function outletPanel(S) {
+  return '<section class="panel"><h3>News outlets</h3><p class="sub">Rename the three outlets, their taglines and their writers. Old stories switch to the new names too.</p>'
+    + Object.keys(J.OUTLET_BASE).map(function (k) { var o = J.OUTLETS[k]; return '<div class="olrow">' + J.outletLogo(k) + '<div class="field"><label for="olN_' + k + '">Name</label><input id="olN_' + k + '" value="' + esc(o.name) + '"></div><div class="field"><label for="olT_' + k + '">Tagline</label><input id="olT_' + k + '" value="' + esc(o.tag) + '"></div><div class="field"><label for="olS_' + k + '">Writers (commas)</label><input id="olS_' + k + '" value="' + esc(o.staff.join(', ')) + '"></div></div>'; }).join('')
+    + '<div class="row"><button class="btn sm" data-act="olSave">Save outlets</button><button class="btn ghost sm" data-act="olReset">Back to the default names</button></div></section>';
+}
+J.acts.olSave = function () {
+  var S = J.S; S.outletNames = {};
+  Object.keys(J.OUTLET_BASE).forEach(function (k) { S.outletNames[k] = { name: $('olN_' + k).value.trim().slice(0, 40), tag: $('olT_' + k).value.trim().slice(0, 60), staff: $('olS_' + k).value.split(',').map(function (x) { return x.trim(); }).filter(Boolean).slice(0, 6) }; });
+  J.useOutlets(S); J.save(); J.toast('Outlets saved.');
+};
+J.acts.olReset = function () { var S = J.S; delete S.outletNames; J.useOutlets(S); J.save(); J.toast('Default outlet names are back.'); };
+function pointsPanel(S) {
+  var sp = J.seasonPoints(S), cur = (S.points && S.points.template) || 'p2017';
+  return '<section class="panel"><h3>Points system</h3><p class="sub">Used for every race you import this season. Pick a real NASCAR system or make your own. Stage points are not counted because NR2003 does not run stages. Picking 2026 also turns off win-and-in (the top drivers in points make it); the stage era turns it on.</p>'
+    + '<div class="ptpl">' + J.POINTS_ORDER.map(function (k) { var t = J.POINTS[k], ex = t.table ? t.table.slice(0, 5).join(', ') + '...' : k === 'simple' ? 'last place 1, +1 per car beaten' : 'you set it'; return '<label class="pt' + (cur === k ? ' on' : '') + '"><input type="radio" name="ptTpl" value="' + k + '"' + (cur === k ? ' checked' : '') + '><b>' + esc(t.name) + '</b><small>' + esc(t.note) + '</small><span class="ptx">' + esc(ex) + (t.led || t.most ? ' / led a lap +' + t.led + ', most laps +' + t.most : '') + '</span></label>'; }).join('') + '</div>'
+    + '<div class="fgrid" id="ptCustom"' + (cur === 'custom' ? '' : ' hidden') + '><div class="field" style="grid-column:1/-1"><label for="ptTable">Points for 1st, 2nd, 3rd... (commas; the last number repeats for everyone after)</label><input id="ptTable" value="' + esc(((S.points && S.points.table) || []).join(', ')) + '" placeholder="50, 45, 42, 40, 38, 36"></div><div class="field"><label for="ptLed">Bonus for leading a lap</label><input id="ptLed" type="number" min="0" max="50" value="' + esc((S.points && S.points.led) || 0) + '"></div><div class="field"><label for="ptMost">Bonus for leading the most laps</label><input id="ptMost" type="number" min="0" max="50" value="' + esc((S.points && S.points.most) || 0) + '"></div></div>'
+    + '<div class="row"><button class="btn sm" data-act="ptSave">Save points system</button><button class="btn ghost sm" data-act="ptApply"' + (S.races.length ? '' : ' disabled') + '>Save and re-score all ' + J.plural(S.races.length, 'race') + ' run</button></div></section>';
+}
+function ptRead(S) {
+  var k = (document.querySelector('input[name="ptTpl"]:checked') || {}).value || 'p2017';
+  S.points = { template: k };
+  if (k === 'custom') { S.points.table = $('ptTable').value.split(/[,\s]+/).map(Number).filter(function (x) { return isFinite(x) && x >= 0; }); S.points.led = +$('ptLed').value || 0; S.points.most = +$('ptMost').value || 0; if (!S.points.table.length) { J.toast('Type at least one number for the custom points.', true); return false; } }
+  return true;
+}
+J.acts.ptSave = function () { var S = J.S; if (!ptRead(S)) return; var T = J.POINTS[S.points.template]; if (T && T.chase && T.chase.winLocks != null) S.chase.winLocks = T.chase.winLocks; J.save(); J.toast('Points system saved: ' + J.seasonPoints(S).name + '. New imports use it.'); };
+J.acts.ptApply = function () {
+  var S = J.S; if (!ptRead(S)) return; var T = J.POINTS[S.points.template]; if (T && T.chase && T.chase.winLocks != null) S.chase.winLocks = T.chase.winLocks;
+  if (!confirm('Re-score all ' + J.plural(S.races.length, 'race') + ' with ' + J.seasonPoints(S).name + '? Standings will change.')) return;
+  S.races.forEach(function (r) { if (r.mode !== 'file') { r.mode = S.points.template; r.custom = S.points.template === 'custom' ? S.points.table.join(',') : ''; J.rescoreRace(r); } });
+  J.save(); J.toast('Every race re-scored with ' + J.seasonPoints(S).name + '.');
+};
+document.addEventListener('change', function (e) { if (e.target && e.target.name === 'ptTpl') { document.querySelectorAll('.pt').forEach(function (l) { l.classList.toggle('on', l.querySelector('input').checked); }); var c = $('ptCustom'); if (c) c.hidden = e.target.value !== 'custom'; } });
 J.afters.league = function () { var f = $('bkFile'); if (f) f.addEventListener('change', function () { restore(this.files[0]); this.value = ''; }); };
 J.nav.push({ id: 'league', label: 'League', group: 'Commissioner', admin: true });
 J.acts.lgSave = function () {
@@ -162,7 +282,7 @@ J.acts.lgSave = function () {
 };
 J.acts.annPost = function () { var S = J.S; S.announcement = { text: $('annText').value.trim(), date: J.todayISO() }; J.save(); J.toast(S.announcement.text ? 'Note posted.' : 'Note removed.'); };
 J.acts.annClear = function () { J.S.announcement = { text: '', date: '' }; J.save(); };
-J.acts.leagueOpen = function (el) { J.acts.switchSeries({ value: el.dataset.id }); };
+J.acts.leagueOpen = function (el) { var id = el.dataset.id; if (J.SERIES[id]) J.acts.switchSeries({ value: id }); else J.acts.switchSeason(id); };
 J.acts.leagueDel = async function (el) {
   var id = el.dataset.id, L = J.leagues[id]; if (!L) return;
   if (!confirm('Delete the whole ' + L.series.label + ' league? This cannot be undone. Download a backup first if you might want it.')) return;
@@ -256,7 +376,7 @@ function sillyNote(S) {
 }
 var gBusy = '';
 async function garageRun(kind) {
-  var S = J.S; if (gBusy) return; if (!J.ai.hasKey()) { J.toast('Add your ' + J.ai.name() + ' key in Settings first.', true); return; }
+  var S = J.S; if (gBusy) return; if (J.refreshAll && J.refreshAll.running) { J.toast('Wait for Refresh everything to finish (or stop it) first.', true); return; } if (!J.ai.hasKey()) { J.toast('Add your ' + J.ai.name() + ' key in Settings first.', true); return; }
   var newsFor = ($('newsFor') || {}).value || ''; J.ui.newsFor = newsFor;
   var nx = J.nextRound(S), pre = nx && J.sessionsFor(S, nx.id).length;
   if (!S.races.length && !pre && kind !== 'news') { J.toast('Import a race, practice or qualifying first.', true); return; }
@@ -264,9 +384,7 @@ async function garageRun(kind) {
   gBusy = kind; J.refresh();
   try {
     if (kind === 'refresh' || kind === 'talk') {
-      var race = S.races[S.races.length - 1];
-      var facts = pre ? J.ai.sessionFacts(S, nx.id) + (race ? '\n\nLAST RACE, for context:\n' + J.ai.raceFacts(S, race) : '') : J.ai.raceFacts(S, race) + (nx ? '\nNext race: ' + nx.name + ' at ' + (nx.track || 'TBD') + ' (' + J.TYPES[nx.type].toLowerCase() + ').' : '');
-      await J.ai.threads(S, { facts: facts, focus: [], ref: { type: 'week', id: race ? race.id : nx.id }, task: pre ? 'The next race has NOT been run yet. Write 5 to 7 threads of pre-race chatter: practice and qualifying takes, predictions, fantasy picks, hype, someone worried about their driver, a rumor. Never say who won the next race.' : 'It is the middle of the week between races. Write 5 to 7 threads of the usual chatter: hot takes about the standings, predictions for the next race, someone still mad about last week, a fantasy lineup argument, a rumor, one person asking a dumb question and getting roasted. Not everything is about the last race.' });
+      await J.ai.chatter(S);
     }
     if (kind === 'news') { var nsid = newsFor; var made = await J.ai.newsCycle(S, nsid ? { phase: 'pre', sid: nsid } : { phase: 'week' }); J.driftFans(S); J.save({ render: false }); J.toast(made.length + (made.length === 1 ? ' new story' : ' new stories') + ' from the newsroom.'); gBusy = ''; J.refresh(); return; }
     if ((kind === 'refresh' || kind === 'outlooks') && S.races.length) await J.ai.outlooks(S);
@@ -284,9 +402,10 @@ J.routes.garagetools = function (S) {
   return J.phead('Garage Tools', 'Keep the fan chat and outlooks fresh')
     + (!hasKey ? '<div class="warn" style="margin:0 0 18px">These need an AI key (Gemini is free). Add it in <a href="#/settings"><b>Settings</b></a>.</div>' : '')
     + '<section class="panel"><h3>Refresh</h3><p class="sub">Race imports do this for you. Use these between races or when the Garage feels stale.</p><div class="row" style="margin-top:0">' + b('refresh', 'Refresh the Garage') + b('talk', 'New fan chatter only') + b('outlooks', 'New outlook commentary only') + '</div></section>'
-    + '<section class="panel"><h3>Newsroom</h3><p class="sub">The outlets write 1 to 3 new stories. Pick a race to get previews dated the morning of that race, or "This week" for general news dated today. Silly season stories follow the real NASCAR calendar, so early in the season they are rare.</p>'
-    + '<div class="inl"><select id="newsFor" aria-label="Stories about"><option value="">This week (dated today)</option>' + S.schedule.filter(function (r) { return !S.races.some(function (x) { return x.sid === r.id; }); }).map(function (r) { var d = J.roundDate(S, r.id), nx = J.nextRound(S); return '<option value="' + esc(r.id) + '"' + ((J.ui.newsFor != null ? J.ui.newsFor === r.id : nx && nx.id === r.id) ? ' selected' : '') + '>Before ' + esc(r.name) + (d ? ' (' + esc(J.fmtDate(d)) + ')' : ' (no date set)') + '</option>'; }).join('') + '</select>' + b('news', 'Run the newsroom') + '</div>'
-    + sillyNote(S) + sillyAdmin(S) + '</section>'
+    + '<section class="panel"><h3>Regenerate the AI people</h3><p class="sub">Give every fan account a brand new identity (name, handle, bio, hometown, profile), or give the media personalities new names and handles. Accounts keep their old posts under the new names. To rewrite the posts in their new voices too, run Refresh everything below afterwards.</p><div class="row" style="margin-top:0"><button class="btn sm" data-act="regenFans">New identities for all ' + S.fans.length + ' fans</button><button class="btn ghost sm" data-act="regenFans" data-reroll="1">New identities and new favorite drivers</button><button class="btn ghost sm" data-act="regenFigs">New media personalities</button>' + (S.figureOverrides ? '<button class="btn ghost sm" data-act="figsReset">Original media personalities</button>' : '') + '</div></section>'
+    + '<section class="panel"><h3>Newsroom</h3><p class="sub">The outlets write 1 to 3 new stories. Pick a race to get previews dated the morning of that race, or "This week" for news between races. Silly season stories follow the real NASCAR calendar, so early in the season they are rare.</p>'
+    + '<div class="inl"><select id="newsFor" aria-label="Stories about"><option value="">This week (between races)</option>' + S.schedule.filter(function (r) { return !S.races.some(function (x) { return x.sid === r.id; }); }).map(function (r) { var d = J.roundDate(S, r.id), nx = J.nextRound(S); return '<option value="' + esc(r.id) + '"' + ((J.ui.newsFor != null ? J.ui.newsFor === r.id : nx && nx.id === r.id) ? ' selected' : '') + '>Before ' + esc(r.name) + (d ? ' (' + esc(J.fmtDate(d)) + ')' : ' (no date set)') + '</option>'; }).join('') + '</select>' + b('news', 'Run the newsroom') + '</div>'
+    + sillyNote(S) + sillyAdmin(S) + '</section>' + J.refreshPanel(S)
     + '<section class="panel"><h3>Fan accounts</h3><p class="sub">' + J.plural(S.fans.length, 'account') + ': ' + ages.teen + ' teens, ' + ages.young + ' young adults, ' + ages.adult + ' adults, ' + ages.oldhead + ' old-heads. ' + st.good + ' back a driver, ' + st.bad + ' are haters, ' + st.none + ' are neutral.</p>'
     + '<div class="row" style="margin-top:0"><button class="btn ghost sm" data-act="fansFill"' + (drivers.length ? '' : ' disabled') + '>Add more fans</button><button class="btn danger sm" data-act="fansReset"' + (S.fans.length ? '' : ' disabled') + '>Replace all fans</button></div></section>'
     + '<section class="panel"><h3>Nudge a reputation</h3><p class="sub">Something happened that the app did not see? Move a driver\'s reputation yourself. Fans react to big swings over time.</p>'
@@ -296,6 +415,57 @@ J.routes.garagetools = function (S) {
     + '<section class="panel"><h3>Pit road quotes</h3>' + (S.interviews.length ? S.interviews.map(function (x) { return '<div class="mrow"><div style="flex:1"><b>' + esc(x.driver) + '</b><small>' + esc(x.quote) + '</small></div><button class="btn danger sm" data-act="ivDel" data-id="' + esc(x.id) + '">Delete</button></div>'; }).join('') : '<p class="dim">No quotes yet.</p>') + '</section>';
 };
 J.nav.push({ id: 'garagetools', label: 'Garage Tools', group: 'Commissioner', admin: true });
+
+/* ---------- Teams and contracts ---------- */
+function yearOpts(S, sel) { var y = J.seasonNum(S), o = ''; for (var k = y - 1; k <= y + 5; k++) o += '<option value="' + k + '"' + (+sel === k ? ' selected' : '') + '>' + (k < y ? 'Expired (' + k + ')' : k === y ? y + ' (final year)' : k) + '</option>'; return o; }
+function teamOpts(S, sel) { return '<option value="">No team</option>' + Object.keys(S.teams || {}).sort(function (a, b) { return S.teams[a].name.localeCompare(S.teams[b].name); }).map(function (k) { return '<option value="' + esc(k) + '"' + (sel === k ? ' selected' : '') + '>' + esc(S.teams[k].name) + '</option>'; }).join('') + '<option value="__new">+ New team...</option>'; }
+J.routes.contracts = function (S) {
+  J.ensureContracts(S, J.rosterLookup ? J.rosterLookup(S) : null);
+  var ds = J.roster(S), canFill = J.rosterLookup && J.rosterLookup(S);
+  return J.phead('Teams and Contracts', 'Who drives for whom, the car number, and how long the deal runs. Happiness is worked out from results, teammates, contract years and rumors.')
+    + '<section class="panel"><h3>Fill in from the real roster</h3><p class="sub">Matches your drivers by name to the real ' + esc(S.series.label) + ' teams and car numbers' + (canFill ? '' : ' (no real roster loaded for this series)') + '. Drivers it cannot match keep what they have.</p><div class="row" style="margin-top:0"><button class="btn sm" data-act="rosterFill"' + (canFill ? '' : ' disabled') + '>Fill teams and numbers</button></div></section>'
+    + '<section class="panel"><h3>Drivers</h3><div class="tw"><table class="data ctr"><thead><tr><th>Driver</th><th>Car</th><th>Team</th><th>Signed through</th><th>Mood baseline</th></tr></thead><tbody>' + ds.map(function (d) {
+      var c = S.contracts[d.key] || {};
+      return '<tr><td><a href="#/drivers/' + esc(d.key) + '"><b>' + esc(d.name) + '</b></a></td><td><input class="cnum" data-ct="car" data-k="' + esc(d.key) + '" value="' + esc(c.car || d.car || '') + '" aria-label="Car number"></td><td><select data-ct="team" data-k="' + esc(d.key) + '" aria-label="Team">' + teamOpts(S, c.team) + '</select></td><td><select data-ct="through" data-k="' + esc(d.key) + '" aria-label="Signed through">' + yearOpts(S, c.through) + '</select></td><td><input type="range" min="20" max="90" data-ct="base" data-k="' + esc(d.key) + '" value="' + (c.base || 60) + '" aria-label="Mood baseline"></td></tr>';
+    }).join('') + '</tbody></table></div></section>'
+    + '<section class="panel"><h3>Teams</h3>' + Object.keys(S.teams || {}).map(function (k) { return J.teamEditor(S, k, true); }).join('') + '<div class="row"><button class="btn ghost sm" data-act="teamNew">Add a team</button></div></section>';
+};
+J.nav.push({ id: 'contracts', label: 'Teams and Contracts', group: 'Commissioner', admin: true });
+J.teamEditor = function (S, id, compact) {
+  var t = S.teams[id]; if (!t) return '';
+  return '<div class="teamed"' + (compact ? '' : ' style="margin-top:18px"') + '>' + (compact ? '' : '<h4>Edit team</h4>') + '<input type="color" data-tm="color" data-id="' + esc(id) + '" value="' + esc(t.color || '#888888') + '" aria-label="Team color"><input data-tm="name" data-id="' + esc(id) + '" value="' + esc(t.name) + '" aria-label="Team name"><input data-tm="base" data-id="' + esc(id) + '" value="' + esc(t.base || '') + '" placeholder="Base (city, state)" aria-label="Base"><select data-tm="mfr" data-id="' + esc(id) + '" aria-label="Manufacturer">' + ['', 'Chevrolet', 'Ford', 'Toyota'].map(function (m) { return '<option' + (t.mfr === m ? ' selected' : '') + '>' + m + '</option>'; }).join('') + '</select><span class="dim">' + J.plural(J.teamDrivers(S, id).length, 'driver') + '</span><button class="btn danger sm" data-act="teamDel" data-id="' + esc(id) + '">Remove</button></div>';
+};
+J.driverEditor = function (S, key) {
+  var c = S.contracts[key] || {};
+  return '<section class="aside-card"><h4>Commissioner</h4><div class="field"><label>Team</label><select data-ct="team" data-k="' + esc(key) + '">' + teamOpts(S, c.team) + '</select></div><div class="field"><label>Car number</label><input data-ct="car" data-k="' + esc(key) + '" value="' + esc(c.car || '') + '"></div><div class="field"><label>Signed through</label><select data-ct="through" data-k="' + esc(key) + '">' + yearOpts(S, c.through) + '</select></div><div class="field"><label>Mood baseline (how happy they are before results)</label><input type="range" min="20" max="90" data-ct="base" data-k="' + esc(key) + '" value="' + (c.base || 60) + '"></div></section>';
+};
+document.addEventListener('change', function (e) {
+  var t = e.target, S = J.S; if (!S) return;
+  if (t.dataset && t.dataset.ct) {
+    var c = S.contracts[t.dataset.k] = S.contracts[t.dataset.k] || { base: 60, through: J.seasonNum(S) };
+    var f = t.dataset.ct; c.auto = false;
+    if (f === 'team' && t.value === '__new') { var nm = prompt('New team name'); if (!nm) { t.value = c.team || ''; return; } var id = J.slug(nm); S.teams[id] = S.teams[id] || { id: id, name: nm.trim(), color: J.TEAM_COLORS[Object.keys(S.teams).length % J.TEAM_COLORS.length], base: '', mfr: '' }; c.team = id; }
+    else c[f] = f === 'through' || f === 'base' ? +t.value : t.value.trim();
+    J.save({ render: f === 'team' });
+  } else if (t.dataset && t.dataset.tm) {
+    var tm = S.teams[t.dataset.id]; if (!tm) return; tm[t.dataset.tm] = t.value.trim(); J.save({ render: false });
+  }
+});
+J.acts.teamNew = function () { var S = J.S, nm = prompt('Team name'); if (!nm) return; var id = J.slug(nm); S.teams[id] = S.teams[id] || { id: id, name: nm.trim(), color: J.TEAM_COLORS[Object.keys(S.teams).length % J.TEAM_COLORS.length], base: '', mfr: '' }; J.save(); };
+J.acts.teamDel = function (el) { var S = J.S, id = el.dataset.id, t = S.teams[id]; if (!t || !confirm('Remove ' + t.name + '? Its drivers will have no team.')) return; J.teamDrivers(S, id).forEach(function (k) { S.contracts[k].team = ''; }); delete S.teams[id]; J.save(); };
+J.acts.rosterFill = function () {
+  var S = J.S, look = J.rosterLookup && J.rosterLookup(S); if (!look) return;
+  var n = 0; J.roster(S).forEach(function (d) { var k = look(d.name); if (!k) return; var id = J.slug(k.team); S.teams[id] = S.teams[id] || { id: id, name: k.team, color: k.color || '#888', base: k.base || '', mfr: k.mfr || '' }; var c = S.contracts[d.key] = S.contracts[d.key] || { base: 60, through: J.seasonNum(S) }; c.team = id; if (k.number) c.car = k.number; n++; });
+  J.save(); J.toast('Matched ' + n + ' of ' + J.roster(S).length + ' drivers to the real roster.');
+};
+J.acts.regenFans = function (el) {
+  var S = J.S, reroll = !!el.dataset.reroll;
+  if (!S.fans.length) { J.ai.ensureFans(S); }
+  if (!confirm('Give all ' + S.fans.length + ' fan accounts new names, handles and profiles' + (reroll ? ', ages and favorite drivers' : '') + '? This also changes them on the website.')) return;
+  var n = J.ai.regenFans(S, reroll); J.save(); J.toast(n + ' fan accounts regenerated.');
+};
+J.acts.regenFigs = function () { var S = J.S; if (!confirm('Give the 10 media personalities new names and handles?')) return; J.ai.regenFigures(S); J.save(); J.toast('New media personalities. Their roles stay the same.'); };
+J.acts.figsReset = function () { var S = J.S; delete S.figureOverrides; J.useFigures(S); J.save(); J.toast('Original media personalities are back.'); };
 function sillyAdmin(S) {
   var all = (S.silly || []).slice().reverse(); if (!all.length) return '';
   return '<h3 style="font-size:19px;margin-top:14px">Silly season storylines</h3>' + all.map(function (x) { return '<div class="mrow"><div><b>' + esc(x.title) + '</b><small>' + esc(J.SILLY_LABEL[x.stage]) + ', ' + J.plural(x.history.length, 'story') + ', started at race ' + x.openedAt + '</small></div><div class="inl"><select data-sl="' + esc(x.id) + '" aria-label="Stage">' + J.SILLY_STAGES.map(function (k) { return '<option value="' + k + '"' + (x.stage === k ? ' selected' : '') + '>' + J.SILLY_LABEL[k] + '</option>'; }).join('') + '</select><button class="btn danger sm" data-act="slDel" data-id="' + esc(x.id) + '">Remove</button></div></div>'; }).join('');
