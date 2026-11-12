@@ -499,7 +499,7 @@ J.ensureContracts = function (S, lookup) {
   if (lookup && lookup.cars) Object.keys(S.contracts).forEach(function (k) {
     var c = S.contracts[k], t = c.team && S.teams[c.team]; if (!t || !c.car) return;
     var car = lookup.cars[t.name + '#' + c.car]; if (!car || car.drivers.length < 2) return;
-    car.drivers.forEach(function (n) { var nk = J.driverKey(n); if (S.contracts[nk]) return; var rand = J.rng('contract' + S.series.id + nk); var ftTaken = Object.keys(S.contracts).some(function (q) { var x = S.contracts[q]; return x.team === c.team && String(x.car) === String(c.car) && !x.pt; });
+    car.drivers.forEach(function (n) { var nk = J.driverKey(n); if (S.contracts[nk] || (S.removed && S.removed[nk])) return; var rand = J.rng('contract' + S.series.id + nk); var ftTaken = Object.keys(S.contracts).some(function (q) { var x = S.contracts[q]; return x.team === c.team && String(x.car) === String(c.car) && !x.pt; });
       S.contracts[nk] = { name: n, team: c.team, through: yr + Math.floor(rand() * 2), car: c.car, base: 52 + Math.floor(rand() * 26), auto: true, pt: ftTaken || !isFTDriver(car, n), extra: true }; changed++; });
   });
   // real-world signals: who the real teams have announced they are keeping, who is leaving, and which series each driver really races in.
