@@ -233,7 +233,7 @@ J.routes.league = function (S) {
     + '<div class="field"><label for="chCut">Field set after race</label><input id="chCut" type="number" min="1" max="60" value="' + c.regularRaces + '"></div></div>'
     + '<label class="check"><input type="checkbox" id="chWins"' + (c.winLocks ? ' checked' : '') + '> A win locks a driver in (win and you are in)</label>'
     + '<div class="row"><button class="btn sm" data-act="lgSave">Save</button></div></section>'
-    + rosterPanel(S) + fictionPanel(S) + pointsPanel(S) + outletPanel(S)
+    + rosterPanel(S) + rosterClearPanel(S) + fictionPanel(S) + pointsPanel(S) + outletPanel(S)
     + '<section class="panel"><h3>Commissioner note</h3><p class="sub">Shows at the top of the home page.</p><textarea id="annText" placeholder="Example: Martinsville moved to Saturday night.">' + esc(S.announcement.text) + '</textarea><div class="row"><button class="btn sm" data-act="annPost">Post note</button>' + (S.announcement.text ? '<button class="btn ghost sm" data-act="annClear">Remove note</button>' : '') + '</div></section>'
     + '<section class="panel"><h3>Series and seasons</h3><p class="sub">Each series has its own schedule, standings, news and fans. Finish a season to move it to past seasons (still viewable in the app and on the website) and start the next one with the same league, fans and settings. Cancel ends a season early and keeps it marked cancelled.</p>' + leagues + '</section>'
     + '<section class="panel"><h3>Backup</h3><p class="sub">Save everything (all series, stories, fans, photos) to one file, or bring a backup back. Your AI key and GitHub token are never put in a backup.</p><div class="row"><button class="btn sm" data-act="bkDown">Download backup</button><button class="btn ghost sm" data-act="bkUp">Restore a backup</button><input type="file" id="bkFile" accept=".json,application/json" hidden></div></section>'
@@ -253,6 +253,7 @@ function rosterPanel(S) {
 J.acts.rosterImportGo = function () {
   var S = J.S, sid = $('rsSeries').value, yr = parseInt($('rsYear').value, 10) || 2026, full = $('rsFull').checked, over = $('rsOver').checked;
   if (!confirm('Import the real ' + ((J.SERIES[sid] || {}).label || sid) + ' ' + yr + ' roster into this league? Existing drivers keep their results.')) return;
+  S.removed = {}; // an import brings the real roster back in full
   var r = J.rosterImport(S, sid, yr, { fullOnly: full, over: over });
   if (!r) { J.toast('No real roster for that series.', true); return; }
   J.save(); J.toast('Roster imported: ' + r.added + ' new drivers, ' + r.updated + ' updated (' + J.plural(r.total, 'contract') + ' in all).');
@@ -280,7 +281,7 @@ J.acts.fictAdd = async function () {
   var pool = ids.filter(function (id) { return !used[J.slug(cars[id].team) + '#' + cars[id].number]; }); if (!pool.length) pool = ids.slice();
   var added = [], skipped = [];
   names.forEach(function (nm) {
-    var key = J.driverKey(nm); if (S.contracts[key] && !S.contracts[key].fictional) { skipped.push(nm); return; }
+    var key = J.driverKey(nm); if (S.removed) delete S.removed[key]; if (S.contracts[key] && !S.contracts[key].fictional) { skipped.push(nm); return; }
     var i = Math.floor(Math.random() * pool.length), car = cars[pool[i]]; pool.splice(i, 1); if (!pool.length) pool = ids.slice();
     var tid = J.slug(car.team); if (!S.teams[tid]) S.teams[tid] = { id: tid, name: car.team, color: car.color || '#888', base: car.base || '', mfr: car.mfr || '' };
     S.contracts[key] = { name: nm, team: tid, car: car.number, through: J.autoThrough ? J.autoThrough(S, key, car.team, null) : J.seasonNum(S) + 1, base: 50 + Math.floor(Math.random() * 20), auto: true, pt: false, fictional: true, imported: true };
@@ -302,6 +303,41 @@ J.acts.fictBio = async function (el) {
   var S = J.S, k = el.dataset.key, c = S.contracts && S.contracts[k]; if (!c) return;
   try { J.toast('Writing the backstory...'); var r = await fictBioFor(S, [k]), x = (r.drivers || [])[0]; if (!x || !x.bio) throw new Error('nothing came back'); c.bio = String(x.bio).slice(0, 900); c.age = parseInt(x.age, 10) || c.age || null; c.hometown = String(x.hometown || c.hometown || '').slice(0, 60); J.save(); J.toast('Backstory written.'); } catch (e) { J.toast('Could not write it: ' + e.message, true); }
 };
+/* ---------- removing drivers ---------- */
+// Drivers with race results stay (their results are part of the standings); everyone else can go. Teams left with nobody are removed too.
+J.startsOf = function (S, key) { var n = 0; S.races.forEach(function (r) { r.rows.forEach(function (x) { if (J.driverKey(x.driver) === key) n++; }); }); return n; };
+J.removeDrivers = function (S, keys) {
+  var gone = 0, kept = 0, set = {};
+  keys.forEach(function (k) { if (!S.contracts[k]) return; if (J.startsOf(S, k)) { kept++; return; } delete S.contracts[k]; set[k] = 1; gone++; S.removed = S.removed || {}; S.removed[k] = 1; });
+  if (gone) {
+    S.moves = (S.moves || []).filter(function (m) { return !set[m.key]; }); S.callups = (S.callups || []).filter(function (m) { return !set[m.key]; });
+    if (S.art && S.art.nums) { /* number pictures stay: they belong to the car number, not the driver */ }
+    var used = {}; Object.keys(S.contracts).forEach(function (k) { if (S.contracts[k].team) used[S.contracts[k].team] = 1; });
+    Object.keys(S.teams || {}).forEach(function (t) { if (!used[t]) delete S.teams[t]; });
+  }
+  return { gone: gone, kept: kept };
+};
+function rosterClearPanel(S) {
+  var ks = Object.keys(S.contracts || {}), free = ks.filter(function (k) { return !J.startsOf(S, k); }), imp = free.filter(function (k) { return S.contracts[k].imported; }), fic = free.filter(function (k) { return S.contracts[k].fictional; });
+  return '<section class="panel" id="rosterClear"><h3>Remove drivers</h3><p class="sub">Take drivers out of this league. Anyone with race results stays, because their results are part of the standings (to remove those, delete the race on Race Results). One driver at a time: open them on the Drivers page and press "Remove from the league". ' + J.plural(free.length, 'driver') + ' here ' + (free.length === 1 ? 'has' : 'have') + ' no results yet.</p>'
+    + '<div class="row" style="margin-top:0"><button class="btn ghost sm" data-act="rosterRmImported"' + (imp.length ? '' : ' disabled') + '>Remove the ' + imp.length + ' imported</button><button class="btn ghost sm" data-act="rosterRmFiction"' + (fic.length ? '' : ' disabled') + '>Remove the ' + fic.length + ' fictional</button><button class="btn danger sm" data-act="rosterRmAll"' + (free.length ? '' : ' disabled') + '>Clear the whole roster (' + free.length + ')</button></div></section>';
+}
+function rmWhere(S, pred, what) {
+  var keys = Object.keys(S.contracts || {}).filter(function (k) { return !J.startsOf(S, k) && pred(S.contracts[k]); });
+  if (!keys.length) { J.toast('Nobody to remove.'); return; }
+  if (!confirm('Remove ' + keys.length + ' ' + what + ' from ' + S.series.label + '? Drivers with race results are not touched. You can import the roster again any time.')) return;
+  var r = J.removeDrivers(S, keys); J.save(); J.toast('Removed ' + J.plural(r.gone, 'driver') + '.');
+}
+J.acts.rosterRmImported = function () { rmWhere(J.S, function (c) { return c.imported; }, 'imported drivers'); };
+J.acts.rosterRmFiction = function () { rmWhere(J.S, function (c) { return c.fictional; }, 'fictional drivers'); };
+J.acts.rosterRmAll = function () { rmWhere(J.S, function () { return true; }, 'drivers (the whole roster)'); };
+J.acts.drvRemove = function (el) {
+  var S = J.S, k = el.dataset.key, c = S.contracts[k], n = J.startsOf(S, k);
+  if (n) { alert((c && c.name || 'This driver') + ' has ' + J.plural(n, 'start') + ' in your results, so they have to stay in the standings. Delete or fix those races on Race Results first.'); return; }
+  if (!confirm('Remove ' + ((c && c.name) || 'this driver') + ' from the league?')) return;
+  J.removeDrivers(S, [k]); J.save({ render: false }); J.go('drivers'); J.toast('Driver removed.');
+};
+
 function outletPanel(S) {
   return '<section class="panel"><h3>News outlets</h3><p class="sub">Rename the three outlets, their taglines and their writers. Old stories switch to the new names too.</p>'
     + Object.keys(J.OUTLET_BASE).map(function (k) { var o = J.OUTLETS[k]; return '<div class="olrow">' + J.outletLogo(k) + '<div class="field"><label for="olN_' + k + '">Name</label><input id="olN_' + k + '" value="' + esc(o.name) + '"></div><div class="field"><label for="olT_' + k + '">Tagline</label><input id="olT_' + k + '" value="' + esc(o.tag) + '"></div><div class="field"><label for="olS_' + k + '">Writers (commas)</label><input id="olS_' + k + '" value="' + esc(o.staff.join(', ')) + '"></div></div>'; }).join('')
@@ -514,7 +550,7 @@ J.teamEditor = function (S, id, compact) {
 };
 J.driverEditor = function (S, key) {
   var c = S.contracts[key] || {};
-  return '<section class="aside-card"><h4>Commissioner</h4><div class="field"><label>Team</label><select data-ct="team" data-k="' + esc(key) + '">' + teamOpts(S, c.team) + '</select></div><div class="field"><label>Schedule</label>' + ptSel(key, c) + '</div><div class="field"><label>Owns the team (never fired or sent down)</label><select data-ct="owner" data-k="' + esc(key) + '"><option value=""' + (c.owner == null ? ' selected' : '') + '>Work it out (' + (J.isOwnerDriver(S, key) && c.owner == null ? 'yes' : 'no') + ')</option><option value="1"' + (c.owner === true ? ' selected' : '') + '>Yes, owner or family team</option><option value="0"' + (c.owner === false ? ' selected' : '') + '>No</option></select></div><div class="field"><label>Car number</label><input data-ct="car" data-k="' + esc(key) + '" value="' + esc(c.car || '') + '"></div><div class="field"><label>Signed through</label><select data-ct="through" data-k="' + esc(key) + '">' + yearOpts(S, c.through) + '</select></div><div class="field"><label>Mood baseline (how happy they are before results)</label><input type="range" min="20" max="90" data-ct="base" data-k="' + esc(key) + '" value="' + (c.base || 60) + '"></div></section>';
+  return '<section class="aside-card"><h4>Commissioner</h4><div class="field"><label>Team</label><select data-ct="team" data-k="' + esc(key) + '">' + teamOpts(S, c.team) + '</select></div><div class="field"><label>Schedule</label>' + ptSel(key, c) + '</div><div class="field"><label>Owns the team (never fired or sent down)</label><select data-ct="owner" data-k="' + esc(key) + '"><option value=""' + (c.owner == null ? ' selected' : '') + '>Work it out (' + (J.isOwnerDriver(S, key) && c.owner == null ? 'yes' : 'no') + ')</option><option value="1"' + (c.owner === true ? ' selected' : '') + '>Yes, owner or family team</option><option value="0"' + (c.owner === false ? ' selected' : '') + '>No</option></select></div><div class="field"><label>Car number</label><input data-ct="car" data-k="' + esc(key) + '" value="' + esc(c.car || '') + '"></div><div class="field"><label>Signed through</label><select data-ct="through" data-k="' + esc(key) + '">' + yearOpts(S, c.through) + '</select></div><div class="field"><label>Mood baseline (how happy they are before results)</label><input type="range" min="20" max="90" data-ct="base" data-k="' + esc(key) + '" value="' + (c.base || 60) + '"></div><div class="row" style="margin-top:12px"><button class="btn danger sm" data-act="drvRemove" data-key="' + esc(key) + '">Remove from the league</button></div></section>';
 };
 document.addEventListener('change', function (e) {
   var t = e.target, S = J.S; if (!S) return;
