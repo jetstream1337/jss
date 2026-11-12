@@ -45,7 +45,7 @@ J.sessionBlocks = sessionBlocks;
 /* ---------- header: series tabs, main nav, commissioner bar ---------- */
 function renderRail() {
   var S = J.S, r = J.route(), pub = J.isPublicView();
-  var ORDER = ['home', 'news', 'schedule', 'standings', 'results', 'drivers', 'teams', 'silly', 'garage', 'highlights', 'display'];
+  var ORDER = ['home', 'news', 'schedule', 'standings', 'power', 'results', 'drivers', 'teams', 'silly', 'garage', 'highlights', 'display'];
   var main = J.nav.filter(function (n) { return !n.admin && (n.pub ? pub : true) && !n.hide; }).sort(function (a, b) { return ORDER.indexOf(a.id) - ORDER.indexOf(b.id); }), adm = pub ? [] : J.nav.filter(function (n) { return n.admin; });
   var link = function (n) { var on = r.name === n.id; return '<a href="#/' + n.id + '" class="' + (on ? 'on' : '') + '"' + (on ? ' aria-current="page"' : '') + '>' + esc(n.label) + '</a>'; };
   $('navlist').innerHTML = main.map(link).join('');
@@ -426,13 +426,14 @@ J.acts.feedFilter = function (el) { J.ui.feedFilter = el.dataset.v; J.refresh();
 function chasePage(S) {
   var co = J.chaseOutlook(S), nm = S.chase.name;
   if (!co) return empty(nm + ' outlook needs results', 'Import a race to see who is on track to make ' + nm + '.');
-  var sim = co.sim, lead = co.rows[0], size = S.chase.size, cutter = co.rows[size - 1];
-  var fallback = lead.name + ' leads the points and makes ' + nm + ' in ' + pct(lead.chaseOdds) + ' of ' + sim.N.toLocaleString() + ' simulated seasons. ' + (sim.decided ? 'The field is set.' : 'The field is set after race ' + sim.cutAt + ', with ' + plural(Math.max(0, sim.cutAt - sim.played), 'race') + ' left to run.') + (cutter ? ' Right now the last spot belongs to ' + cutter.name + ' with ' + cutter.curPts + ' points.' : '');
+  var sim = co.sim, lead = co.rows[0], size = S.chase.size, cutter = co.rows[size - 1], gate = sim.gate, early = gate.chase === 'early' && !sim.decided;
+  if (gate.chase === 'none' && !sim.decided) return empty(nm + ' odds open after race ' + gate.chaseFrom, plural(gate.played, 'race') + ' run so far. That is too small a sample for anyone to put a number on who makes ' + nm + '. Until then the points standings tell the story.');
+  var fallback = early ? lead.name + ' leads the points after ' + plural(gate.played, 'race') + '. It is early, so these ' + nm + ' odds are a rough read and not a forecast. ' + (sim.decided ? '' : 'Win-and-in and the cut line matter later, not yet.') : lead.name + ' leads the points and makes ' + nm + ' in ' + pct(lead.chaseOdds) + ' of ' + sim.N.toLocaleString() + ' simulated seasons. ' + (sim.decided ? 'The field is set.' : 'The field is set after race ' + sim.cutAt + ', with ' + plural(Math.max(0, sim.cutAt - sim.played), 'race') + ' left to run.') + (cutter ? ' Right now the last spot belongs to ' + cutter.name + ' with ' + cutter.curPts + ' points.' : '');
   var rows = co.rows.map(function (r, i) {
     var cl = r.chaseOdds >= 0.75 ? 'good' : r.chaseOdds >= 0.4 ? 'mid' : 'low';
-    return (i === size ? '<tr class="cutline"><td colspan="7">Cut line: top ' + size + ' advance</td></tr>' : '') + '<tr data-driver="' + esc(r.key) + '"><td class="rank">' + r.pos + '</td><td><div class="drv">' + carPlate(r.car) + '<div><b>' + esc(r.name) + '</b>' + aiNote(S, 'chase', r.key) + '</div></div></td><td>' + r.curPts + '</td><td>' + r.curWins + '</td><td>' + oddsBar(r.chaseOdds, cl) + '</td><td><span class="chip ' + (cl === 'good' ? 'g' : cl === 'low' ? 'r' : 'y') + '">' + esc(r.status) + '</span></td><td>' + (r.best.length ? r.best.map(function (t) { return '<span class="chip b">' + esc(J.TYPES[t]) + '</span>'; }).join(' ') : '<span class="dim">Not enough data</span>') + '</td></tr>';
+    return (i === size ? '<tr class="cutline"><td colspan="7">Cut line: top ' + size + ' advance</td></tr>' : '') + '<tr data-driver="' + esc(r.key) + '"><td class="rank">' + r.pos + '</td><td><div class="drv">' + carPlate(r.car) + '<div><b>' + esc(r.name) + '</b>' + aiNote(S, 'chase', r.key) + '</div></div></td><td>' + r.curPts + '</td><td>' + r.curWins + '</td><td>' + oddsBar(early ? Math.round(r.chaseOdds * 20) / 20 : r.chaseOdds, cl) + '</td><td><span class="chip ' + (cl === 'good' ? 'g' : cl === 'low' ? 'r' : 'y') + '">' + esc(r.status) + '</span></td><td>' + (r.best.length ? r.best.map(function (t) { return '<span class="chip b">' + esc(J.TYPES[t]) + '</span>'; }).join(' ') : '<span class="dim">Not enough data</span>') + '</td></tr>';
   }).join('');
-  return analyst(S, 'chase', fallback) + '<div class="card"><div class="tw"><table class="data"><thead><tr><th>Pos</th><th>Driver</th><th>Pts</th><th>Wins</th><th>' + esc(nm) + ' odds</th><th>Outlook</th><th>Best track types</th></tr></thead><tbody>' + rows + '</tbody></table></div></div><p class="fine">Odds come from ' + sim.N.toLocaleString() + ' simulated seasons using results so far, each driver\'s record by track type and the remaining schedule. Early in the season the numbers move a lot.</p>';
+  return analyst(S, 'chase', fallback) + '<div class="card"><div class="tw"><table class="data"><thead><tr><th>Pos</th><th>Driver</th><th>Pts</th><th>Wins</th><th>' + esc(nm) + ' odds</th><th>Outlook</th><th>Best track types</th></tr></thead><tbody>' + rows + '</tbody></table></div></div><p class="fine">Odds come from ' + sim.N.toLocaleString() + ' simulated seasons using results so far, each driver\'s record by track type and the remaining schedule. ' + (early ? 'Early read: rounded to the nearest 5% and pulled toward even odds because the sample is small.' : 'Early in the season the numbers move a lot.') + '</p>';
 }
 function racePage(S) {
   var ro = J.raceOutlook(S);
@@ -452,12 +453,13 @@ function racePage(S) {
 }
 function seasonPage(S) {
   var so = J.seasonOutlook(S); if (!so) return empty('Season Outlook needs results', 'Import a race to see projected finishes for the full season.');
-  var sim = so.sim, champ = so.rows.slice().sort(function (a, b) { return b.champOdds - a.champOdds; })[0];
-  var fallback = champ.name + ' is the most likely champion at ' + pct(champ.champOdds) + '. ' + (sim.remaining ? plural(sim.remaining, 'race') + ' remain on the schedule.' : 'The schedule is complete.') + ' Projections tighten as more races are run.';
+  var sim = so.sim, gate = sim.gate, champ = so.rows.slice().sort(function (a, b) { return b.champOdds - a.champOdds; })[0], showTitle = gate.title !== 'none';
+  if (gate.chase === 'none' && !sim.decided) return empty('Season outlook opens after race ' + gate.chaseFrom, plural(gate.played, 'race') + ' run so far, which is not enough to project a finish for anyone. Projections show up once there is a small sample, and title odds start after race ' + gate.titleFrom + '.');
+  var fallback = !showTitle ? 'Projected finishes only for now: ' + plural(gate.played, 'race') + ' is too few to talk about title favorites. Title odds open after race ' + gate.titleFrom + '. ' + (sim.remaining ? plural(sim.remaining, 'race') + ' remain on the schedule.' : '') : champ.name + ' is the most likely champion at ' + pct(champ.champOdds) + '. ' + (sim.remaining ? plural(sim.remaining, 'race') + ' remain on the schedule.' : 'The schedule is complete.') + ' Projections tighten as more races are run.';
   var rows = so.rows.map(function (r) {
-    return '<tr data-driver="' + esc(r.key) + '"><td class="rank">' + r.projRank + '</td><td><div class="drv">' + carPlate(r.car) + '<div><b>' + esc(r.name) + '</b>' + aiNote(S, 'season', r.key) + '</div></div></td><td>' + r.curRank + '</td><td class="pts"><b>' + Math.round(r.projPts) + '</b></td><td>P' + r.rankMed + ' <small class="dim">(P' + r.rankLo + ' to P' + r.rankHi + ')</small></td><td>' + r.projAvg.toFixed(1) + '</td><td>' + r.projWins.toFixed(1) + '</td><td>' + oddsBar(r.champOdds, 'ww') + '</td></tr>';
+    return '<tr data-driver="' + esc(r.key) + '"><td class="rank">' + r.projRank + '</td><td><div class="drv">' + carPlate(r.car) + '<div><b>' + esc(r.name) + '</b>' + aiNote(S, 'season', r.key) + '</div></div></td><td>' + r.curRank + '</td><td class="pts"><b>' + Math.round(r.projPts) + '</b></td><td>P' + r.rankMed + ' <small class="dim">(P' + r.rankLo + ' to P' + r.rankHi + ')</small></td><td>' + r.projAvg.toFixed(1) + '</td><td>' + r.projWins.toFixed(1) + '</td>' + (showTitle ? '<td>' + oddsBar(gate.title === 'early' ? Math.round(r.champOdds * 100) / 100 : r.champOdds, 'ww') + '</td>' : '') + '</tr>';
   }).join('');
-  return analyst(S, 'season', fallback) + '<div class="card"><div class="tw"><table class="data"><thead><tr><th>Proj.</th><th>Driver</th><th>Now</th><th>Proj. points</th><th>Final standing</th><th>Avg finish</th><th>Wins</th><th>Title odds</th></tr></thead><tbody>' + rows + '</tbody></table></div></div><p class="fine">Projected from ' + sim.N.toLocaleString() + ' simulated seasons over the ' + sim.remaining + ' races left. Range shows the 10th to 90th percentile finish.</p>';
+  return analyst(S, 'season', fallback) + '<div class="card"><div class="tw"><table class="data"><thead><tr><th>Proj.</th><th>Driver</th><th>Now</th><th>Proj. points</th><th>Final standing</th><th>Avg finish</th><th>Wins</th>' + (showTitle ? '<th>Title odds</th>' : '') + '</tr></thead><tbody>' + rows + '</tbody></table></div></div><p class="fine">Projected from ' + sim.N.toLocaleString() + ' simulated seasons over the ' + sim.remaining + ' races left. Range shows the 10th to 90th percentile finish.</p>';
 }
 J.routes.garage = function (S, args) {
   var tab = args[0] || 'feed';
@@ -575,6 +577,36 @@ J.routes.silly = function (S) {
 };
 J.nav.push({ id: 'silly', label: 'Silly Season' });
 
+
+/* ---------- Power Rankings ---------- */
+J.acts.powerAll = function () { J.ui.powerAll = !J.ui.powerAll; J.refresh(); };
+J.routes.power = function (S) {
+  var hist = J.powerHistory(S), cfg = J.powerCfg(S), last = hist.length - 1, wi = J.ui.powerWeek != null && J.ui.powerWeek >= 0 && J.ui.powerWeek <= last ? J.ui.powerWeek : last;
+  var wk = hist[wi], rows = wk.rows, shown = J.ui.powerAll ? rows : rows.slice(0, 25), a = rows.length ? rows[0].a : 1, short = function (sid) { return (J.SERIES[sid] || {}).short || sid; };
+  var out = phead('Power Rankings', 'Who is really the best right now. Part-time drivers are not ranked.', '');
+  var how = wk.n === 0
+    ? 'Preseason rankings are 100% real life: where each driver really finished in the last real standings, and how strong the real team is. Once races are run, ' + J.POWER_MODES[cfg.mode].toLowerCase() + ' decides the mix' + (cfg.mode === 'blend' ? ' (' + cfg.real + '% real life, ' + (100 - cfg.real) + '% this league)' : '') + '.'
+    : 'After ' + J.plural(wk.n, 'race') + ': ' + Math.round(a * 100) + '% real life, ' + Math.round((1 - a) * 100) + '% this league\'s results. Each week is blended with the last one so one race cannot send anyone flying.';
+  var sel = '<label class="field pwsel"><span>Week</span><select id="pwWeek" aria-label="Week">' + hist.map(function (h, i) { return '<option value="' + i + '"' + (i === wi ? ' selected' : '') + '>' + (h.n === 0 ? 'Preseason' : 'Week ' + h.n + ': ' + esc(h.label.replace(/^After /, ''))) + '</option>'; }).reverse().join('') + '</select></label>';
+  var mv = rows.filter(function (r) { return r.move != null; }), up = mv.slice().sort(function (x, y) { return y.move - x.move; })[0], dn = mv.slice().sort(function (x, y) { return x.move - y.move; })[0];
+  var chips = wk.n && mv.length ? '<div class="pwchips">' + (up && up.move > 0 ? '<span class="chip g">Biggest jump: ' + esc(up.name) + ' (up ' + up.move + ')</span>' : '') + (dn && dn.move < 0 ? '<span class="chip r">Biggest drop: ' + esc(dn.name) + ' (down ' + (-dn.move) + ')</span>' : '') + '</div>' : '';
+  out += '<section class="pwtop"><p class="pwhow">' + esc(how) + '</p>' + sel + '</section>' + chips;
+  if (!rows.length) return out + empty('No drivers to rank yet', J.MODE === 'admin' ? 'Import a roster in League, or import a race, and the rankings appear here.' : 'Check back after the first race.');
+  var body = shown.map(function (r) {
+    var mvh = wk.n === 0 ? '<span class="pmv eq">&mdash;</span>' : r.move == null ? '<span class="pmv nw">NEW</span>' : r.move > 0 ? '<span class="pmv up">&#9650; ' + r.move + '</span>' : r.move < 0 ? '<span class="pmv dn">&#9660; ' + (-r.move) + '</span>' : '<span class="pmv eq">&mdash;</span>';
+    var rec = r.starts ? r.wins + '-' + r.t5 + '-' + r.t10 : '<span class="dim">-</span>';
+    var real = r.rl ? 'P' + r.rl.rank + (r.rl.sid !== S.series.id ? ' <small class="dim">' + esc(short(r.rl.sid)) + '</small>' : '') : '<span class="dim">-</span>';
+    return '<tr data-driver="' + esc(r.key) + '"><td class="rank pwr">' + r.rank + '</td><td>' + mvh + '</td><td><div class="drv">' + J.carTag(r.car || '?') + '<div><b>' + esc(r.name) + '</b><small>' + esc(r.team || '') + '</small></div></div></td>'
+      + '<td class="pws">' + bar(r.score, 1, r.rank <= 5 ? 'good' : 'mid', Math.round(r.score * 100) + ' out of 100') + '<b>' + Math.round(r.score * 100) + '</b></td><td>' + rec + '</td><td>' + (r.avg != null ? r.avg.toFixed(1) : '<span class="dim">-</span>') + '</td><td>' + real + '</td></tr>';
+  }).join('');
+  out += '<div class="card"><div class="tw"><table class="data ptable"><thead><tr><th>#</th><th>Move</th><th>Driver</th><th>Power score</th><th title="Wins - top 5s - top 10s">W-T5-T10</th><th>Avg finish</th><th title="Real points finish in the last real season">Real finish</th></tr></thead><tbody>' + body + '</tbody></table></div></div>';
+  if (rows.length > 25) out += '<p class="fine"><button class="btn ghost sm" data-act="powerAll">' + (J.ui.powerAll ? 'Show the top 25' : 'Show all ' + rows.length + ' drivers') + '</button></p>';
+  out += '<p class="fine">Power score is out of 100, set by the formula in use (real life and league results, shrunk when a driver has few starts). Real finish is the driver\'s place in the real points standings.</p>';
+  if (J.powerEditor && J.MODE === 'admin' && !J.isPublicView()) out += J.powerEditor(S);
+  return out;
+};
+J.nav.push({ id: 'power', label: 'Power Rankings' });
+
 /* ---------- fan profiles, media profiles, fanbases ---------- */
 J.carOf = function (S, key) { var d = J.agg(S.races).find(function (x) { return x.key === key; }) || J.roster(S).find(function (x) { return x.key === key; }); return d ? String(d.car || '') : ''; };
 function fmtJoined(j) { if (!/^\d{4}-\d{2}/.test(j || '')) return ''; return 'Joined ' + new Date(j + '-15T12:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }); }
@@ -668,6 +700,7 @@ document.addEventListener('click', function (e) {
 document.addEventListener('change', function (e) {
   var t = e.target;
   if (t.id === 'raceSel') J.go('results/' + t.value);
+  else if (t.id === 'pwWeek') { J.ui.powerWeek = +t.value; J.refresh(); }
   else if (t.id === 'seriesSel') { if (J.acts.switchSeries) J.acts.switchSeries(t); }
   else if (t.id === 'seasonSel') { if (J.acts.switchSeason) J.acts.switchSeason(t.value); }
 });
