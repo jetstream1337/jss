@@ -94,6 +94,7 @@ J.routes.studio = function (S) {
     + '<section class="panel"><div class="fgrid">'
     + '<div class="field"><label for="stOutlet">Outlet</label><select id="stOutlet">' + Object.keys(J.OUTLETS).map(function (k) { return '<option value="' + k + '"' + (st.outlet === k ? ' selected' : '') + ' title="' + esc(J.OUTLETS[k].tag) + '">' + esc(J.OUTLETS[k].name) + ': ' + esc(J.OUTLETS[k].tag.toLowerCase()) + '</option>'; }).join('') + '</select></div>'
     + '<div class="field"><label for="stRace">Race it is about</label><select id="stRace">' + opts + '</select><small class="dim" style="display:block;margin-top:5px">' + esc(dateNote) + '</small></div>'
+    + '<div class="field"><label for="stWhen">Date and time of the story (optional)</label><input type="datetime-local" id="stWhen" value="' + esc(st.when || '') + '"><small class="dim" style="display:block;margin-top:5px">Leave empty to follow the race calendar. Set it to date the story and its fan comments anywhere in your timeline.</small></div>'
     + '<div class="field wide"><label for="stHead">Your headline</label><input id="stHead" value="' + esc(st.headline) + '" placeholder="Example: Blaney and Logano tangle in turn 3, Blaney furious"></div>'
     + '<div class="field wide"><label for="stNotes">What happened (optional, but the more you say the better the story)</label><textarea id="stNotes" placeholder="Lap 22, Logano got into the back of Blaney off turn 2. Blaney spun and lost 3 laps. Blaney waved at him under caution...">' + esc(st.notes) + '</textarea></div></div>'
     + '<div class="drop" id="sDrop"><strong>Drop photos or video here</strong><p>Screenshots or replay clips from NR2003. The AI looks at them while writing. Videos: the app pulls a few frames out for it to look at.</p><div class="row" style="justify-content:center"><button class="btn ghost" data-act="stPick">Choose photos or video</button></div><input type="file" id="stFile" accept="image/*,video/*" multiple hidden></div>'
@@ -114,14 +115,14 @@ function readForm() {
   var g = function (id) { return $(id); };
   if (!g('stOutlet')) return;
   st.outlet = g('stOutlet').value; st.raceId = g('stRace').value; st.headline = g('stHead').value; st.notes = g('stNotes').value;
-  st.highlights = g('stHigh').checked; st.interviews = g('stInts').checked; st.react = g('stReact').checked;
+  st.when = g('stWhen') ? g('stWhen').value : st.when; st.highlights = g('stHigh').checked; st.interviews = g('stInts').checked; st.react = g('stReact').checked;
 }
 document.addEventListener('input', function (e) {
   var t = e.target;
   if (t.classList && t.classList.contains('vlink')) { var it = st.items.find(function (x) { return x.id === t.dataset.id; }); if (it) it.link = t.value.trim(); return; }
-  if (/^st(Head|Notes)$/.test(t.id)) readForm();
+  if (/^st(Head|Notes|When)$/.test(t.id)) readForm();
 });
-document.addEventListener('change', function (e) { if (/^st(Outlet|Race|High|Ints|React)$/.test(e.target.id)) { if (e.target.id === 'stRace') st._touchedRace = true; readForm(); if (e.target.id === 'stRace') J.refresh(); } });
+document.addEventListener('change', function (e) { if (/^st(Outlet|Race|When|High|Ints|React)$/.test(e.target.id)) { if (e.target.id === 'stRace') st._touchedRace = true; readForm(); if (e.target.id === 'stRace') J.refresh(); } });
 J.acts.stPick = function () { $('stFile').click(); };
 J.acts.stRemove = function (el) { st.items = st.items.filter(function (x) { return x.id !== el.dataset.id; }); paintItems(); };
 J.acts.stDiscard = function () { st.draft = null; $('stDraftSlot').innerHTML = ''; };
@@ -145,7 +146,7 @@ J.acts.stGenerate = async function () {
   st.busy = true; J.refresh(); smsg(J.ai.name() + ' is writing the story. This usually takes 20 to 40 seconds.');
   try {
     var race = S.races.find(function (r) { return r.id === st.raceId; }) || null, preSid = /^pre:/.test(st.raceId) ? st.raceId.slice(4) : '';
-    var notes = st.notes + (st.items.length ? '\n\nThe commissioner attached ' + st.items.length + ' photo/video item(s): ' + st.items.map(function (x) { return x.name + (x.duration ? ' (' + Math.round(x.duration) + 's clip)' : ''); }).join(', ') + '.' : '');
+    var whenTs = st.when ? new Date(st.when).getTime() : 0, notes = (whenTs && !isNaN(whenTs) ? 'THIS STORY IS DATED ' + new Date(whenTs).toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric' }) + '. Write it as of that date. Do not mention anything that happens after it, and do not give a different date or month than the one the commissioner describes.\n\n' : '') + st.notes + (st.items.length ? '\n\nThe commissioner attached ' + st.items.length + ' photo/video item(s): ' + st.items.map(function (x) { return x.name + (x.duration ? ' (' + Math.round(x.duration) + 's clip)' : ''); }).join(', ') + '.' : '');
     var res = await J.ai.articleDraft(S, { outlet: st.outlet, race: race, preSid: preSid, headline: st.headline, notes: notes, images: aiImages(), interviews: st.interviews });
     if (!res.article || !res.article.body) throw new Error(J.ai.name() + ' returned an empty story. Try again.');
     res.interviews = (res.interviews || []).filter(function (x) { return x && x.quote && J.findDriver(S, x.driver); });
@@ -183,10 +184,11 @@ J.acts.stPublish = async function () {
   var preSid = /^pre:/.test(st.raceId) ? st.raceId.slice(4) : '', raceId = preSid ? '' : st.raceId, ids = await saveItems(S, raceId, st.highlights);
   var race = S.races.find(function (r) { return r.id === raceId; }) || null;
   var ts = preSid ? J.storyTime(S, 'preview', { sid: preSid }) : race ? J.storyTime(S, st.outlet === 'silly' ? 'silly' : 'recap', { race: race }) + 15 * 60000 : J.leagueNow(S);
-  var art = J.ai.applyArticle(S, { article: a, interviews: ivs, reputation: reps }, { outlet: st.outlet, raceId: raceId, preSid: preSid, media: ids, ts: ts }); art.studio = true;
+  var hand = st.when ? new Date(st.when).getTime() : 0; if (hand && !isNaN(hand)) ts = hand; else hand = 0;
+  var art = J.ai.applyArticle(S, { article: a, interviews: ivs, reputation: reps }, { outlet: st.outlet, raceId: raceId, preSid: preSid, media: ids, ts: ts }); art.studio = true; if (hand) J.setArticleTime(S, art, hand);
   if (d.manual) { art.author = 'Commissioner'; }
   var react = st.react && J.ai.hasKey();
-  st.items = []; st.draft = null; st.headline = ''; st.notes = '';
+  st.items = []; st.draft = null; st.headline = ''; st.notes = ''; st.when = '';
   J.save({ render: false }); J.go('news/' + art.id);
   J.toast('Story published.' + (react ? ' The fans are reading it now.' : ''));
   if (react) J.reactToArticle(art.id, true);

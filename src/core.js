@@ -295,6 +295,7 @@ J.sessionTime = function (S, x) {
 };
 // the moment the league is "at": just after the newest thing that has happened, never past the next race morning
 J.leagueNow = function (S) {
+  if (S.pinTs) return S.pinTs; // the commissioner set the league date by hand (Garage Tools, Story Studio)
   if (!J.dated(S)) return Date.now();
   var nx = J.nextRound(S), nd = nx && J.roundDate(S, nx.id), cap = nd ? J.atLocal(nd, 12, 0) : Infinity, t = 0;
   var see = function (ts) { if (ts && ts <= cap && ts > t) t = ts; };
@@ -306,6 +307,7 @@ J.leagueNow = function (S) {
 };
 // a midweek moment between the last race and the next one (for "this week" news)
 J.weekTime = function (S) {
+  if (S.pinTs) return S.pinTs;
   var now = J.leagueNow(S); if (!J.dated(S)) return now;
   var last = S.races[S.races.length - 1], mid = last && ISO.test(last.date || '') ? J.storyTime(S, 'recap', { race: last }) + (72 + 11 - 21) * 3600000 - 40 * 60000 : 0;
   var nx = J.nextRound(S), nd = nx && J.roundDate(S, nx.id), cap = nd ? J.atLocal(nd, -24 + 9, 0) : Infinity;
@@ -349,10 +351,21 @@ J.migrateClock = function (S) {
 
 // Put everything about one race weekend at the right moment on the league calendar (after a date changes, or after the
 // race is imported with a different date than the previews used). Fan posts move with the story or session they react to.
+// Give a story a date and time of the commissioner's choosing. Its fan posts and pit road quotes move with it (same gaps as before),
+// and the calendar re-alignment leaves it where it is. ts = null puts it back on the race calendar.
+J.setArticleTime = function (S, a, ts) {
+  if (!a) return;
+  if (ts == null) { delete a.dateSet; if (a.preSid) J.alignRound(S, a.preSid); else if (a.raceId) { var rc = S.races.find(function (r) { return r.id === a.raceId; }); if (rc && rc.sid) J.alignRound(S, rc.sid); } return; }
+  var d = ts - a.ts; a.ts = ts; a.dateSet = true;
+  var by = {}; S.posts.forEach(function (p) { (by[p.thread] = by[p.thread] || []).push(p); });
+  Object.keys(by).forEach(function (t) { var ps = by[t].slice().sort(function (x, y) { return x.ts - y.ts; }), r0 = ps[0].ref; if (r0 && r0.type === 'article' && r0.id === a.id) ps.forEach(function (p) { p.ts += d; }); });
+  (S.interviews || []).forEach(function (iv) { if (iv.ref === a.id) iv.ts = ts; });
+  (S.media || []).forEach(function (m) { if ((a.media || []).indexOf(m.id) >= 0) m.ts = ts; });
+};
 J.alignRound = function (S, sid) {
   var day = J.roundDate(S, sid); if (!day) return 0;
   var race = S.races.find(function (r) { return r.sid === sid; }), moved = {}, n = 0;
-  var set = function (a, t) { if (a.ts !== t) { moved[a.id] = t - a.ts; a.ts = t; n++; } };
+  var set = function (a, t) { if (a.dateSet) return; if (a.ts !== t) { moved[a.id] = t - a.ts; a.ts = t; n++; } };
   var byNew = function (a, b) { return b.ts - a.ts; };
   S.articles.filter(function (a) { return a.preSid === sid && !a.week; }).sort(byNew).forEach(function (a, i) { set(a, J.storyTime(S, 'preview', { sid: sid }) - i * 20 * 60000); });
   if (race) {
@@ -1094,7 +1107,7 @@ J.publicData = function (S) {
   o.media = (o.media || []).filter(function (m) { return m.published; });
   o.moves = (o.moves || []).filter(function (m) { return m.status === 'approved' || m.status === 'done'; });
   o.callups = (o.callups || []).filter(function (m) { return m.status === 'approved'; });
-  delete o.carWeek;
+  delete o.carWeek; if (o.art) delete o.art.orig;
   return o;
 };
 

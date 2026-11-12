@@ -32,9 +32,6 @@ J.boot = async function () {
   } catch (e) { console.error(e); J.toast('Could not load your league: ' + e.message, true); J.S = J.S || J.newLeague('cup'); J.leagues = J.leagues || { cup: J.S }; }
   if (!location.hash) location.hash = J.S.races.length ? '#/home' : '#/import';
   J.render();
-  // one time: strip backgrounds from number pictures imported before the automatic cleanup existed
-  (function () { var need = Object.keys(J.leagues).filter(function (k) { var A = J.leagues[k].art; return A && A.clean !== 1 && Object.keys(A.nums || {}).length; });
-    if (need.length) J.artCleanAll(false).then(function (n) { return Promise.all(need.map(function (k) { return J.store.saveLeague(J.leagues[k]); })).then(function () { if (n) J.render(); }); }).catch(function (e) { console.error(e); }); })();
   if (J.publisher) J.publisher.init();
   setInterval(function () { if (J.renderFoot) J.renderFoot(); }, 30000);
 };
@@ -236,7 +233,7 @@ J.routes.league = function (S) {
     + '<div class="field"><label for="chCut">Field set after race</label><input id="chCut" type="number" min="1" max="60" value="' + c.regularRaces + '"></div></div>'
     + '<label class="check"><input type="checkbox" id="chWins"' + (c.winLocks ? ' checked' : '') + '> A win locks a driver in (win and you are in)</label>'
     + '<div class="row"><button class="btn sm" data-act="lgSave">Save</button></div></section>'
-    + rosterPanel(S) + pointsPanel(S) + outletPanel(S)
+    + rosterPanel(S) + fictionPanel(S) + pointsPanel(S) + outletPanel(S)
     + '<section class="panel"><h3>Commissioner note</h3><p class="sub">Shows at the top of the home page.</p><textarea id="annText" placeholder="Example: Martinsville moved to Saturday night.">' + esc(S.announcement.text) + '</textarea><div class="row"><button class="btn sm" data-act="annPost">Post note</button>' + (S.announcement.text ? '<button class="btn ghost sm" data-act="annClear">Remove note</button>' : '') + '</div></section>'
     + '<section class="panel"><h3>Series and seasons</h3><p class="sub">Each series has its own schedule, standings, news and fans. Finish a season to move it to past seasons (still viewable in the app and on the website) and start the next one with the same league, fans and settings. Cancel ends a season early and keeps it marked cancelled.</p>' + leagues + '</section>'
     + '<section class="panel"><h3>Backup</h3><p class="sub">Save everything (all series, stories, fans, photos) to one file, or bring a backup back. Your AI key and GitHub token are never put in a backup.</p><div class="row"><button class="btn sm" data-act="bkDown">Download backup</button><button class="btn ghost sm" data-act="bkUp">Restore a backup</button><input type="file" id="bkFile" accept=".json,application/json" hidden></div></section>'
@@ -259,6 +256,51 @@ J.acts.rosterImportGo = function () {
   var r = J.rosterImport(S, sid, yr, { fullOnly: full, over: over });
   if (!r) { J.toast('No real roster for that series.', true); return; }
   J.save(); J.toast('Roster imported: ' + r.added + ' new drivers, ' + r.updated + ' updated (' + J.plural(r.total, 'contract') + ' in all).');
+};
+/* ---------- fictional drivers: added to the league, put in a random real ARCA car, optional AI backstory ---------- */
+function fictionPanel(S) {
+  var hasKey = J.ai.hasKey(), fict = Object.keys(S.contracts || {}).filter(function (k) { return S.contracts[k].fictional; });
+  return '<section class="panel" id="fictPanel"><h3>Add fictional drivers</h3><p class="sub">Type one name per line. Each driver is added to this league and put in a random real ARCA car (a car nobody here drives yet, when there is one). Their results count like anyone else\'s once the name shows up in an import. Tick the box to have the AI write a short made-up backstory (hometown, age, how they got here). They show on the driver page.</p>'
+    + '<div class="field"><label for="fictNames">Names (one per line)</label><textarea id="fictNames" rows="4" placeholder="Cody Whitlock&#10;Maddie Rourke"></textarea></div>'
+    + '<label class="check"><input type="checkbox" id="fictBio"' + (hasKey ? ' checked' : ' disabled') + '> Write a backstory for each one' + (hasKey ? '' : ' (needs an AI key in Settings)') + '</label>'
+    + '<div class="row"><button class="btn sm" data-act="fictAdd">Add the drivers</button>' + (fict.length ? '<span class="sub" style="margin:0 0 0 12px">' + J.plural(fict.length, 'fictional driver') + ' so far</span>' : '') + '</div></section>';
+}
+function fictBioFor(S, keys) {
+  var list = keys.map(function (k) { var c = S.contracts[k], t = c.team && S.teams[c.team]; return { name: c.name, ride: (t ? t.name : 'a small team') + ' #' + (c.car || '?') }; });
+  return J.ai.json({ maxTokens: 2500, system: 'You write short, believable backstories for FICTIONAL stock car drivers in a fan-run simulated league. Everything is made up. Never mention real people, real sponsors or real events. Plain, specific, no hype, no cliches.',
+    user: 'Write a backstory for each of these made-up drivers. Each is 3 or 4 sentences: where they grew up, how they got into racing, what their path looked like, and what they are like now. Give each an age between 18 and 42 and a hometown (town and state). Reply with ONLY JSON: {"drivers":[{"name":"exact name given","age":0,"hometown":"","bio":""}]}\n\nDrivers:\n' + list.map(function (x) { return '- ' + x.name + ' (drives for ' + x.ride + ')'; }).join('\n') });
+}
+J.acts.fictAdd = async function () {
+  var S = J.S, names = ($('fictNames').value || '').split(/\n/).map(function (x) { return x.replace(/\s+/g, ' ').trim(); }).filter(Boolean), wantBio = $('fictBio') && $('fictBio').checked && !$('fictBio').disabled;
+  if (!names.length) { J.toast('Type at least one name.', true); return; }
+  S.teams = S.teams || {}; S.contracts = S.contracts || {};
+  var cars = J.rosterCars ? J.rosterCars(S, { sid: 'arca' }) : {}, ids = Object.keys(cars);
+  if (!ids.length) { J.toast('No ARCA roster loaded to pick cars from.', true); return; }
+  var used = {}; Object.keys(S.contracts).forEach(function (k) { var c = S.contracts[k]; if (c.team && c.car) used[c.team + '#' + c.car] = 1; });
+  var pool = ids.filter(function (id) { return !used[J.slug(cars[id].team) + '#' + cars[id].number]; }); if (!pool.length) pool = ids.slice();
+  var added = [], skipped = [];
+  names.forEach(function (nm) {
+    var key = J.driverKey(nm); if (S.contracts[key] && !S.contracts[key].fictional) { skipped.push(nm); return; }
+    var i = Math.floor(Math.random() * pool.length), car = cars[pool[i]]; pool.splice(i, 1); if (!pool.length) pool = ids.slice();
+    var tid = J.slug(car.team); if (!S.teams[tid]) S.teams[tid] = { id: tid, name: car.team, color: car.color || '#888', base: car.base || '', mfr: car.mfr || '' };
+    S.contracts[key] = { name: nm, team: tid, car: car.number, through: J.autoThrough ? J.autoThrough(S, key, car.team, null) : J.seasonNum(S) + 1, base: 50 + Math.floor(Math.random() * 20), auto: true, pt: false, fictional: true, imported: true };
+    added.push(key);
+  });
+  J.save();
+  var msg = 'Added ' + J.plural(added.length, 'fictional driver') + (skipped.length ? '. Skipped ' + skipped.join(', ') + ' (a real driver already has that name).' : '.');
+  if (added.length && wantBio) {
+    J.toast(msg + ' Writing backstories...');
+    try {
+      var r = await fictBioFor(S, added), got = 0;
+      (r.drivers || []).forEach(function (x) { var k = J.driverKey(x.name || ''); if (S.contracts[k] && S.contracts[k].fictional && x.bio) { S.contracts[k].bio = String(x.bio).slice(0, 900); S.contracts[k].age = parseInt(x.age, 10) || null; S.contracts[k].hometown = String(x.hometown || '').slice(0, 60); got++; } });
+      J.save(); J.toast(msg + ' ' + got + ' backstor' + (got === 1 ? 'y' : 'ies') + ' written.');
+    } catch (e) { J.toast(msg + ' The backstories failed (' + e.message + '). Use "Write backstory" on the driver page to try again.', true); }
+  } else J.toast(msg);
+  var ta = $('fictNames'); if (ta) ta.value = '';
+};
+J.acts.fictBio = async function (el) {
+  var S = J.S, k = el.dataset.key, c = S.contracts && S.contracts[k]; if (!c) return;
+  try { J.toast('Writing the backstory...'); var r = await fictBioFor(S, [k]), x = (r.drivers || [])[0]; if (!x || !x.bio) throw new Error('nothing came back'); c.bio = String(x.bio).slice(0, 900); c.age = parseInt(x.age, 10) || c.age || null; c.hometown = String(x.hometown || c.hometown || '').slice(0, 60); J.save(); J.toast('Backstory written.'); } catch (e) { J.toast('Could not write it: ' + e.message, true); }
 };
 function outletPanel(S) {
   return '<section class="panel"><h3>News outlets</h3><p class="sub">Rename the three outlets, their taglines and their writers. Old stories switch to the new names too.</p>'
@@ -353,14 +395,19 @@ J.acts.editArticle = function (el) {
     + '<div class="fgrid"><div class="field"><label for="eOut">Outlet</label><select id="eOut">' + Object.keys(J.OUTLETS).map(function (k) { return '<option value="' + k + '"' + (a.outlet === k ? ' selected' : '') + '>' + esc(J.OUTLETS[k].name) + '</option>'; }).join('') + '</select></div><div class="field"><label for="eAuth">Byline</label><input id="eAuth" value="' + esc(a.author || '') + '"></div></div>'
     + '<div class="field"><label for="eHead">Headline</label><input id="eHead" value="' + esc(a.headline) + '"></div><div class="field" style="margin-top:10px"><label for="eDek">Summary line</label><input id="eDek" value="' + esc(a.dek || '') + '"></div>'
     + '<div class="field" style="margin-top:10px"><label for="eBody">Story</label><textarea id="eBody" style="min-height:300px">' + esc(a.body) + '</textarea></div>'
+    + '<div class="fgrid" style="margin-top:10px"><div class="field"><label for="eWhen">Date and time of the story</label><input type="datetime-local" id="eWhen" value="' + J.localInput(a.ts) + '"><small class="dim" style="display:block;margin-top:5px">' + (a.dateSet ? 'Set by hand.' : 'Following the race calendar.') + ' Changing it moves the fan reactions to this story with it.</small></div>' + (a.dateSet ? '<label class="check" style="align-self:end"><input type="checkbox" id="eAuto"> Put it back on the race calendar</label>' : '') + '</div>'
     + (media ? '<h3 style="font-size:18px;margin-top:14px">Photos and video in this story</h3>' + media : '')
     + '<div class="row"><button class="btn" data-act="saveArticle" data-id="' + esc(a.id) + '">Save</button><button class="btn ghost" data-act="closeDlg">Cancel</button></div></div>';
   $('dlg').showModal();
 };
+J.localInput = function (ts) { var d = new Date(ts || Date.now()); d = new Date(d.getTime() - d.getTimezoneOffset() * 60000); return d.toISOString().slice(0, 16); };
 J.acts.saveArticle = function (el) {
   var S = J.S, a = S.articles.find(function (x) { return x.id === el.dataset.id; }); if (!a) return;
   a.outlet = $('eOut').value; a.author = $('eAuth').value.trim(); a.headline = $('eHead').value.trim() || a.headline; a.dek = $('eDek').value.trim(); a.body = $('eBody').value; a.auto = false;
   a.media = Array.prototype.filter.call(document.querySelectorAll('[data-am]'), function (c) { return c.checked; }).map(function (c) { return c.dataset.am; });
+  var w = $('eWhen') && $('eWhen').value, t = w ? new Date(w).getTime() : 0;
+  if ($('eAuto') && $('eAuto').checked) J.setArticleTime(S, a, null);
+  else if (t && !isNaN(t) && Math.abs(t - a.ts) > 59000) J.setArticleTime(S, a, t);
   J.acts.closeDlg(); J.save(); J.toast('Story saved.');
 };
 J.acts.delArticle = function (el) {
@@ -415,6 +462,13 @@ async function garageRun(kind) {
 }
 J.acts.genGarage = function () { garageRun('refresh'); };
 J.acts.gtRun = function (el) { garageRun(el.dataset.k); };
+function datePanel(S) {
+  var pinned = !!S.pinTs, now = J.leagueNow(S);
+  return '<section class="panel" id="datePanel"><h3>League date</h3><p class="sub">New fan chatter, news and highlights are dated by the league calendar. Pin the date to match your timeline, for example early December during testing, and everything new is dated then until you set it back. ' + (pinned ? '<b>Pinned now.</b>' : 'Following the calendar right now.') + '</p>'
+    + '<div class="row" style="margin-top:0"><div class="field" style="margin:0"><label for="pinWhen">The league date is</label><input type="datetime-local" id="pinWhen" value="' + J.localInput(now) + '"></div><button class="btn sm" data-act="pinSet">Use this date</button>' + (pinned ? '<button class="btn ghost sm" data-act="pinClear">Back to the calendar</button>' : '') + '</div></section>';
+}
+J.acts.pinSet = function () { var t = new Date($('pinWhen').value).getTime(); if (!t || isNaN(t)) { J.toast('Pick a date first.', true); return; } J.S.pinTs = t; J.save(); J.toast('New posts and stories are now dated ' + new Date(t).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) + '.'); };
+J.acts.pinClear = function () { delete J.S.pinTs; J.save(); J.toast('Back on the league calendar.'); };
 J.routes.garagetools = function (S) {
   var hasKey = J.ai.hasKey(), ths = J.threadsOf(S), ages = { teen: 0, young: 0, adult: 0, oldhead: 0 }, st = { good: 0, bad: 0, none: 0 };
   S.fans.forEach(function (f) { ages[f.age] = (ages[f.age] || 0) + 1; if (f.stance && f.stance.level > 0) st.good++; else if (f.stance && f.stance.level < 0) st.bad++; else st.none++; });
@@ -422,6 +476,7 @@ J.routes.garagetools = function (S) {
   var drivers = J.roster(S);
   return J.phead('Garage Tools', 'Keep the fan chat and outlooks fresh')
     + (!hasKey ? '<div class="warn" style="margin:0 0 18px">These need an AI key (Gemini is free). Add it in <a href="#/settings"><b>Settings</b></a>.</div>' : '')
+    + datePanel(S)
     + '<section class="panel"><h3>Refresh</h3><p class="sub">Race imports do this for you. Use these between races or when the Garage feels stale.</p><div class="row" style="margin-top:0">' + b('refresh', 'Refresh the Garage') + b('talk', 'New fan chatter only') + b('outlooks', 'New outlook commentary only') + '</div></section>'
     + '<section class="panel"><h3>Regenerate the AI people</h3><p class="sub">Give every fan account a brand new identity (name, handle, bio, hometown, profile), or give the media personalities new names and handles. Accounts keep their old posts under the new names. To rewrite the posts in their new voices too, run Refresh everything below afterwards.</p><div class="row" style="margin-top:0"><button class="btn sm" data-act="regenFans">New identities for all ' + S.fans.length + ' fans</button><button class="btn ghost sm" data-act="regenFans" data-reroll="1">New identities and new favorite drivers</button><button class="btn ghost sm" data-act="regenFigs">New media personalities</button>' + (S.figureOverrides ? '<button class="btn ghost sm" data-act="figsReset">Original media personalities</button>' : '') + '</div></section>'
     + '<section class="panel"><h3>Newsroom</h3><p class="sub">The outlets write 1 to 3 new stories. Pick a race to get previews dated the morning of that race, or "This week" for news between races. Silly season stories follow the real NASCAR calendar, so early in the season they are rare.</p>'
@@ -632,11 +687,19 @@ J.artFromData = function (src, o) {
     img.src = src;
   });
 };
-// o.bg: 'auto' (default: find the background color from the picture's edges), 'white', 'black', 'keep'
+// untouched copy of a picture (kept so a background removal can always be undone); small, PNG only when it has see-through parts
+J.artSnap = function (c) {
+  var k = Math.min(1, 480 / Math.max(c.width, c.height)), o = document.createElement('canvas'); o.width = Math.max(1, Math.round(c.width * k)); o.height = Math.max(1, Math.round(c.height * k));
+  var x = o.getContext('2d'); x.imageSmoothingQuality = 'high'; x.drawImage(c, 0, 0, o.width, o.height);
+  var d = x.getImageData(0, 0, o.width, o.height).data, alpha = false; for (var i = 3; i < d.length; i += 4) if (d[i] < 255) { alpha = true; break; }
+  return alpha ? o.toDataURL('image/png') : o.toDataURL('image/jpeg', 0.92);
+};
+// o.bg: 'auto\' (default: find the background color from the picture's edges), 'white', 'black', 'keep'
 J.artProcess = function (img, o) {
   var w = img.naturalWidth || 300, h = img.naturalHeight || 150, k = Math.min(1, 1400 / Math.max(w, h));
   w = Math.max(1, Math.round(w * k)); h = Math.max(1, Math.round(h * k));
   var c = document.createElement('canvas'); c.width = w; c.height = h; var x = c.getContext('2d'); x.drawImage(img, 0, 0, w, h);
+  if (o.snap) o.snap.v = J.artSnap(c);
   var id = x.getImageData(0, 0, w, h), p = id.data, cut = false, mode = o.bg || 'auto';
   if (mode !== 'keep') {
     var T = null;
@@ -671,13 +734,14 @@ J.artProcess = function (img, o) {
   return see || cut ? out.toDataURL('image/png') : out.toDataURL('image/jpeg', 0.92);
 };
 // one-time (and on demand) cleanup of number and logo pictures that were saved with their background
-J.artCleanAll = async function (force) {
+J.artCleanAll = async function (force, only) {
   var fixed = 0;
-  var keys = Object.keys(J.leagues || {});
+  var keys = Object.keys(J.leagues || {}).filter(function (k) { return !only || J.leagues[k] === only; });
   for (var i = 0; i < keys.length; i++) {
-    var L = J.leagues[keys[i]], A = L && L.art; if (!A || (A.clean === 1 && !force)) continue;
+    var L = J.leagues[keys[i]], A = L && L.art; if (!A || !force) continue;
     var nums = Object.keys(A.nums || {});
-    for (var j = 0; j < nums.length; j++) { try { A.nums[nums[j]] = await J.artFromData(A.nums[nums[j]], { bg: 'auto', height: 140 }); fixed++; } catch (e) { } }
+    A.orig = A.orig || {};
+    for (var j = 0; j < nums.length; j++) { try { var cur = A.nums[nums[j]]; if (!A.orig[nums[j]]) A.orig[nums[j]] = cur; A.nums[nums[j]] = await J.artFromData(A.orig[nums[j]], { bg: 'auto', height: 140 }); fixed++; } catch (e) { } }
     A.clean = 1; if (L === J.S) { /* saved by caller */ }
   }
   return fixed;
@@ -692,7 +756,7 @@ function artNumbers(S) {
 }
 function seriesLeague(sid, make) { var L = null; Object.keys(J.leagues || {}).forEach(function (k) { var x = J.leagues[k]; if (x.series.id === sid && !x.archived) L = x; }); if (!L && make && J.SERIES[sid] && !J.leagues[sid]) { L = J.leagues[sid] = J.newLeague(sid, J.S ? J.S.league.name : ''); } return L; }
 J.routes.artwork = function (S) {
-  var nums = artNumbers(S), have = (S.art && S.art.nums) || {}, n0 = Object.keys(have).length, bg = J.ui.artBg || 'auto';
+  var nums = artNumbers(S), have = (S.art && S.art.nums) || {}, orig = (S.art && S.art.orig) || {}, n0 = Object.keys(have).length, bg = J.ui.artBg || 'auto', nOrig = Object.keys(orig).filter(function (k) { return have[k] && orig[k] && orig[k] !== have[k]; }).length;
   var out = J.phead('Logos and Numbers', 'Use your own pictures for car numbers and series logos. They replace the built-in ones everywhere: standings, results, driver and team pages, silly season, The Garage, the series tabs, and on the website after it publishes.');
   out += '<section class="panel"><h3>Car numbers: ' + esc(S.series.label) + '</h3><p class="sub">Each series keeps its own number pictures (the #1 truck and the #1 Cup car can look different). ' + J.plural(n0, 'number') + ' set so far.</p>'
     + '<div class="row artopts"><label class="field" style="margin:0"><span>Background</span><select id="artBg" aria-label="Background">' + [['auto', 'Remove the background automatically (recommended)'], ['white', 'Remove a white background'], ['black', 'Remove a black background'], ['keep', 'Keep the background as it is']].map(function (o) { return '<option value="' + o[0] + '"' + (bg === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label></div>'
@@ -700,10 +764,10 @@ J.routes.artwork = function (S) {
     + '<div id="artMsg" class="msg" hidden></div>'
     + '<div class="artgrid">' + nums.map(function (x) {
       var on = !!have[x.n];
-      return '<div class="atile' + (on ? ' on' : '') + '"><div class="aprev">' + J.carTag(x.n, 'big') + '</div><b>#' + esc(x.n) + '</b><small>' + esc(x.who.slice(0, 3).join(', ') || 'no driver yet') + '</small><div class="abtns"><label class="btn ghost sm">' + (on ? 'Change' : 'Add picture') + '<input type="file" accept="image/*" data-artnum="' + esc(x.n) + '" hidden></label>' + (on ? '<button class="btn ghost sm" data-act="artDel" data-n="' + esc(x.n) + '" aria-label="Remove the picture for #' + esc(x.n) + '">Remove</button>' : '') + '</div></div>';
+      return '<div class="atile' + (on ? ' on' : '') + '"><div class="aprev">' + J.carTag(x.n, 'big') + '</div><b>#' + esc(x.n) + '</b><small>' + esc(x.who.slice(0, 3).join(', ') || 'no driver yet') + '</small><div class="abtns"><label class="btn ghost sm">' + (on ? 'Change' : 'Add picture') + '<input type="file" accept="image/*" data-artnum="' + esc(x.n) + '" hidden></label>' + (on && orig[x.n] && orig[x.n] !== have[x.n] ? '<button class="btn ghost sm" data-act="artRestore" data-n="' + esc(x.n) + '" title="Put back the picture as you uploaded it, with its background">Original</button>' : '') + (on ? '<button class="btn ghost sm" data-act="artDel" data-n="' + esc(x.n) + '" aria-label="Remove the picture for #' + esc(x.n) + '">Remove</button>' : '') + '</div></div>';
     }).join('')
     + '<div class="atile other"><div class="aprev"><span class="car big">#</span></div><b>Another number</b><input id="artOther" placeholder="e.g. 51" aria-label="Car number" inputmode="numeric"><div class="abtns"><label class="btn ghost sm">Add picture<input type="file" accept="image/*" data-artnum="" hidden></label></div></div></div>'
-    + (n0 ? '<div class="row"><button class="btn ghost sm" data-act="artClean">Clean up backgrounds on my pictures</button> <button class="btn danger sm" data-act="artClear">Remove all ' + esc(S.series.label) + ' number pictures</button></div>' : '') + '</section>';
+    + (n0 ? '<div class="row">' + (nOrig ? '<button class="btn sm" data-act="artRestoreAll">Restore all ' + nOrig + ' original' + (nOrig === 1 ? '' : 's') + ' (undo background removal)</button> ' : '') + '<button class="btn ghost sm" data-act="artClean">Remove backgrounds from all my pictures</button> <button class="btn danger sm" data-act="artClear">Remove all ' + esc(S.series.label) + ' number pictures</button></div>' : '') + '</section>';
   out += '<section class="panel"><h3>Series logos</h3><p class="sub">Shown on the series tabs at the top, on story pictures and on the website. A square picture with a see-through background (PNG) looks best on the dark header; the background setting above applies here too.</p><div class="slogos">' + J.SERIES_ORDER.map(function (sid) {
     var L = seriesLeague(sid), s = J.SERIES[sid] || { label: sid }, own = L && L.art && L.art.logo;
     return '<div class="slrow"><div class="slprev">' + J.seriesBadge(sid) + '</div><div><b>' + esc((L && L.series.label) || s.label) + '</b><small>' + (own ? 'Your picture' : 'Built-in badge') + '</small></div><div class="abtns"><label class="btn ghost sm">' + (own ? 'Change' : 'Use my picture') + '<input type="file" accept="image/*" data-artlogo="' + esc(sid) + '" hidden></label>' + (own ? '<button class="btn ghost sm" data-act="artLogoDel" data-id="' + esc(sid) + '">Back to built-in</button>' : '') + '</div></div>';
@@ -719,19 +783,24 @@ async function artAdd(files, forced) {
     var f = files[i], n = forced != null ? forced : J.artNumFromName(f.name);
     if (!/^image\//.test(f.type || '') && !/\.(jpe?g|png|webp|gif|svg|bmp)$/i.test(f.name)) { bad.push(f.name + ' (not a picture)'); continue; }
     if (!n) { skipped.push(f.name); continue; }
-    try { S.art.nums[n] = await J.artImage(f, { bg: J.ui.artBg || 'auto', height: 140 }); S.art.clean = 1; done.push('#' + n); } catch (e) { bad.push(f.name + ' (' + e.message + ')'); }
+    try { var sn = {}; S.art.nums[n] = await J.artImage(f, { bg: J.ui.artBg || 'auto', height: 140, snap: sn }); S.art.orig = S.art.orig || {}; if (sn.v) S.art.orig[n] = sn.v; S.art.clean = 1; done.push('#' + n); } catch (e) { bad.push(f.name + ' (' + e.message + ')'); }
   }
   if (done.length) J.save();
   var t = (done.length ? 'Added ' + J.plural(done.length, 'number picture') + ': ' + done.join(', ') + '.' : 'No pictures added.') + (skipped.length ? ' No car number in the file name of: ' + skipped.join(', ') + ' (rename them like 24.png, or use the button on a number).' : '') + (bad.length ? ' Could not use: ' + bad.join(', ') + '.' : '');
   artMsg(t, !done.length);
 }
 J.acts.artPick = function () { $('artFiles').click(); };
-J.acts.artDel = function (el) { var S = J.S; if (S.art && S.art.nums) delete S.art.nums[el.dataset.n]; J.save(); };
-J.acts.artClean = async function () {
-  J.toast('Cleaning up the pictures...');
-  var n = await J.artCleanAll(true); J.save(); J.toast(n ? 'Cleaned ' + J.plural(n, 'picture') + '. Only the cards are left.' : 'Nothing to clean.');
+J.acts.artDel = function (el) { var S = J.S; if (S.art && S.art.nums) delete S.art.nums[el.dataset.n]; if (S.art && S.art.orig) delete S.art.orig[el.dataset.n]; J.save(); };
+J.acts.artRestore = function (el) { var S = J.S, n = el.dataset.n; if (!S.art || !S.art.orig || !S.art.orig[n]) return; S.art.nums[n] = S.art.orig[n]; J.save(); J.toast('#' + n + ' is back to the picture you uploaded.'); };
+J.acts.artRestoreAll = function () {
+  var S = J.S, A = S.art || {}, n = 0; Object.keys(A.orig || {}).forEach(function (k) { if (A.nums && A.nums[k] && A.orig[k] !== A.nums[k]) { A.nums[k] = A.orig[k]; n++; } });
+  J.save(); J.toast(n ? n + ' original picture' + (n === 1 ? '' : 's') + ' restored.' : 'Nothing to restore.');
 };
-J.acts.artClear = function () { var S = J.S; if (!confirm('Remove all ' + S.series.label + ' number pictures? The built-in numbers come back.')) return; if (S.art) S.art.nums = {}; J.save(); };
+J.acts.artClean = async function () {
+  if (!confirm('Remove the background from every number picture in ' + J.S.series.label + '? Your originals are kept, so you can undo this with Restore originals.')) return;
+  var n = await J.artCleanAll(true, J.S); J.save(); J.toast(n ? 'Cleaned ' + J.plural(n, 'picture') + '. Restore originals undoes it.' : 'Nothing to clean.');
+};
+J.acts.artClear = function () { var S = J.S; if (!confirm('Remove all ' + S.series.label + ' number pictures? The built-in numbers come back.')) return; if (S.art) { S.art.nums = {}; S.art.orig = {}; } J.save(); };
 J.acts.artLogoDel = function (el) { var L = seriesLeague(el.dataset.id); if (!L || !L.art) return; delete L.art.logo; saveOther(L); };
 function saveOther(L) { L.updatedAt = Date.now(); if (L === J.S) { J.save(); return; } J.store.saveLeague(L).catch(function (e) { J.toast('Could not save: ' + e.message, true); }); if (J.publisher) J.publisher.schedule(); J.refresh(); }
 J.afters.artwork = function () {

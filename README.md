@@ -20,7 +20,7 @@ You need a free GitHub account. GitHub builds the Windows installer for you, and
 4. Open the **jss-app** folder on your PC, select **everything inside it** (the `src`, `build` and `.github` folders and all the files), and drag it all onto the GitHub page. Click **Commit changes**.
    - If you do not see the `.github` folder, in File Explorer click **View**, then **Show**, then **Hidden items**. It must be uploaded too, because it holds the build instructions.
 5. Click the **Actions** tab at the top of your repository. You will see **Build the Windows app** running (yellow dot). Wait about 5 minutes for a green check.
-6. Click that run, scroll down to **Artifacts**, and click **Virtual-NASCAR-Setup**. A zip downloads. Open it and run **Virtual-NASCAR-Setup-3.6.0.exe**.
+6. Click that run, scroll down to **Artifacts**, and click **Virtual-NASCAR-Setup**. A zip downloads. Open it and run **Virtual-NASCAR-Setup-3.6.2.exe**.
 7. Windows will probably say **"Windows protected your PC"** because the app is not from a big company. Click **More info**, then **Run anyway**. Install it like any other program. A **Virtual NASCAR** shortcut appears on your desktop.
 
 > **Prefer not to use GitHub for the installer?** Install Node.js from nodejs.org, open the jss-app folder, type `cmd` in the address bar and press Enter, then type `npm install` and then `npm start`. The app opens. Use `npm run dist` to make the installer yourself (it lands in the `dist` folder).
