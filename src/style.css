@@ -904,7 +904,7 @@ dialog::backdrop{background:rgba(0,0,0,.72)}
 .car.art{background:transparent;border-color:transparent;padding:1px 2px;min-width:0;line-height:0}
 .car.art img{height:1.35em;width:auto;max-width:4.6em;object-fit:contain;display:inline-block;vertical-align:middle}
 .stance .car.art{background:transparent;padding:0 2px}
-.dnum.art{display:flex;align-items:center;justify-content:center;padding:6px 8px;text-shadow:none;-webkit-text-stroke:0}
+.dnum.art{display:flex;align-items:center;justify-content:center;padding:0;min-width:0;background:transparent!important;border-radius:0;text-shadow:none;-webkit-text-stroke:0}
 .dnum.art img{height:1.15em;width:auto;max-width:100%;object-fit:contain;display:block;filter:drop-shadow(1px 1px 0 rgba(0,0,0,.35))}
 img.sbadge{object-fit:contain;display:inline-block}
 .artopts{margin:0 0 12px}.artopts .field span{display:block;font-size:13px;color:var(--muted);margin-bottom:4px}
@@ -938,3 +938,27 @@ img.sbadge{object-fit:contain;display:inline-block}
 @media(max-width:700px){.mvrow{grid-template-columns:84px minmax(0,1fr)}.mvact{grid-column:1/-1;justify-content:flex-start}}
 .chk{display:flex;gap:6px;align-items:center;font-size:14px;color:var(--muted)}
 .swapnote{margin:0 0 12px;padding:10px 14px;border:1px solid color-mix(in srgb,var(--yel) 40%,var(--line));background:color-mix(in srgb,var(--yel) 8%,var(--s1));border-radius:4px;font-size:14px}.swapnote .btn{margin-left:8px}
+
+/* number pictures: only the card, no colored tile or box behind it */
+.dnum.art img{height:52px;max-width:132px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.35))}
+.dnum.big.art img{height:96px;max-width:240px}
+.pc-h .dnum.art img{height:34px;max-width:84px}
+.car.art{background:transparent!important;border:0!important;box-shadow:none!important}
+
+/* Power Rankings */
+.pwtop{display:flex;gap:16px;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;margin:0 0 12px}
+.pwhow{margin:0;max-width:760px;color:var(--muted);font-size:14px;line-height:1.5}
+.pwsel{margin:0;min-width:240px}
+.pwchips{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}
+.ptable .pwr{font-family:'Racing Sans One',var(--display);font-size:20px;width:40px}
+.ptable .pws{display:flex;align-items:center;gap:8px;min-width:150px}
+.ptable .pws .hbar{flex:1;min-width:70px}
+.ptable .pws b{min-width:26px;text-align:right}
+.pmv{font-size:12px;font-weight:700;letter-spacing:.03em;white-space:nowrap}
+.pmv.up{color:#22c55e}.pmv.dn{color:#ef4444}.pmv.eq{color:var(--muted)}.pmv.nw{color:var(--yel)}
+.pwed{margin-top:22px}
+.pwed .pwgrp{margin:14px 0 4px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.pwed .pwrow{display:grid;grid-template-columns:minmax(150px,230px) 1fr 34px;gap:10px;align-items:center;padding:6px 0;border-top:1px solid var(--line)}
+.pwed .pwrow small{display:block;color:var(--muted);font-size:12px}
+.pwed input[type=range]{width:100%}
+.pwed .pwopts{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end}

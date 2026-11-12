@@ -32,6 +32,9 @@ J.boot = async function () {
   } catch (e) { console.error(e); J.toast('Could not load your league: ' + e.message, true); J.S = J.S || J.newLeague('cup'); J.leagues = J.leagues || { cup: J.S }; }
   if (!location.hash) location.hash = J.S.races.length ? '#/home' : '#/import';
   J.render();
+  // one time: strip backgrounds from number pictures imported before the automatic cleanup existed
+  (function () { var need = Object.keys(J.leagues).filter(function (k) { var A = J.leagues[k].art; return A && A.clean !== 1 && Object.keys(A.nums || {}).length; });
+    if (need.length) J.artCleanAll(false).then(function (n) { return Promise.all(need.map(function (k) { return J.store.saveLeague(J.leagues[k]); })).then(function () { if (n) J.render(); }); }).catch(function (e) { console.error(e); }); })();
   if (J.publisher) J.publisher.init();
   setInterval(function () { if (J.renderFoot) J.renderFoot(); }, 30000);
 };
@@ -233,11 +236,29 @@ J.routes.league = function (S) {
     + '<div class="field"><label for="chCut">Field set after race</label><input id="chCut" type="number" min="1" max="60" value="' + c.regularRaces + '"></div></div>'
     + '<label class="check"><input type="checkbox" id="chWins"' + (c.winLocks ? ' checked' : '') + '> A win locks a driver in (win and you are in)</label>'
     + '<div class="row"><button class="btn sm" data-act="lgSave">Save</button></div></section>'
-    + pointsPanel(S) + outletPanel(S)
+    + rosterPanel(S) + pointsPanel(S) + outletPanel(S)
     + '<section class="panel"><h3>Commissioner note</h3><p class="sub">Shows at the top of the home page.</p><textarea id="annText" placeholder="Example: Martinsville moved to Saturday night.">' + esc(S.announcement.text) + '</textarea><div class="row"><button class="btn sm" data-act="annPost">Post note</button>' + (S.announcement.text ? '<button class="btn ghost sm" data-act="annClear">Remove note</button>' : '') + '</div></section>'
     + '<section class="panel"><h3>Series and seasons</h3><p class="sub">Each series has its own schedule, standings, news and fans. Finish a season to move it to past seasons (still viewable in the app and on the website) and start the next one with the same league, fans and settings. Cancel ends a season early and keeps it marked cancelled.</p>' + leagues + '</section>'
     + '<section class="panel"><h3>Backup</h3><p class="sub">Save everything (all series, stories, fans, photos) to one file, or bring a backup back. Your AI key and GitHub token are never put in a backup.</p><div class="row"><button class="btn sm" data-act="bkDown">Download backup</button><button class="btn ghost sm" data-act="bkUp">Restore a backup</button><input type="file" id="bkFile" accept=".json,application/json" hidden></div></section>'
     + '<section class="panel"><h3>Start over</h3><p class="sub">Only for ' + esc(S.series.label) + '. Download a backup first.</p><div class="row"><button class="btn danger sm" data-act="resetResults">Clear results only</button><button class="btn danger sm" data-act="resetSeason">New season (clear everything but the schedule)</button></div></section>';
+};
+function rosterPanel(S) {
+  var have = J.SERIES_ORDER.filter(function (id) { return J.ROSTERS && J.ROSTERS[id]; }), sid = S.series.id;
+  if (!have.length) return '';
+  var cnt = function (id, ft) { var seen = {}, n = 0; (J.ROSTERS[id] || []).forEach(function (r) { if (/\(|rotating/i.test(r[0])) return; var k = J.nameKey(r[0]); if (seen[k]) return; seen[k] = 1; if (!ft || r[6]) n++; }); return n; };
+  return '<section class="panel" id="rosterPanel"><h3>Import the real roster</h3><p class="sub">Your NR2003 mods carry the real drivers for all four series. Pick a real lineup and every driver in it (including everyone who shares a car, like all three drivers of the Truck #1) is added with the right team and car number. Part-time drivers are marked part-time, so they stay out of the points. Drivers you set by hand are left alone unless you tick the box.</p>'
+    + '<div class="fgrid"><div class="field"><label for="rsSeries">Real lineup</label><select id="rsSeries">' + have.map(function (id) { var L = (J.SERIES[id] || {}).label || id; return '<option value="' + id + '"' + (id === sid ? ' selected' : '') + '>' + esc(L) + ' (' + cnt(id) + ' drivers, ' + cnt(id, true) + ' full-time)</option>'; }).join('') + '</select></div>'
+    + '<div class="field"><label for="rsYear">Season</label><select id="rsYear"><option value="2026">2026 real lineup</option><option value="2027">2027 (with the announced moves)</option></select></div></div>'
+    + '<label class="check"><input type="checkbox" id="rsFull"> Only the full-time drivers</label>'
+    + '<label class="check"><input type="checkbox" id="rsOver"> Also replace teams and numbers I set by hand</label>'
+    + '<div class="row"><button class="btn sm" data-act="rosterImportGo">Import this roster</button></div></section>';
+}
+J.acts.rosterImportGo = function () {
+  var S = J.S, sid = $('rsSeries').value, yr = parseInt($('rsYear').value, 10) || 2026, full = $('rsFull').checked, over = $('rsOver').checked;
+  if (!confirm('Import the real ' + ((J.SERIES[sid] || {}).label || sid) + ' ' + yr + ' roster into this league? Existing drivers keep their results.')) return;
+  var r = J.rosterImport(S, sid, yr, { fullOnly: full, over: over });
+  if (!r) { J.toast('No real roster for that series.', true); return; }
+  J.save(); J.toast('Roster imported: ' + r.added + ' new drivers, ' + r.updated + ' updated (' + J.plural(r.total, 'contract') + ' in all).');
 };
 function outletPanel(S) {
   return '<section class="panel"><h3>News outlets</h3><p class="sub">Rename the three outlets, their taglines and their writers. Old stories switch to the new names too.</p>'
@@ -560,6 +581,36 @@ J.nav.push({ id: 'preview', label: 'Preview public site', group: 'Commissioner',
 /* external links open in the normal web browser */
 document.addEventListener('click', function (e) { var a = e.target.closest && e.target.closest('a[target="_blank"]'); if (a && window.jssNative) { e.preventDefault(); J.openExternal(a.href); } }, true);
 
+
+/* ---------- Power Rankings formula editor (commissioner) ---------- */
+J.powerEditor = function (S) {
+  var cfg = J.powerCfg(S), def = J.POWER_DEFAULT();
+  var row = function (x) { return '<div class="pwrow"><div><b>' + esc(x.label) + '</b><small>' + esc(x.hint) + '</small></div><input type="range" min="0" max="10" step="1" value="' + cfg.w[x.id] + '" data-pw="w.' + x.id + '" aria-label="' + esc(x.label) + ' weight"><output>' + cfg.w[x.id] + '</output></div>'; };
+  var rng = function (id, label, min, max, step, suffix) { return '<label class="field" style="margin:0;min-width:220px"><span>' + label + '</span><input type="range" min="' + min + '" max="' + max + '" step="' + step + '" value="' + cfg[id] + '" data-pw="' + id + '"><output>' + cfg[id] + (suffix || '') + '</output></label>'; };
+  return '<section class="panel pwed"><h3>Formula</h3><p class="sub">Set how much each stat counts. A 0 turns a stat off, a 10 makes it count the most. Every week of the rankings is recalculated when you change something, so the history always matches the formula. Saved per series; use "Apply to all series" to copy it.</p>'
+    + '<div class="pwopts"><label class="field" style="margin:0;min-width:260px"><span>Real life vs this league</span><select data-pw="mode">' + Object.keys(J.POWER_MODES).map(function (k) { return '<option value="' + k + '"' + (cfg.mode === k ? ' selected' : '') + '>' + esc(J.POWER_MODES[k]) + '</option>'; }).join('') + '</select></label>'
+    + (cfg.mode === 'blend' ? rng('real', 'Real life share', 0, 100, 5, '%') : '')
+    + (cfg.mode === 'ramp' ? rng('rampFrom', 'Real life share at the start', 0, 100, 5, '%') + rng('rampTo', 'Real life share at the end', 0, 100, 5, '%') + rng('rampRaces', 'Fade over (races)', 4, 36, 1, '') : '')
+    + rng('calm', 'Weekly stability (higher = calmer)', 0, 80, 5, '%') + rng('shrink', 'Trust in small samples (higher = trust few starts less)', 0, 10, 1, '')
+    + '</div>'
+    + '<div class="pwgrp">Real life</div>' + J.POWER_STATS.filter(function (x) { return x.grp === 'real'; }).map(row).join('')
+    + '<div class="pwgrp">This league</div>' + J.POWER_STATS.filter(function (x) { return x.grp === 'game'; }).map(row).join('')
+    + '<div class="row" style="margin-top:14px"><button class="btn ghost sm" data-act="powerReset">Back to the default formula</button> <button class="btn ghost sm" data-act="powerAllSeries">Apply to all series</button></div></section>';
+};
+document.addEventListener('input', function (e) { var t = e.target; if (t && t.dataset && t.dataset.pw && t.type === 'range') { var o = t.nextElementSibling; if (o && o.tagName === 'OUTPUT') o.textContent = t.value + (/^(real|rampFrom|rampTo|calm)$/.test(t.dataset.pw) ? '%' : ''); } });
+document.addEventListener('change', function (e) {
+  var t = e.target; if (!t || !t.dataset || !t.dataset.pw) return;
+  var S = J.S; S.power = S.power || {}; var cfg = S.power.cfg = S.power.cfg || J.powerCfg(S); cfg.w = cfg.w || {}; var k = t.dataset.pw;
+  if (k.indexOf('w.') === 0) cfg.w[k.slice(2)] = +t.value; else cfg[k] = (t.type === 'range' || t.type === 'number') ? +t.value : t.value;
+  J.save();
+});
+J.acts.powerReset = function () { J.S.power = {}; J.save(); J.toast('Back to the default formula.'); };
+J.acts.powerAllSeries = async function () {
+  var cfg = JSON.parse(JSON.stringify(J.powerCfg(J.S))), n = 0;
+  var ks = Object.keys(J.leagues || {}); for (var i = 0; i < ks.length; i++) { var L = J.leagues[ks[i]]; if (!L || L.archived || L === J.S) continue; L.power = { cfg: JSON.parse(JSON.stringify(cfg)) }; await J.store.saveLeague(L); n++; }
+  J.toast('Formula copied to ' + n + ' other series.');
+};
+
 /* ---------- Logos and Numbers: the commissioner's own images for car numbers and series logos ---------- */
 // turn an image file into a small, clean picture: optional see-through background (flood fill from the edges, so a
 // white number on a white background keeps its white fill), trimmed edges, scaled to a set height
@@ -567,39 +618,69 @@ J.artImage = function (file, o) {
   o = o || {};
   return new Promise(function (resolve, reject) {
     var url = URL.createObjectURL(file), img = new Image();
-    img.onload = function () {
-      try {
-        var w = img.naturalWidth || 300, h = img.naturalHeight || 150, k = Math.min(1, 1400 / Math.max(w, h));
-        w = Math.max(1, Math.round(w * k)); h = Math.max(1, Math.round(h * k));
-        var c = document.createElement('canvas'); c.width = w; c.height = h; var x = c.getContext('2d'); x.drawImage(img, 0, 0, w, h);
-        var id = x.getImageData(0, 0, w, h), p = id.data, cut = false;
-        if (o.bg === 'white' || o.bg === 'black') {
-          var T = o.bg === 'white' ? 255 : 0, dist = function (i) { return Math.max(Math.abs(p[i] - T), Math.abs(p[i + 1] - T), Math.abs(p[i + 2] - T)); };
-          var seen = new Uint8Array(w * h), q = [], push = function (n) { if (seen[n]) return; var i = n * 4; if (p[i + 3] < 12 || dist(i) <= 46) { seen[n] = 1; q.push(n); } };
-          for (var a = 0; a < w; a++) { push(a); push((h - 1) * w + a); }
-          for (var b = 0; b < h; b++) { push(b * w); push(b * w + w - 1); }
-          while (q.length) { var n = q.pop(), cx = n % w, cy = (n - cx) / w; p[n * 4 + 3] = 0; if (cx > 0) push(n - 1); if (cx < w - 1) push(n + 1); if (cy > 0) push(n - w); if (cy < h - 1) push(n + w); }
-          for (var m = 0; m < w * h; m++) { // soften the edge next to what was removed
-            if (seen[m]) continue; var mx = m % w, my = (m - mx) / w, near = (mx > 0 && seen[m - 1]) || (mx < w - 1 && seen[m + 1]) || (my > 0 && seen[m - w]) || (my < h - 1 && seen[m + w]);
-            if (near) { var d = dist(m * 4); if (d < 110) p[m * 4 + 3] = Math.round(p[m * 4 + 3] * Math.max(0.15, d / 110)); }
-          }
-          cut = true;
-        }
-        var x0 = w, y0 = h, x1 = -1, y1 = -1, see = false;
-        for (var yy = 0; yy < h; yy++) for (var xx = 0; xx < w; xx++) { var al = p[(yy * w + xx) * 4 + 3]; if (al < 255) see = true; if (al > 14) { if (xx < x0) x0 = xx; if (xx > x1) x1 = xx; if (yy < y0) y0 = yy; if (yy > y1) y1 = yy; } }
-        if (x1 < 0) { reject(new Error('the picture came out empty (try "Keep the background")')); return; }
-        x.putImageData(id, 0, 0);
-        var pad = 2, sx = Math.max(0, x0 - pad), sy = Math.max(0, y0 - pad), sw = Math.min(w, x1 + pad + 1) - sx, sh = Math.min(h, y1 + pad + 1) - sy;
-        if (!see && !cut) { sx = 0; sy = 0; sw = w; sh = h; }
-        var H = o.height || 140, s = Math.min(H / sh, (o.maxW || H * 3.2) / sw, 2), out = document.createElement('canvas');
-        out.width = Math.max(1, Math.round(sw * s)); out.height = Math.max(1, Math.round(sh * s));
-        var ox = out.getContext('2d'); ox.imageSmoothingQuality = 'high'; ox.drawImage(c, sx, sy, sw, sh, 0, 0, out.width, out.height);
-        resolve(see || cut ? out.toDataURL('image/png') : out.toDataURL('image/jpeg', 0.92));
-      } catch (e) { reject(e); } finally { URL.revokeObjectURL(url); }
-    };
+    img.onload = function () { try { resolve(J.artProcess(img, o)); } catch (e) { reject(e); } finally { URL.revokeObjectURL(url); } };
     img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('this file is not a picture the app can read')); };
     img.src = url;
   });
+};
+// same cleanup for a picture that is already stored (data URL): used to fix pictures imported with a background
+J.artFromData = function (src, o) {
+  return new Promise(function (resolve, reject) {
+    var img = new Image();
+    img.onload = function () { try { resolve(J.artProcess(img, o || {})); } catch (e) { reject(e); } };
+    img.onerror = function () { reject(new Error('unreadable picture')); };
+    img.src = src;
+  });
+};
+// o.bg: 'auto' (default: find the background color from the picture's edges), 'white', 'black', 'keep'
+J.artProcess = function (img, o) {
+  var w = img.naturalWidth || 300, h = img.naturalHeight || 150, k = Math.min(1, 1400 / Math.max(w, h));
+  w = Math.max(1, Math.round(w * k)); h = Math.max(1, Math.round(h * k));
+  var c = document.createElement('canvas'); c.width = w; c.height = h; var x = c.getContext('2d'); x.drawImage(img, 0, 0, w, h);
+  var id = x.getImageData(0, 0, w, h), p = id.data, cut = false, mode = o.bg || 'auto';
+  if (mode !== 'keep') {
+    var T = null;
+    if (mode === 'white') T = [255, 255, 255]; else if (mode === 'black') T = [0, 0, 0];
+    else { // auto: the most common color along the edges (ignoring pixels that are already see-through)
+      var bins = {}, total = 0, edge = function (n) { var i = n * 4; if (p[i + 3] < 12) return; total++; var key = (p[i] >> 5) + ',' + (p[i + 1] >> 5) + ',' + (p[i + 2] >> 5), e = bins[key] = bins[key] || { n: 0, r: 0, g: 0, b: 0 }; e.n++; e.r += p[i]; e.g += p[i + 1]; e.b += p[i + 2]; };
+      for (var a0 = 0; a0 < w; a0++) { edge(a0); edge((h - 1) * w + a0); }
+      for (var b0 = 0; b0 < h; b0++) { edge(b0 * w); edge(b0 * w + w - 1); }
+      var best = null; Object.keys(bins).forEach(function (key) { if (!best || bins[key].n > best.n) best = bins[key]; });
+      if (best && total && best.n / total >= 0.4) T = [Math.round(best.r / best.n), Math.round(best.g / best.n), Math.round(best.b / best.n)];
+    }
+    var dist = function (i) { return T ? Math.max(Math.abs(p[i] - T[0]), Math.abs(p[i + 1] - T[1]), Math.abs(p[i + 2] - T[2])) : 999; };
+    var seen = new Uint8Array(w * h), q = [], tol = 46, push = function (n) { if (seen[n]) return; var i = n * 4; if (p[i + 3] < 12 || dist(i) <= tol) { seen[n] = 1; q.push(n); } };
+    for (var a = 0; a < w; a++) { push(a); push((h - 1) * w + a); }
+    for (var b = 0; b < h; b++) { push(b * w); push(b * w + w - 1); }
+    while (q.length) { var n = q.pop(), cx = n % w, cy = (n - cx) / w; p[n * 4 + 3] = 0; if (cx > 0) push(n - 1); if (cx < w - 1) push(n + 1); if (cy > 0) push(n - w); if (cy < h - 1) push(n + w); }
+    for (var m = 0; m < w * h; m++) { // soften the edge next to what was removed
+      if (seen[m]) continue; var mx = m % w, my = (m - mx) / w, near = (mx > 0 && seen[m - 1]) || (mx < w - 1 && seen[m + 1]) || (my > 0 && seen[m - w]) || (my < h - 1 && seen[m + w]);
+      if (near && T) { var d = dist(m * 4); if (d < 110) p[m * 4 + 3] = Math.round(p[m * 4 + 3] * Math.max(0.15, d / 110)); }
+    }
+    cut = true;
+  }
+  var x0 = w, y0 = h, x1 = -1, y1 = -1, see = false;
+  for (var yy = 0; yy < h; yy++) for (var xx = 0; xx < w; xx++) { var al = p[(yy * w + xx) * 4 + 3]; if (al < 255) see = true; if (al > 14) { if (xx < x0) x0 = xx; if (xx > x1) x1 = xx; if (yy < y0) y0 = yy; if (yy > y1) y1 = yy; } }
+  if (x1 < 0) throw new Error('the picture came out empty (try "Keep the background")');
+  x.putImageData(id, 0, 0);
+  var pad = 2, sx = Math.max(0, x0 - pad), sy = Math.max(0, y0 - pad), sw = Math.min(w, x1 + pad + 1) - sx, sh = Math.min(h, y1 + pad + 1) - sy;
+  if (!see && !cut) { sx = 0; sy = 0; sw = w; sh = h; }
+  var H = o.height || 140, s = Math.min(H / sh, (o.maxW || H * 3.2) / sw, 2), out = document.createElement('canvas');
+  out.width = Math.max(1, Math.round(sw * s)); out.height = Math.max(1, Math.round(sh * s));
+  var ox = out.getContext('2d'); ox.imageSmoothingQuality = 'high'; ox.drawImage(c, sx, sy, sw, sh, 0, 0, out.width, out.height);
+  return see || cut ? out.toDataURL('image/png') : out.toDataURL('image/jpeg', 0.92);
+};
+// one-time (and on demand) cleanup of number and logo pictures that were saved with their background
+J.artCleanAll = async function (force) {
+  var fixed = 0;
+  var keys = Object.keys(J.leagues || {});
+  for (var i = 0; i < keys.length; i++) {
+    var L = J.leagues[keys[i]], A = L && L.art; if (!A || (A.clean === 1 && !force)) continue;
+    var nums = Object.keys(A.nums || {});
+    for (var j = 0; j < nums.length; j++) { try { A.nums[nums[j]] = await J.artFromData(A.nums[nums[j]], { bg: 'auto', height: 140 }); fixed++; } catch (e) { } }
+    A.clean = 1; if (L === J.S) { /* saved by caller */ }
+  }
+  return fixed;
 };
 // "24.png", "#9 Kyle.jpg", "car-00.webp" -> the car number
 J.artNumFromName = function (name) { var base = String(name || '').replace(/\.[a-z0-9]+$/i, ''), m = base.match(/(?:^|[^0-9])(\d{1,3})(?![0-9])/); return m ? m[1] : ''; };
@@ -611,10 +692,10 @@ function artNumbers(S) {
 }
 function seriesLeague(sid, make) { var L = null; Object.keys(J.leagues || {}).forEach(function (k) { var x = J.leagues[k]; if (x.series.id === sid && !x.archived) L = x; }); if (!L && make && J.SERIES[sid] && !J.leagues[sid]) { L = J.leagues[sid] = J.newLeague(sid, J.S ? J.S.league.name : ''); } return L; }
 J.routes.artwork = function (S) {
-  var nums = artNumbers(S), have = (S.art && S.art.nums) || {}, n0 = Object.keys(have).length, bg = J.ui.artBg || 'white';
+  var nums = artNumbers(S), have = (S.art && S.art.nums) || {}, n0 = Object.keys(have).length, bg = J.ui.artBg || 'auto';
   var out = J.phead('Logos and Numbers', 'Use your own pictures for car numbers and series logos. They replace the built-in ones everywhere: standings, results, driver and team pages, silly season, The Garage, the series tabs, and on the website after it publishes.');
   out += '<section class="panel"><h3>Car numbers: ' + esc(S.series.label) + '</h3><p class="sub">Each series keeps its own number pictures (the #1 truck and the #1 Cup car can look different). ' + J.plural(n0, 'number') + ' set so far.</p>'
-    + '<div class="row artopts"><label class="field" style="margin:0"><span>Background</span><select id="artBg" aria-label="Background">' + [['white', 'Remove a white background (best for JPEGs)'], ['black', 'Remove a black background'], ['keep', 'Keep the background as it is']].map(function (o) { return '<option value="' + o[0] + '"' + (bg === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label></div>'
+    + '<div class="row artopts"><label class="field" style="margin:0"><span>Background</span><select id="artBg" aria-label="Background">' + [['auto', 'Remove the background automatically (recommended)'], ['white', 'Remove a white background'], ['black', 'Remove a black background'], ['keep', 'Keep the background as it is']].map(function (o) { return '<option value="' + o[0] + '"' + (bg === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label></div>'
     + '<div class="drop" id="artDrop"><strong>Drop number pictures here</strong><p>JPEG, PNG, WebP or SVG. Name each file after its car number, like <b>24.jpg</b>, <b>#9.png</b> or <b>00-haas.png</b>, and drop as many as you want at once: each one goes to its number by itself. Empty edges are trimmed.</p><div class="row" style="justify-content:center"><button class="btn" data-act="artPick">Choose pictures</button></div><input type="file" id="artFiles" accept="image/*" multiple hidden></div>'
     + '<div id="artMsg" class="msg" hidden></div>'
     + '<div class="artgrid">' + nums.map(function (x) {
@@ -622,7 +703,7 @@ J.routes.artwork = function (S) {
       return '<div class="atile' + (on ? ' on' : '') + '"><div class="aprev">' + J.carTag(x.n, 'big') + '</div><b>#' + esc(x.n) + '</b><small>' + esc(x.who.slice(0, 3).join(', ') || 'no driver yet') + '</small><div class="abtns"><label class="btn ghost sm">' + (on ? 'Change' : 'Add picture') + '<input type="file" accept="image/*" data-artnum="' + esc(x.n) + '" hidden></label>' + (on ? '<button class="btn ghost sm" data-act="artDel" data-n="' + esc(x.n) + '" aria-label="Remove the picture for #' + esc(x.n) + '">Remove</button>' : '') + '</div></div>';
     }).join('')
     + '<div class="atile other"><div class="aprev"><span class="car big">#</span></div><b>Another number</b><input id="artOther" placeholder="e.g. 51" aria-label="Car number" inputmode="numeric"><div class="abtns"><label class="btn ghost sm">Add picture<input type="file" accept="image/*" data-artnum="" hidden></label></div></div></div>'
-    + (n0 ? '<div class="row"><button class="btn danger sm" data-act="artClear">Remove all ' + esc(S.series.label) + ' number pictures</button></div>' : '') + '</section>';
+    + (n0 ? '<div class="row"><button class="btn ghost sm" data-act="artClean">Clean up backgrounds on my pictures</button> <button class="btn danger sm" data-act="artClear">Remove all ' + esc(S.series.label) + ' number pictures</button></div>' : '') + '</section>';
   out += '<section class="panel"><h3>Series logos</h3><p class="sub">Shown on the series tabs at the top, on story pictures and on the website. A square picture with a see-through background (PNG) looks best on the dark header; the background setting above applies here too.</p><div class="slogos">' + J.SERIES_ORDER.map(function (sid) {
     var L = seriesLeague(sid), s = J.SERIES[sid] || { label: sid }, own = L && L.art && L.art.logo;
     return '<div class="slrow"><div class="slprev">' + J.seriesBadge(sid) + '</div><div><b>' + esc((L && L.series.label) || s.label) + '</b><small>' + (own ? 'Your picture' : 'Built-in badge') + '</small></div><div class="abtns"><label class="btn ghost sm">' + (own ? 'Change' : 'Use my picture') + '<input type="file" accept="image/*" data-artlogo="' + esc(sid) + '" hidden></label>' + (own ? '<button class="btn ghost sm" data-act="artLogoDel" data-id="' + esc(sid) + '">Back to built-in</button>' : '') + '</div></div>';
@@ -638,7 +719,7 @@ async function artAdd(files, forced) {
     var f = files[i], n = forced != null ? forced : J.artNumFromName(f.name);
     if (!/^image\//.test(f.type || '') && !/\.(jpe?g|png|webp|gif|svg|bmp)$/i.test(f.name)) { bad.push(f.name + ' (not a picture)'); continue; }
     if (!n) { skipped.push(f.name); continue; }
-    try { S.art.nums[n] = await J.artImage(f, { bg: J.ui.artBg || 'white', height: 140 }); done.push('#' + n); } catch (e) { bad.push(f.name + ' (' + e.message + ')'); }
+    try { S.art.nums[n] = await J.artImage(f, { bg: J.ui.artBg || 'auto', height: 140 }); S.art.clean = 1; done.push('#' + n); } catch (e) { bad.push(f.name + ' (' + e.message + ')'); }
   }
   if (done.length) J.save();
   var t = (done.length ? 'Added ' + J.plural(done.length, 'number picture') + ': ' + done.join(', ') + '.' : 'No pictures added.') + (skipped.length ? ' No car number in the file name of: ' + skipped.join(', ') + ' (rename them like 24.png, or use the button on a number).' : '') + (bad.length ? ' Could not use: ' + bad.join(', ') + '.' : '');
@@ -646,6 +727,10 @@ async function artAdd(files, forced) {
 }
 J.acts.artPick = function () { $('artFiles').click(); };
 J.acts.artDel = function (el) { var S = J.S; if (S.art && S.art.nums) delete S.art.nums[el.dataset.n]; J.save(); };
+J.acts.artClean = async function () {
+  J.toast('Cleaning up the pictures...');
+  var n = await J.artCleanAll(true); J.save(); J.toast(n ? 'Cleaned ' + J.plural(n, 'picture') + '. Only the cards are left.' : 'Nothing to clean.');
+};
 J.acts.artClear = function () { var S = J.S; if (!confirm('Remove all ' + S.series.label + ' number pictures? The built-in numbers come back.')) return; if (S.art) S.art.nums = {}; J.save(); };
 J.acts.artLogoDel = function (el) { var L = seriesLeague(el.dataset.id); if (!L || !L.art) return; delete L.art.logo; saveOther(L); };
 function saveOther(L) { L.updatedAt = Date.now(); if (L === J.S) { J.save(); return; } J.store.saveLeague(L).catch(function (e) { J.toast('Could not save: ' + e.message, true); }); if (J.publisher) J.publisher.schedule(); J.refresh(); }
@@ -665,7 +750,7 @@ document.addEventListener('change', function (e) {
     artAdd([t.files[0]], n); t.value = '';
   } else if (t.dataset.artlogo && t.files && t.files.length) {
     var L = seriesLeague(t.dataset.artlogo, true), f = t.files[0]; t.value = ''; if (!L) return;
-    J.artImage(f, { bg: J.ui.artBg || 'white', height: 200, maxW: 360 }).then(function (src) { L.art = L.art || {}; L.art.logo = src; saveOther(L); J.toast('New ' + L.series.label + ' logo.'); }, function (err) { artMsg('Could not use ' + f.name + ': ' + err.message, true); });
+    J.artImage(f, { bg: J.ui.artBg || 'auto', height: 200, maxW: 360 }).then(function (src) { L.art = L.art || {}; L.art.logo = src; saveOther(L); J.toast('New ' + L.series.label + ' logo.'); }, function (err) { artMsg('Could not use ' + f.name + ': ' + err.message, true); });
   }
 });
 })();

@@ -18,27 +18,87 @@ J.standingsInfo = function (sid, name) { var k = J.nameKey(name), list = J.STAND
 J.homeSeries = function (name) { var best = null; ['cup', 'xfinity', 'truck', 'arca'].forEach(function (s) { var x = J.standingsInfo(s, name); if (x && (!best || x.starts / x.runs > best.share)) best = { sid: s, share: x.starts / x.runs }; }); return best ? best.sid : ''; };
 // each move: driver, type, from series, to series, to team, to number, announced, unconfirmed
 J.MOVES_2027 = [["Jimmie Johnson","retirement","cup","","","","2026-05-15",1],["Corey Heim","promotion","cup","cup","23XI Racing","35","2026-05-30",0],["Denny Hamlin","retirement","cup","","","","2026-06-08",1],["Jesse Love","promotion","xfinity","cup","Wood Brothers Racing","21","2026-06-17",0],["Alex Bowman","retirement","cup","","","","2026-07-23",0],["Connor Zilisch","move","cup","cup","Hendrick Motorsports","48","2026-08-17",0],["Austin Hill","promotion","xfinity","cup","Richard Childress Racing","33","2026-08-24",0],["Lee Pulliam","promotion","xfinity","xfinity","Peterson Racing","87","2026-08-25",0],["Chandler Smith","promotion","truck","xfinity","Richard Childress Racing","21","2026-08-26",0],["Carson Brown","promotion","arca","xfinity","Richard Childress Racing","2","2026-08-26",0],["Carson Kvapil","move","xfinity","xfinity","JR Motorsports","8","2026-08-27",0],["Daniel Dye","promotion","xfinity","xfinity","Jordan Anderson Racing","32","2026-08-28",0],["Riley Herbst","move","cup","cup","Legacy Motor Club","84","2026-09-03",0],["Josh Berry","move","cup","cup","Legacy Motor Club","42","2026-09-08",0],["Sam Mayer","move","xfinity","xfinity","JR Motorsports","1","2026-09-22",0],["Brad Keselowski","move","cup","","","","2026-09-29",1],["Jake Garcia","move","truck","truck","Front Row Motorsports","38","2026-09-29",0],["Kasey Kahne","new","","truck","Spire Motorsports","77","2026-10-07",0],["Brennan Poole","move","xfinity","xfinity","Jordan Anderson Racing","unconfirmed","2026-10-16",1],["Sammy Smith","move","xfinity","truck","Tricon Garage","15","2026-10-23",1],["Dawson Sutton","move","truck","truck","Tricon Garage","5","2026-10-23",1],["Garrett Mitchell (Cleetus McFarland)","move","arca","arca","Richard Childress Racing","33","2026-10-28",0],["Ryan Preece","move","cup","cup","RFK Racing","6","2026-11-04",0],["John Hunter Nemechek","move","cup","xfinity","Haas Factory Team","41","2026-11-04",0],["Will Rodgers","move","xfinity","xfinity","Big Machine Racing","unconfirmed","2026-11-07",1]];
-J.rosterLookup = function (S) {
-  var list = J.ROSTERS[S.series.id]; if (!list) return null;
-  var map = {}, yr = J.seasonNum(S), cars = J.rosterCars(S);
+// real announcements that tell the sim who is staying: [name, signed through, announced]. From tests/research/rosters (README: 2027 retentions).
+J.REAL_RETAIN = {
+  cup: [["Ryan Blaney", 2027, "2026-06"], ["Joey Logano", 2027, "2026-06"], ["Austin Cindric", 2027, "2026-10-10"], ["Cole Custer", 2027, "2026-10"], ["Daniel Suárez", 2027, "2026-10-13"], ["Chris Buescher", 2028, "2026-06-16"], ["Noah Gragson", 2027, "2026-08"], ["A. J. Allmendinger", 2027, "2026-11-06"], ["Ty Dillon", 2027, "2026-11-06"]],
+  xfinity: [],
+  truck: [["Christian Eckes", 2027, "2026-11-03"], ["Daniel Hemric", 2027, "2026-11-03"]],
+  arca: []
+};
+// what the real world says about this driver for next season: staying (retain), moving or leaving (move), retiring (retire), or nothing yet
+J.realStatus = function (sid, name) {
+  var k = J.nameKey(name), out = null;
+  (J.REAL_RETAIN[sid] || []).some(function (m) { if (J.nameKey(m[0]) === k) { out = { kind: 'retain', through: m[1], date: m[2] }; return true; } });
+  if (out) return out;
+  J.MOVES_2027.some(function (m) { if (m[2] === sid && J.nameKey(m[0]) === k) { out = { kind: m[1] === 'retirement' ? 'retire' : 'move', to: m[3] ? ((J.SERIES[m[3]] || {}).label || m[3]) + (m[4] ? ' ' + m[4] : '') : '', date: m[6], unconf: !!m[7] }; return true; } });
+  return out;
+};
+// how the driver really did last: a 0..1 score from the real points standing (1 = champion, ~0 = bottom of the full-time field), scaled
+// by series when the driver really races in another one (a Truck star is rated lower in Cup, a Cup driver sent down is rated higher)
+var LADW = { arca: 0.6, truck: 0.72, xfinity: 0.85, cup: 1 };
+function ftCount(sid) { var list = J.STANDINGS_2026[sid] || [], runs = J.RUNS_2026[sid] || 1; return Math.max(8, list.filter(function (x) { return x[1] >= runs * 0.75; }).length); }
+J.realScore = function (sid, name) {
+  var info = J.standingsInfo(sid, name), n = ftCount(sid);
+  if (info) return { s: Math.max(0.02, Math.min(1, 1 - (info.rank - 1) / (n - 1))), rank: info.rank, of: n, sid: sid, starts: info.starts };
+  var hs = J.homeSeries(name); if (!hs || hs === sid) return null;
+  var hi = J.standingsInfo(hs, name), hn = ftCount(hs), base = Math.max(0.02, Math.min(1, 1 - (hi.rank - 1) / (hn - 1)));
+  return { s: Math.max(0.02, Math.min(1, base * (LADW[hs] || 1) / (LADW[sid] || 1))), rank: hi.rank, of: hn, sid: hs, starts: hi.starts };
+};
+J.rosterLookup = function (S, o) {
+  var sid = (o && o.sid) || S.series.id, list = J.ROSTERS[sid]; if (!list) return null;
+  var map = {}, yr = (o && o.yr) || J.seasonNum(S), cars = J.rosterCars(S, o);
   list.filter(function (r) { return !/\(|rotating/i.test(r[0]); }).slice().sort(function (a, b) { return b[6] - a[6]; }).forEach(function (r) {
     var k = J.nameKey(r[0]); if (map[k]) return;
     var car = cars[r[2] + '#' + r[1]], shared = car ? car.drivers.filter(function (n) { return J.nameKey(n) !== k; }) : [];
     map[k] = { team: r[2], number: r[1], base: r[3], color: r[4], mfr: r[5], fullTime: !!r[6], shared: shared };
   });
-  (J.STANDINGS_2026[S.series.id] || []).forEach(function (r) {
-    var k = J.nameKey(r[0]), info = J.standingsInfo(S.series.id, r[0]);
+  (J.STANDINGS_2026[sid] || []).forEach(function (r) {
+    var k = J.nameKey(r[0]), info = J.standingsInfo(sid, r[0]);
     if (map[k]) map[k].fullTime = info.fullTime; else map[k] = { team: '', number: '', base: '', color: '', mfr: '', fullTime: info.fullTime, shared: [], standingsOnly: true };
     map[k].starts = info.starts;
   });
-  if (yr >= 2027) J.MOVES_2027.forEach(function (m) { if (m[3] === S.series.id && m[4]) { var old = null; Object.keys(J.ROSTERS).some(function (s) { return J.ROSTERS[s].some(function (r) { if (r[2] === m[4]) { old = r; return true; } }); }); map[J.nameKey(m[0])] = { team: m[4], number: m[5], base: old ? old[3] : '', color: old ? old[4] : '#888', mfr: old ? old[5] : '', fullTime: true, shared: [] }; } });
+  if (yr >= 2027) J.MOVES_2027.forEach(function (m) { if (m[3] === sid && m[4]) { var old = null; Object.keys(J.ROSTERS).some(function (s) { return J.ROSTERS[s].some(function (r) { if (r[2] === m[4]) { old = r; return true; } }); }); map[J.nameKey(m[0])] = { team: m[4], number: m[5], base: old ? old[3] : '', color: old ? old[4] : '#888', mfr: old ? old[5] : '', fullTime: true, shared: [] }; } });
   var fn = function (name) { return map[J.nameKey(name)] || null; };
   fn.cars = cars;
   return fn;
 };
+// Bring in a real roster: every driver in the real lineup (including everyone who shares a car) becomes a contract on the right team
+// and number, part-timers flagged. year 2027 also applies the real announced moves for that series. Drivers the commissioner set by
+// hand are left alone unless over is true.
+J.rosterImport = function (S, sid, year, o) {
+  o = o || {};
+  var look = J.rosterLookup(S, { sid: sid, yr: year }); if (!look) return null;
+  S.teams = S.teams || {}; S.contracts = S.contracts || {};
+  var yr = J.seasonNum(S), added = 0, updated = 0, shared = 0, loose = {}, starts = {};
+  Object.keys(S.contracts).forEach(function (k) { loose[J.nameKey(S.contracts[k].name || k)] = k; });
+  J.roster(S).forEach(function (d) { loose[J.nameKey(d.name)] = loose[J.nameKey(d.name)] || d.key; });
+  S.races.forEach(function (rc) { rc.rows.forEach(function (x) { var k = J.driverKey(x.driver); starts[k] = (starts[k] || 0) + 1; }); });
+  var inLeague = {}; J.roster(S).forEach(function (d) { inLeague[d.key] = 1; });
+  var team = function (name, info) { var tid = J.slug(name); if (!S.teams[tid]) S.teams[tid] = { id: tid, name: name, color: info.color || '#888', base: info.base || '', mfr: info.mfr || '' }; return tid; };
+  var seen = {};
+  (J.ROSTERS[sid] || []).forEach(function (r) {
+    if (/\(|rotating/i.test(r[0])) return; var nk = J.nameKey(r[0]); if (seen[nk]) return; seen[nk] = 1;
+    var info = look(r[0]); if (!info || info.standingsOnly || !info.team) return;
+    if (o.fullOnly && !info.fullTime) return;
+    var key = loose[nk] || J.driverKey(r[0]), c = S.contracts[key], tid = team(info.team, info), ran = S.races.length >= 3 && (starts[key] || 0) >= S.races.length * 0.8, pt = ran ? false : !info.fullTime;
+    if (c) {
+      if (c.auto === false && !o.over) return;
+      c.team = tid; c.car = info.number || c.car; if (!c.ptSet) c.pt = pt; c.released = false; c.imported = true; updated++;
+    } else {
+      S.contracts[key] = { name: r[0], team: tid, through: J.autoThrough(S, key, info.team, null), car: info.number, base: 52 + Math.floor(J.rng('ri' + key)() * 26), auto: true, pt: pt, extra: pt && !inLeague[key], imported: true };
+      added++; if (pt && info.shared && info.shared.length) shared++;
+    }
+  });
+  if (year >= 2027) J.MOVES_2027.forEach(function (m) {
+    var k = loose[J.nameKey(m[0])]; if (!k) return; var c = S.contracts[k]; if (!c) return;
+    if (m[2] === sid && !m[3]) { c.released = true; c.retired = true; return; }
+    if (m[3] === sid && m[4]) { var tr = null; (J.ROSTERS[sid] || J.ROSTERS.cup).some(function (x) { if (x[2] === m[4]) { tr = x; return true; } }); c.team = team(m[4], tr ? { color: tr[4], base: tr[3], mfr: tr[5] } : {}); if (/^\d+$/.test(m[5])) c.car = m[5]; c.pt = false; c.through = Math.max(c.through || 0, 2028); }
+  });
+  return { added: added, updated: updated, shared: shared, total: Object.keys(S.contracts).length };
+};
 // every real car in this series: "Team#number" -> { team, number, drivers: [names], fullTime: one driver runs it all year }
-J.rosterCars = function (S) {
-  var out = {}; (J.ROSTERS[S.series.id] || []).forEach(function (r) { if (/\(|rotating/i.test(r[0])) return; var k = r[2] + '#' + r[1], c = out[k] = out[k] || { team: r[2], number: r[1], base: r[3], color: r[4], mfr: r[5], drivers: [], fullTime: false }; c.drivers.push(r[0]); if (r[6]) { c.fullTime = true; (c.ftNames = c.ftNames || []).push(r[0]); } });
+J.rosterCars = function (S, o) {
+  var out = {}; (J.ROSTERS[(o && o.sid) || S.series.id] || []).forEach(function (r) { if (/\(|rotating/i.test(r[0])) return; var k = r[2] + '#' + r[1], c = out[k] = out[k] || { team: r[2], number: r[1], base: r[3], color: r[4], mfr: r[5], drivers: [], fullTime: false }; c.drivers.push(r[0]); if (r[6]) { c.fullTime = true; (c.ftNames = c.ftNames || []).push(r[0]); } });
   return out;
 };
 })();

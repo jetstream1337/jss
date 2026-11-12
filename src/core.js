@@ -188,6 +188,8 @@ J.nextSeason = function (prev, o) {
   if (prev.points) L.points = JSON.parse(JSON.stringify(prev.points));
   if (prev.outletNames) L.outletNames = JSON.parse(JSON.stringify(prev.outletNames));
   if (prev.art) L.art = JSON.parse(JSON.stringify(prev.art));
+  if (prev.power && prev.power.cfg) L.power = { cfg: JSON.parse(JSON.stringify(prev.power.cfg)) };
+  if (prev.oddsGate) L.oddsGate = JSON.parse(JSON.stringify(prev.oddsGate));
   L.fans = prev.fans; L.rep = prev.rep; L.teams = JSON.parse(JSON.stringify(prev.teams || {})); L.contracts = JSON.parse(JSON.stringify(prev.contracts || {}));
   L.moves = (prev.moves || []).filter(function (m) { return m.status === 'approved'; }).map(function (m) { return JSON.parse(JSON.stringify(m)); });
   var ny = parseInt(L.season, 10);
@@ -440,6 +442,17 @@ J.roster = function (S) {
 J.slug = function (s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'team'; };
 J.TEAM_COLORS = ['#e3202c', '#2f6fff', '#ffc20e', '#22c55e', '#a855f7', '#f97316', '#06b6d4', '#ec4899', '#94a3b8', '#14b8a6', '#eab308', '#8b5cf6'];
 J.seasonNum = function (S) { return parseInt(J.seasonYear(S), 10) || new Date().getFullYear(); };
+// how long a driver is signed for when nobody typed it in: real announcements first, then team size (big teams sign longer),
+// and drivers the real world has leaving are in their final year. Only about one in eight small-team drivers is in a contract year.
+var BIG_TEAMS = /hendrick|penske|gibbs|trackhouse|23xi|childress|rfk|roush|jr motorsports|spire|front row|tricon|thorsport|kaulig|wood brothers|legacy|haas|mcanally/i;
+J.autoThrough = autoThrough;
+function autoThrough(S, key, tname, real) {
+  var yr = J.seasonNum(S), rand = J.rng('ct2' + S.series.id + key);
+  if (real && real.kind === 'retain') return Math.max(yr + 1, real.through || yr + 1);
+  if (real && (real.kind === 'move' || real.kind === 'retire')) return yr;
+  var t = BIG_TEAMS.test(tname || '') ? [1, 2, 2, 2, 3, 3, 3, 4] : [0, 1, 1, 1, 2, 2, 2, 3];
+  return yr + t[Math.floor(rand() * 8)];
+}
 J.ensureContracts = function (S, lookup) {
   S.teams = S.teams || {}; S.contracts = S.contracts || {};
   var yr = J.seasonNum(S), changed = 0, ds = J.roster(S), lastRow = {};
@@ -466,7 +479,7 @@ J.ensureContracts = function (S, lookup) {
     var real = realCar(lookup, d.name, d.car, known, rowTeam), tname = real ? real.team : (known && known.team) || rowTeam || '';
     var tid = addTeam(tname, real ? { color: real.color, base: real.base, mfr: real.mfr } : known);
     var pt = everyRace(d.key) ? false : ptFor(S, lookup, real, known, d.name, d.car);
-    S.contracts[d.key] = { name: d.name, team: tid, through: yr + [0, 0, 1, 1, 1, 2, 2, 3][Math.floor(rand() * 8)], car: real ? real.number : (known && known.number) || d.car || '', base: 52 + Math.floor(rand() * 26), auto: true, pt: pt };
+    S.contracts[d.key] = { name: d.name, team: tid, through: yr + [0, 1, 1, 1, 2, 2, 2, 3][Math.floor(rand() * 8)], car: real ? real.number : (known && known.number) || d.car || '', base: 52 + Math.floor(rand() * 26), auto: true, pt: pt };
     changed++;
   });
   // real cars run by several drivers: bring in everyone who shares it, as part-timers on that team
@@ -476,6 +489,20 @@ J.ensureContracts = function (S, lookup) {
     car.drivers.forEach(function (n) { var nk = J.driverKey(n); if (S.contracts[nk]) return; var rand = J.rng('contract' + S.series.id + nk); var ftTaken = Object.keys(S.contracts).some(function (q) { var x = S.contracts[q]; return x.team === c.team && String(x.car) === String(c.car) && !x.pt; });
       S.contracts[nk] = { name: n, team: c.team, through: yr + Math.floor(rand() * 2), car: c.car, base: 52 + Math.floor(rand() * 26), auto: true, pt: ftTaken || !isFTDriver(car, n), extra: true }; changed++; });
   });
+  // real-world signals: who the real teams have announced they are keeping, who is leaving, and which series each driver really races in.
+  // These feed the silly season odds (a driver announced to return is not a move candidate; a driver the real world has leaving is).
+  var withReal = !!(lookup && J.realStatus);
+  Object.keys(S.contracts).forEach(function (k) {
+    var c = S.contracts[k]; if (!c.name) return;
+    if (withReal) {
+      var rs = yr <= 2026 ? J.realStatus(S.series.id, c.name) : null;
+      c.real = rs ? { kind: rs.kind, through: rs.through || 0, to: rs.to || '', date: rs.date || '', unconf: !!rs.unconf } : null;
+      if (J.homeSeries) { var hs = J.homeSeries(c.name); if (hs) c.home = hs; }
+      if (J.realScore) c.rl = J.realScore(S.series.id, c.name);
+    }
+    if ((S.ctVer || 0) < 2 && (withReal || !J.realStatus) && c.auto && !c.callup && !c.released) { c.through = autoThrough(S, k, c.team && S.teams[c.team] ? S.teams[c.team].name : '', c.real); changed++; }
+  });
+  if ((S.ctVer || 0) < 2 && (withReal || !J.realStatus)) S.ctVer = 2;
   return changed;
 };
 // which real car is this? the driver's own car with this number, else the only real car with this number
@@ -577,20 +604,29 @@ J.STAGE_WEIGHT = { whisper: 0.05, rumor: 0.12, talks: 0.25, close: 0.45, confirm
 J.sillyPredictions = function (S, cross, quick) {
   var ds = J.standings(S), yr = J.seasonNum(S), byKey = {}; ds.forEach(function (d, i) { byKey[d.key] = { d: d, rank: i + 1 }; }); J.partTimers(S).forEach(function (d) { byKey[d.key] = { d: d, rank: null }; });
   var out = [];
+  var ph = J.sillyPhase(S), scale = ({ preseason: 0.12, early: 0.3, spring: 0.65, summer: 1, playoffs: 0.9, finale: 0.5, offseason: 1 })[ph.id];
+  if (scale == null) scale = 0.5;
   Object.keys(S.contracts || {}).forEach(function (k) {
-    var ci = J.contractInfo(S, k), h = J.happiness(S, k), info = byKey[k]; if (!ci) return;
-    var p = ci.status === 'free' ? 0.7 : ci.status === 'expiring' ? 0.4 : ci.status === 'short' ? 0.12 : 0.04, why = [];
-    if (J.isPT(S, k)) { p += 0.12; why.push('part-time now, looking for a full-time ride'); if (info && info.d.starts >= 2 && info.d.fin / info.d.starts < 12) { p += 0.15; why.push(info.d.fin / info.d.starts < 8 ? 'running up front in limited starts' : 'solid in limited starts'); } }
-    if (ci.status === 'expiring') why.push('contract runs out after ' + ci.through);
-    if (h && h.score < 50) { p += (50 - h.score) / 100; why.push(h.label.toLowerCase() + ' with the team'); }
+    var ci = J.contractInfo(S, k), h = J.happiness(S, k), info = byKey[k], c = S.contracts[k]; if (!ci) return;
+    // a part-timer who really races for points in another series (Zilisch running a few Trucks) is not a ride candidate here, and nobody
+    // shown as a call-up is either; the Silly Season page is about the people whose seat is actually in play
+    if (J.isPT(S, k) && (c.callup || (c.home && c.home !== S.series.id))) return;
+    var ev = info && info.d.starts ? Math.min(1, info.d.starts / 6) : 0, real = c.real || null;
+    var p0 = ({ free: 0.5, expiring: 0.14, short: 0.04, long: 0.015 })[ci.status] || 0.02, why = [];
+    var p = ci.status === 'free' ? p0 * Math.max(scale, 0.7) : p0 * scale;
+    if (real && real.kind === 'retain') { p = Math.min(p, 0.03); why.push('announced to return in ' + real.through); }
+    else if (real && (real.kind === 'move' || real.kind === 'retire')) { var reveal = Math.max(0, Math.min(1, (scale - 0.2) / 0.8)); p += (real.unconf ? 0.2 : 0.4) * reveal; if (reveal > 0.3) why.push(real.kind === 'retire' ? 'retirement is a real possibility' : 'a real-world move is expected' + (real.to && reveal > 0.6 ? ' (' + real.to + ')' : '')); }
+    if (J.isPT(S, k)) { p += 0.03 * scale; why.push('part-time, so full-time offers are possible'); if (info && info.d.starts >= 3 && info.d.fin / info.d.starts < 12) { p += 0.1 * scale * ev; why.push(info.d.fin / info.d.starts < 8 ? 'running up front in limited starts' : 'solid in limited starts'); } }
+    if (ci.status === 'expiring' && ph.id !== 'preseason') why.push('contract runs out after ' + ci.through);
+    if (h && h.score < 50 && ev >= 0.5) { p += (50 - h.score) / 100 * ev * scale; why.push(h.label.toLowerCase() + ' with the team'); }
     var sl = (S.silly || []).filter(function (x) { return (x.drivers || []).some(function (n) { return J.driverKey(n) === k; }); }).pop();
     if (sl) { p += J.STAGE_WEIGHT[sl.stage] || 0; why.push('in the rumor mill: ' + J.SILLY_LABEL[sl.stage].toLowerCase()); }
     var team = ci.team, teamRank = team ? (function () { var ks = J.teamDrivers(S, team.id), best = 99; ks.forEach(function (x) { if (byKey[x] && byKey[x].rank < best && x !== k) best = byKey[x].rank; }); return best; })() : 99;
-    if (info && info.rank <= 8 && teamRank > 15) { p += 0.1; why.push('a top driver on a smaller team'); }
+    if (info && info.d.starts >= 6 && info.rank <= 8 && teamRank > 15) { p += 0.1 * scale; why.push('a top driver on a smaller team'); }
     var mv = (S.moves || []).filter(function (m) { return m.key === k && (m.status === 'approved' || m.status === 'done') && m.kind !== 'renew'; }).pop();
     if (mv) { p = 1; why.unshift(J.moveLine ? J.moveLine(mv, S) : 'deal done'); }
     else if ((S.moves || []).some(function (m) { return m.key === k && m.status === 'approved' && m.kind === 'renew'; })) { p = 0.02; why.unshift('re-signed'); }
-    p = Math.max(0.02, Math.min(sl && sl.stage === 'confirmed' || mv ? 1 : 0.95, p));
+    p = Math.max(0.01, Math.min(sl && sl.stage === 'confirmed' || mv ? 1 : 0.9, p));
     var avg = info && info.d.starts ? info.d.fin / info.d.starts : null;
     out.push({ owner: J.isOwnerDriver(S, k), avg: avg, wins: info ? info.d.wins : 0, starts: info ? info.d.starts : 0, move: mv || null, pt: J.isPT(S, k), key: k, name: info ? info.d.name : (S.contracts[k].name || k), car: (S.contracts[k].car || (info && info.d.car) || ''), team: team, p: p, why: why, contract: ci, happy: h, rank: info ? info.rank : null, storyline: sl || null });
   });
@@ -600,6 +636,7 @@ J.sillyPredictions = function (S, cross, quick) {
   var here = J.openSeats(S, out), field = Math.max(20, ds.length), mid = field * 0.5;
   out.forEach(function (x) {
     if (x.move) { x.spots = [{ label: J.moveDest ? J.moveDest(x.move, S) : 'done deal', pct: 100, sid: x.move.to }]; x.dest = [x.spots[0].label]; return; }
+    if (x.p < 0.15 || ph.id === 'preseason') { x.spots = []; x.dest = []; return; } // no landing-spot lists for people who are not really moving
     var avg = x.avg != null ? x.avg : mid, strong = Math.max(0, Math.min(1, (field * 0.45 - avg) / (field * 0.35))) + (x.rank && x.rank <= 3 ? 0.4 : 0) + Math.min(0.6, (x.wins || 0) * 0.2);
     if (x.pt && x.avg != null && x.avg < 10) strong += 0.3;
     var weak = Math.max(0, Math.min(1, (avg - field * 0.6) / (field * 0.3)));
@@ -736,8 +773,22 @@ function chaseSet(pts, wins, cfg) {
 }
 function cacheKey(S, tag) { var last = S.races[S.races.length - 1], sig = J.hash(Object.keys(S.contracts || {}).filter(function (k) { return S.contracts[k].pt; }).join(',')) % 9973; S.races.forEach(function (r) { r.rows.forEach(function (x) { sig = (sig * 31 + (x.points || 0) * 7 + x.position + J.hash(x.driver) % 997) % 2147483647; }); }); return tag + '|' + sig + '|' + S.races.map(function (r) { return r.sid; }).join(',') + '|' + S.schedule.map(function (r) { return r.id; }).join(',') + '|' + (last ? last.id : '') + '|' + S.schedule.length + '|' + S.chase.size + '|' + S.chase.regularRaces + '|' + S.chase.winLocks + '|' + S.schedule.map(function (r) { return r.type; }).join(''); }
 var CACHE = {};
+/* ---------- when odds are allowed to exist ----------
+   Real media do not publish title odds after two races. Chase odds start once there is a small sample (default race 5), title
+   odds once there is a decent one (default race 10, or halfway on a short schedule), and until the sample is big the numbers are
+   pulled toward "everyone is equal" (conf 0 = equal odds, 1 = the raw simulation). S.oddsGate = { chase, title } overrides. */
+J.oddsGate = function (S) {
+  var total = Math.max(S.schedule.length, S.races.length) || 1, played = S.races.length, g = S.oddsGate || {};
+  var chaseFrom = g.chase != null ? Math.max(0, +g.chase) : Math.min(5, Math.ceil(total / 4));
+  var titleFrom = g.title != null ? Math.max(0, +g.title) : Math.min(10, Math.ceil(total / 2));
+  var cut = Math.min(S.chase.regularRaces, total), decided = played >= cut;
+  var conf = decided ? 1 : Math.max(0, Math.min(1, (played - 2) / Math.max(6, cut * 0.65 - 2)));
+  return { played: played, total: total, chaseFrom: chaseFrom, titleFrom: titleFrom, conf: conf,
+    chase: decided || played >= titleFrom ? 'full' : played >= chaseFrom ? 'early' : 'none',
+    title: played >= titleFrom + 4 || decided ? 'full' : played >= titleFrom ? 'early' : 'none' };
+};
 J.simulateSeason = function (S, N) {
-  var key = cacheKey(S, 'season'); if (CACHE[key]) return CACHE[key];
+  var key = cacheKey(S, 'season') + '|' + JSON.stringify(S.oddsGate || ''); if (CACHE[key]) return CACHE[key];
   N = N || 2500;
   var D = J.ratings(S), arr = Object.keys(D).map(function (k) { return D[k]; }).filter(function (d) { return !J.isPT(S, d.key); }); // part-timers can't win the title
   if (!arr.length) return null;
@@ -763,17 +814,18 @@ J.simulateSeason = function (S, N) {
     for (var i2 = 0; i2 < n; i2++) { if (cs[i2]) acc[i2].chase++; acc[i2].pts += pts[i2]; acc[i2].wins += wins[i2]; }
     acc[order[0]].champ++;
   }
+  var gate = J.oddsGate(S), conf = cutAt <= played ? 1 : gate.conf, priorChase = Math.min(1, S.chase.size / n), priorChamp = 1 / n;
   var out = arr.map(function (d, i) {
     var a = acc[i], r = a.ranks.slice().sort(function (x, y) { return x - y; }), ag0 = ag[d.key] || { fin: 0, starts: 0, pts: 0, wins: 0 };
     var nFin = ag0.starts + (a.finN / N);
     return {
       key: d.key, name: d.name, car: d.car, curPts: ag0.pts || 0, curWins: ag0.wins || 0, starts: ag0.starts || 0,
-      chaseOdds: a.chase / N, projPts: a.pts / N, projWins: a.wins / N, champOdds: a.champ / N,
+      chaseOdds: priorChase + conf * (a.chase / N - priorChase), rawChase: a.chase / N, projPts: a.pts / N, projWins: a.wins / N, champOdds: priorChamp + conf * (a.champ / N - priorChamp), rawChamp: a.champ / N,
       rankMed: r[Math.floor(N / 2)], rankLo: r[Math.floor(N * 0.1)], rankHi: r[Math.floor(N * 0.9)],
       projAvg: nFin ? ((ag0.fin || 0) + a.fin / N) / nFin : 0, skill: d.skill, overall: d.overall, byType: d.byType
     };
   });
-  var res = { N: N, drivers: out, cutAt: cutAt, played: played, remaining: remaining.length, size: S.chase.size, decided: cutAt <= played };
+  var res = { N: N, drivers: out, cutAt: cutAt, played: played, remaining: remaining.length, size: S.chase.size, decided: cutAt <= played, gate: gate };
   CACHE[key] = res; return res;
 };
 /* how much a session tells us about race pace, by track type (qualifying matters most where passing is hard) */
@@ -945,6 +997,98 @@ J.autoRecap = function (S, race) {
 };
 
 /* ---------- what actually gets published ---------- */
+
+/* ---------- Power Rankings ----------
+   Like a weekly AP poll: before the season it is the drivers' REAL-life form (last real points finish, team strength); once races
+   are run the league's own results mix in. Part-timers are never ranked. Every number comes from a formula the commissioner can
+   edit (S.power.cfg); each week is recomputed from the data, so changing the formula rewrites the whole history consistently.
+   Weekly stability: each week's score is blended with last week's so one race cannot send anyone flying. */
+J.POWER_STATS = [
+  { id: 'rlRank', grp: 'real', label: 'Real points finish', hint: 'Where the driver really finished in the last real standings', w: 6 },
+  { id: 'rlTeam', grp: 'real', label: 'Real team strength', hint: 'How strong the real team is (its drivers\' real finishes)', w: 3 },
+  { id: 'avg', grp: 'game', label: 'Average finish', hint: 'Average finishing position in this league', w: 6 },
+  { id: 'wins', grp: 'game', label: 'Wins', hint: 'Wins per start', w: 5 },
+  { id: 'top5', grp: 'game', label: 'Top 5 rate', hint: 'Share of starts that ended in the top 5', w: 3 },
+  { id: 'top10', grp: 'game', label: 'Top 10 rate', hint: 'Share of starts that ended in the top 10', w: 3 },
+  { id: 'pts', grp: 'game', label: 'Points standing', hint: 'Position in the points', w: 5 },
+  { id: 'led', grp: 'game', label: 'Laps led', hint: 'Laps led per start', w: 2 },
+  { id: 'poles', grp: 'game', label: 'Poles', hint: 'Poles per start', w: 1 },
+  { id: 'dnf', grp: 'game', label: 'Staying out of trouble', hint: 'Fewer DNFs is better', w: 2 },
+  { id: 'form', grp: 'game', label: 'Recent form', hint: 'Average finish over the last 5 races', w: 3 }
+];
+J.POWER_DEFAULT = function () {
+  var w = {}; J.POWER_STATS.forEach(function (x) { w[x.id] = x.w; });
+  return { w: w, mode: 'blend', real: 60, rampFrom: 90, rampTo: 40, rampRaces: 16, calm: 35, shrink: 3 };
+};
+J.powerCfg = function (S) {
+  var d = J.POWER_DEFAULT(), c = (S.power && S.power.cfg) || {}, out = { w: {} };
+  Object.keys(d).forEach(function (k) { if (k !== 'w') out[k] = c[k] != null ? c[k] : d[k]; });
+  J.POWER_STATS.forEach(function (x) { out.w[x.id] = c.w && c.w[x.id] != null ? Math.max(0, +c.w[x.id]) : d.w[x.id]; });
+  return out;
+};
+J.POWER_MODES = { blend: 'Mix real life and the league', real: 'Real life only', game: 'League results only', ramp: 'Fade real life out over the season' };
+// how much of the score is real life after n races
+J.powerRealShare = function (cfg, n) {
+  if (!n || cfg.mode === 'real') return 1; if (cfg.mode === 'game') return 0;
+  if (cfg.mode === 'ramp') { var t = Math.min(1, n / Math.max(1, cfg.rampRaces)); return (cfg.rampFrom + (cfg.rampTo - cfg.rampFrom) * t) / 100; }
+  return cfg.real / 100;
+};
+function pctOf(vals, v, higher) { // 0..1 position among the field (ties share)
+  var less = 0, eq = 0; vals.forEach(function (x) { if (x === v) eq++; else if (higher ? x < v : x > v) less++; });
+  return vals.length <= 1 ? 0.5 : (less + (eq - 1) / 2) / (vals.length - 1);
+}
+J.powerField = function (S) { // who gets ranked: full-time drivers only
+  var seen = {}, out = [];
+  var add = function (k, name) { if (seen[k] || J.isPT(S, k)) return; var c = (S.contracts || {})[k]; if (c && (c.released || c.callup)) return; seen[k] = 1; out.push({ key: k, name: name || (c && c.name) || k }); };
+  J.standings(S).forEach(function (d) { add(d.key, d.name); });
+  Object.keys(S.contracts || {}).forEach(function (k) { var c = S.contracts[k]; if (c && c.name && !c.pt && !c.extra) add(k, c.name); });
+  return out;
+};
+J.powerWeek = function (S, n, cfg, prev) {
+  var field = J.powerField(S), races = S.races.slice(0, n), ag = J.agg(races), byK = {}; ag.forEach(function (d) { byK[d.key] = d; });
+  var rl = {}, teamRl = {};
+  field.forEach(function (f) { var c = (S.contracts || {})[f.key]; rl[f.key] = c && c.rl && c.rl.s != null ? c.rl.s : null; });
+  Object.keys(S.contracts || {}).forEach(function (k) { var c = S.contracts[k]; if (!c || !c.team || c.pt || c.released || rl[k] == null) return; (teamRl[c.team] = teamRl[c.team] || []).push(rl[k]); });
+  var pop = field.filter(function (f) { return byK[f.key] && byK[f.key].starts > 0; }).map(function (f) { return byK[f.key]; });
+  var rank = {}; ag.filter(function (d) { return !J.isPT(S, d.key); }).forEach(function (d, i) { rank[d.key] = i + 1; });
+  var vals = { avg: [], wins: [], top5: [], top10: [], led: [], poles: [], dnf: [], form: [] };
+  var f5 = function (d) { var h = d.hist.slice(-5); return h.reduce(function (a, x) { return a + x.pos; }, 0) / Math.max(1, h.length); };
+  pop.forEach(function (d) { vals.avg.push(d.avg); vals.wins.push(d.wins / d.starts); vals.top5.push(d.t5 / d.starts); vals.top10.push(d.t10 / d.starts); vals.led.push(d.led / d.starts); vals.poles.push(d.poles / d.starts); vals.dnf.push(d.dnf / d.starts); vals.form.push(f5(d)); });
+  var a = J.powerRealShare(cfg, n), rows = field.map(function (f) {
+    var c = (S.contracts || {})[f.key] || {}, d = byK[f.key], w = cfg.w, num = 0, den = 0, gn = 0, gd = 0, st = {};
+    // real life
+    if (rl[f.key] != null) { st.rlRank = rl[f.key]; num += w.rlRank * st.rlRank; den += w.rlRank; }
+    var tr = c.team && teamRl[c.team]; if (tr && tr.length) { st.rlTeam = tr.reduce(function (x, y) { return x + y; }, 0) / tr.length; num += w.rlTeam * st.rlTeam; den += w.rlTeam; }
+    var R = den > 0 ? num / den : 0.4;
+    // this league
+    var G = R, k = 0;
+    if (d && d.starts) {
+      var g = { avg: pctOf(vals.avg, d.avg, false), wins: pctOf(vals.wins, d.wins / d.starts, true), top5: pctOf(vals.top5, d.t5 / d.starts, true), top10: pctOf(vals.top10, d.t10 / d.starts, true), led: pctOf(vals.led, d.led / d.starts, true), poles: pctOf(vals.poles, d.poles / d.starts, true), dnf: pctOf(vals.dnf, d.dnf / d.starts, false), form: pctOf(vals.form, f5(d), false), pts: rank[f.key] ? 1 - (rank[f.key] - 1) / Math.max(1, Object.keys(rank).length - 1) : 0.5 };
+      J.POWER_STATS.forEach(function (x) { if (x.grp === 'game' && w[x.id] > 0) { gn += w[x.id] * g[x.id]; gd += w[x.id]; } });
+      if (gd > 0) { k = d.starts / (d.starts + Math.max(0, cfg.shrink)); G = k * (gn / gd) + (1 - k) * R; }
+    }
+    var raw = a * R + (1 - a) * G, calm = Math.max(0, Math.min(0.85, cfg.calm / 100)), pv = prev && prev[f.key] != null ? prev[f.key] : null;
+    var score = pv == null ? raw : calm * pv + (1 - calm) * raw;
+    return { key: f.key, name: f.name, car: c.car || (d && d.car) || '', team: c.team && S.teams && S.teams[c.team] ? S.teams[c.team].name : '', score: score, raw: raw, R: R, G: G, a: a, k: k,
+      starts: d ? d.starts : 0, wins: d ? d.wins : 0, t5: d ? d.t5 : 0, t10: d ? d.t10 : 0, avg: d && d.starts ? d.avg : null, pts: d ? d.pts : 0, rl: c.rl || null };
+  });
+  rows.sort(function (x, y) { return y.score - x.score || y.raw - x.raw || x.name.localeCompare(y.name); });
+  rows.forEach(function (r, i) { r.rank = i + 1; });
+  return rows;
+};
+// every week from the preseason list to now: [{ n, label, rows }], each row has prev rank and movement
+J.powerHistory = function (S) {
+  var cfg = J.powerCfg(S), key = 'power|' + cacheKey(S, 'p') + '|' + JSON.stringify(cfg) + '|' + Object.keys(S.contracts || {}).map(function (k) { var c = S.contracts[k]; return k + (c.pt ? 'p' : '') + (c.rl ? Math.round(c.rl.s * 100) : ''); }).join(','); if (CACHE[key]) return CACHE[key];
+  var weeks = [], prev = null, prevRank = null;
+  for (var n = 0; n <= S.races.length; n++) {
+    var rows = J.powerWeek(S, n, cfg, prev); prev = {}; rows.forEach(function (r) { prev[r.key] = r.score; });
+    rows.forEach(function (r) { r.prevRank = prevRank ? (prevRank[r.key] || null) : null; r.move = r.prevRank ? r.prevRank - r.rank : null; });
+    prevRank = {}; rows.forEach(function (r) { prevRank[r.key] = r.rank; });
+    var race = n ? S.races[n - 1] : null; weeks.push({ n: n, label: n ? 'After ' + (race.name || 'race ' + n) : 'Preseason', rows: rows });
+  }
+  CACHE[key] = weeks; return weeks;
+};
+
 J.publicData = function (S) {
   var o = JSON.parse(JSON.stringify(S, function (k, v) { return k.charAt(0) === '_' ? undefined : v; }));
   o.media = (o.media || []).filter(function (m) { return m.published; });
