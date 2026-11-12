@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en" data-mode="admin">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Virtual NASCAR</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Racing+Sans+One&family=Saira:ital,wdth,wght@0,50..125,100..900;1,50..125,100..900&display=swap" rel="stylesheet">
+<meta name="color-scheme" content="dark light">
+<script>try{var t=localStorage.getItem("jss_theme")||"dark";if(t==="auto")t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";document.documentElement.setAttribute("data-theme",t==="light"?"light":"dark")}catch(e){document.documentElement.setAttribute("data-theme","dark")}</script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <header class="top" id="top">
+    <div class="sbar"><div class="wrap sbar-in"><nav class="stabs" id="seriesTabs" aria-label="Series"></nav><div class="sbar-r" id="sbarRight"></div></div></div>
+    <div class="mbar"><div class="wrap mbar-in"><a class="brand" href="#/home" aria-label="Home" id="brand"></a><nav class="mnav" id="navlist" aria-label="Main"></nav></div></div>
+    <div class="cbar" id="cbar" hidden><div class="wrap cbar-in"><span class="cbar-t">Commissioner</span><nav class="cnav" id="cnav" aria-label="Commissioner"></nav><div class="cbar-r" id="railFoot"></div></div></div>
+  </header>
+  <main class="stage">
+    <div id="view"></div>
+    <footer class="footer"><div class="wrap"><div id="footBrand"></div><p>Virtual NASCAR is a fan-run simulated league raced in NASCAR Racing 2003. Articles, fan posts, interviews and rumors are fictional and written by AI for fun. They are not real statements or real social media. Unofficial and not affiliated with NASCAR.</p></div></footer>
+  </main>
+</div>
+<!--ADMIN_START-->
+<div class="previewbar"><span>Previewing the public site</span><button data-act="preview">Back to commissioner</button></div>
+<!--ADMIN_END-->
+<dialog id="dlg"><div id="dlgBody"></div></dialog>
+<div id="toast" class="toast" role="status"></div>
+<script src="core.js"></script>
+<script src="art.js"></script>
+<script src="views.js"></script>
+<!--ADMIN_START-->
+<script src="ai.js"></script>
+<script src="store.js"></script>
+<script src="importer.js"></script>
+<script src="studio.js"></script>
+<script src="publish.js"></script>
+<script src="templates.js"></script>
+<script src="rosters.js"></script>
+<script src="careers.js"></script>
+<script src="admin.js"></script>
+<script src="refresh.js"></script>
+<!--ADMIN_END-->
+<script>JSS.boot();</script>
+</body>
+</html>
