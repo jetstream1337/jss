@@ -98,7 +98,9 @@ J.suggestMoves = function (seed, opts) {
         if ((taken[k] && !fa) || c.callup || !x || !x.avg || J.isOwnerDriver(Ld, k)) return;
         var good = (x.rank && x.rank <= 6) || x.d.wins >= 1 || x.avg <= sd.field * 0.3 || (c.pt && x.d.starts >= 3 && x.avg <= 9);
         if (!good || x.d.starts < Math.max(2, sd.runs * 0.25) || skipPrev(k, 'promote')) return;
-        pool.push({ key: k, name: nameOf(Ld, k), from: down, kind: 'promote', fa: fa, fromL: Ld, exp: x.avg + 6, score: (sd.field * 0.5 - x.avg) + x.d.wins * 3 + (x.rank ? Math.max(0, 8 - x.rank) : 0) + R() * 5, why: [(x.rank ? 'P' + x.rank + ' in ' + sLabel(down) + ' points, ' : 'part-time, ') + J.plural(x.d.wins, 'win') + ', ' + x.avg.toFixed(1) + ' average finish'] });
+        // results across every season he has driven count: a one-year hot streak is not enough to move up, a long strong record is
+        var cr = J.careerOf(k, c, down).s, upMed = J.medianS(L); if (x.d.wins < 2 && cr < upMed * 0.85) return;
+        pool.push({ key: k, name: nameOf(Ld, k), from: down, kind: 'promote', fa: fa, fromL: Ld, exp: x.avg + 6, score: (sd.field * 0.5 - x.avg) + x.d.wins * 3 + (x.rank ? Math.max(0, 8 - x.rank) : 0) + (cr - upMed) * 14 + R() * 5, why: [(x.rank ? 'P' + x.rank + ' in ' + sLabel(down) + ' points, ' : 'part-time, ') + J.plural(x.d.wins, 'win') + ', ' + x.avg.toFixed(1) + ' average finish'] });
       });
     }
     moves.forEach(function (m) { if (m.status === 'proposed' && m.kind === 'demote' && m.to === s && !m.team) pool.push({ key: m.key, name: m.name, kind: 'demote', exp: 8, score: 4 + R() * 4, move: m }); });
@@ -274,7 +276,137 @@ function cuRow(c, S) {
   return '<div class="mvrow k-callup' + (c.status === 'approved' ? ' ok' : c.status === 'rejected' ? ' no' : '') + '"><span class="mvk">' + (c.to === S.series.id ? 'Call-up in' : 'Call-up out') + '</span><div class="mvb"><b>' + esc(c.name) + '</b> <span class="dim">' + esc(J.plural(c.rounds.length, 'start') + ' in the ' + sLabel(c.to) + ' ' + c.team + ' #' + c.car) + '</span><small>' + esc(c.why.join('; ') + '. Races: ' + rn.join(', ')) + '</small></div><div class="mvact">'
     + (c.status === 'proposed' ? '<button class="btn sm" data-act="cuOk" data-id="' + esc(c.id) + '">Approve</button><button class="btn ghost sm" data-act="cuNo" data-id="' + esc(c.id) + '">Reject</button>' : '<span class="chip' + (c.status === 'approved' ? ' g' : '') + '">' + (c.status === 'approved' ? 'Approved' : 'Rejected') + '</span>') + '</div></div>';
 }
-// who re-signs: the commissioner decides. "Let go" = not renewed at rollover; the driver goes to the free agent list.
+/* ---------- team cars, open seats, free agent placement ---------- */
+// A team's cars are remembered (team.cars) so a seat does not vanish when its driver is promoted, fired, retires or is let go.
+// Seats = remembered cars + cars with a contract now + the real full-time cars of teams already in the league, minus cars the commissioner closed.
+function carNums(a) { return a.sort(function (x, y) { return (parseInt(x, 10) || 9999) - (parseInt(y, 10) || 9999) || String(x).localeCompare(String(y)); }); }
+J.saveDirty = function () { saveAll(); };
+J.noteCars = function (S) {
+  var n = 0; S.teams = S.teams || {};
+  Object.keys(S.contracts || {}).forEach(function (k) {
+    var c = S.contracts[k], t = c && c.team && S.teams[c.team]; if (!t || !c.car || c.callup || c.interim) return;
+    var cs = t.cars = t.cars || [], v = String(c.car); if (cs.indexOf(v) < 0 && (t.closed || []).indexOf(v) < 0) { cs.push(v); n++; }
+  });
+  return n;
+};
+J.teamCars = function (S, tid) {
+  var t = S.teams && S.teams[tid]; if (!t) return [];
+  var set = {}, add = function (v) { v = String(v || ''); if (v && (t.closed || []).indexOf(v) < 0) set[v] = 1; };
+  (t.cars || []).forEach(add);
+  Object.keys(S.contracts || {}).forEach(function (k) { var c = S.contracts[k]; if (c && c.team === tid && c.car && !c.callup && !c.interim && !c.released) add(c.car); });
+  var rc = J.rosterCars ? J.rosterCars(S) : {};
+  Object.keys(rc).forEach(function (k) { var r = rc[k]; if (r.team.toLowerCase() === String(t.name).toLowerCase()) add(r.number); }); // every car the real team runs, even ones part-timers share
+  return carNums(Object.keys(set));
+};
+// open = nobody full-time (and not released) in the car, and no approved move about to take it
+J.openCars = function (S, exceptKey) {
+  var out = [], claimed = {};
+  (S.moves || []).forEach(function (m) { if (m.status === 'approved' && m.to === S.series.id && !(m.applied && m.applied[S.id]) && m.car && m.team) claimed[String(m.team).toLowerCase() + '#' + m.car] = 1; });
+  Object.keys(S.teams || {}).forEach(function (tid) {
+    J.teamCars(S, tid).forEach(function (num) {
+      if (claimed[String(S.teams[tid].name).toLowerCase() + '#' + num]) return;
+      var held = Object.keys(S.contracts || {}).some(function (k) { var c = S.contracts[k]; return k !== exceptKey && c.team === tid && String(c.car) === num && !c.pt && !c.released && !c.callup; });
+      if (!held) out.push({ tid: tid, team: S.teams[tid].name, num: num });
+    });
+  });
+  return out;
+};
+
+/* ---------- career strength: every season's results count, not just this one ---------- */
+// Everything is on a Cup-equivalent 0..1 scale (a good ARCA season is worth less than a good Cup season). Recent seasons count more.
+// With little or no history the driver's real-life form (or his base rating) is the starting point.
+var SW = { arca: 0.6, truck: 0.72, xfinity: 0.85, cup: 1 }, lgCache = {};
+function lgStats(L) {
+  var rs = L.races || [], ck = L.id + '|' + rs.length + '|' + (rs.length ? rs[rs.length - 1].id : '');
+  if (lgCache[ck]) return lgCache[ck];
+  var by = {}, ag = J.agg(rs); ag.forEach(function (d) { by[d.key] = d; });
+  return (lgCache[ck] = { by: by, n: Math.max(20, ag.length) });
+}
+J.careerOf = function (key, c, sid) {
+  c = c || {}; var Ls = J.leagues || {}, now = 0, num = 0, den = 0, seasons = 0, starts = 0;
+  Object.keys(Ls).forEach(function (id) { now = Math.max(now, J.seasonNum(Ls[id])); });
+  Object.keys(Ls).forEach(function (id) {
+    var L = Ls[id], st = L.races && L.races.length ? lgStats(L) : null, d = st && st.by[key]; if (!d || d.starts < 2) return;
+    var sw = SW[L.series.id] || 0.7, perf = Math.max(0, Math.min(1, 1 - (d.fin / d.starts - 1) / (st.n - 1)));
+    perf = Math.min(1, perf + Math.min(0.06, d.wins * 0.015 + d.t5 * 0.002)) * sw;
+    var w = Math.min(d.starts, 24) / 24 * Math.pow(0.6, Math.max(0, now - J.seasonNum(L)));
+    num += perf * w; den += w; seasons++; starts += d.starts;
+  });
+  var rl = c.rl && c.rl.s != null ? c.rl.s : Math.max(0.05, Math.min(1, (c.base || 60) / 100)), prior = rl * (SW[sid] || 0.8);
+  return { s: (prior * 0.5 + num) / (0.5 + den), seasons: seasons, starts: starts, note: seasons ? '(' + seasons + (seasons === 1 ? ' season' : ' seasons') + ' of results)' : '(real-life form)' };
+};
+function fullTimeS(L) { var a = []; Object.keys(L.contracts || {}).forEach(function (k) { var c = L.contracts[k]; if (c.team && !c.pt && !c.released && !c.callup) a.push(J.careerOf(k, c, L.series.id).s); }); return a.sort(function (x, y) { return x - y; }); }
+function medianS(L) { var a = fullTimeS(L); return a.length ? a[Math.floor(a.length / 2)] : 0.3 * (SW[L.series.id] || 1); }
+J.medianS = medianS;
+
+// Placing free agents. Strongest first. Full-time cars before part-time: his own series and (if his results say he is ready) one series up,
+// then one series down, and only when every car is full does he go part-time. Better drivers land with better teams.
+J.placeFreeAgents = function (S, only) {
+  var sid = S.series.id, yr = J.seasonNum(S), res = { full: 0, part: 0, left: 0, list: [] }, up = J.upOf(sid), dn = J.downOf(sid);
+  var fl = (S.freeAgents || []).slice(); if (only) fl = fl.filter(function (f) { return f.key === only; });
+  fl.forEach(function (f) { f._s = J.careerOf(f.key, f, sid).s; }); fl.sort(function (a, b) { return b._s - a._s; });
+  var tsC = {}, teamS = function (L, tid) {
+    var ck = L.series.id + '|' + tid; if (ck in tsC) return tsC[ck];
+    var a = []; Object.keys(L.contracts || {}).forEach(function (k) { var c = L.contracts[k]; if (c.team === tid && !c.pt && !c.released && !c.callup) a.push(J.careerOf(k, c, L.series.id).s); });
+    return (tsC[ck] = a.length ? a.reduce(function (x, y) { return x + y; }, 0) / a.length : 0.3 * (SW[L.series.id] || 1));
+  };
+  var movedIn = function (L) { return (L.moves || []).filter(function (m) { return m.status === 'approved' && m.to === L.series.id && m.kind === 'promote' && !(m.applied && m.applied[L.id]); }).length; };
+  var Lu = up && cur(up), Ld = dn && cur(dn), med = {}; if (Lu) med.up = medianS(Lu);
+  var done = {};
+  fl.forEach(function (f) {
+    var rr = J.rng('place' + f.key + yr + sid), s = f._s, seats = [];
+    var fit = function (L, o) { return 1 - Math.abs(teamS(L, o.tid) - s) * 1.2 + rr() * 0.4; };
+    J.openCars(S).filter(function (o) { return o.tid !== f.fromId; }).forEach(function (o) { seats.push({ L: S, o: o, sc: fit(S, o) }); });
+    if (!seats.length) J.openCars(S).forEach(function (o) { seats.push({ L: S, o: o, sc: fit(S, o) }); }); // the only open car is his old team's
+    if (Lu && s >= med.up * 0.92 && movedIn(Lu) < 4) J.openCars(Lu).forEach(function (o) { seats.push({ L: Lu, o: o, sc: fit(Lu, o) + (s > med.up ? 0.15 : -0.05) }); });
+    var pick = null;
+    if (seats.length) { seats.sort(function (a, b) { return b.sc - a.sc; }); pick = seats[0]; }
+    else if (Ld) { var ds = J.openCars(Ld).map(function (o) { return { L: Ld, o: o, sc: fit(Ld, o) }; }); ds.sort(function (a, b) { return b.sc - a.sc; }); pick = ds[0] || null; }
+    if (pick && pick.L === S) {
+      S.contracts[f.key] = { name: f.name, team: pick.o.tid, car: pick.o.num, through: yr + 1 + (rr() < 0.5 ? 1 : 0), base: f.base || 60, rl: f.rl || null, auto: false, pt: false, ptSet: true, signedFa: yr };
+      res.full++; res.list.push(f.name + ' (' + pick.o.team + ' #' + pick.o.num + ')');
+    } else if (pick) { // another series: an approved move, applied there when that series starts its new season (right now if it already has)
+      var T = pick.L, m = { id: J.uid('mv'), kind: LAD.indexOf(T.series.id) > LAD.indexOf(sid) ? 'promote' : 'demote', key: f.key, name: f.name, from: sid, to: T.series.id, teamId: pick.o.tid, team: pick.o.team, car: pick.o.num, season: yr, through: yr + 1 + (rr() < 0.5 ? 1 : 0), status: 'approved', fa: true, approvedAt: Date.now(), made: Date.now(), why: ['free agent, ' + Math.round(s * 100) + ' career rating, ' + J.careerOf(f.key, f, sid).note.replace(/[()]/g, '')], fromTeam: f.from || '', fromTeamId: f.fromId || '', fromCar: f.car || '', applied: {} };
+      S.moves = S.moves || []; var mine = JSON.parse(JSON.stringify(m)); mine.applied[S.id] = true; S.moves.push(mine);
+      T.moves = T.moves || []; var theirs = JSON.parse(JSON.stringify(m)); T.moves.push(theirs);
+      if (J.seasonNum(T) >= theirs.season) applyOne(theirs, T);
+      dirty(T); res.full++; res.list.push(f.name + ' → ' + T.series.label + ' (' + pick.o.team + ' #' + pick.o.num + ', ' + (m.kind === 'promote' ? 'moves up' : 'steps down') + ')');
+    } else { // every car is full: part-time with a team that fits
+      var tids = Object.keys(S.teams || {}); if (!tids.length) { res.left++; return; }
+      var ft = tids.filter(function (t) { return t !== f.fromId; }); if (!ft.length) ft = tids;
+      ft.sort(function (a, b) { return (1 - Math.abs(teamS(S, b) - s) + rr() * 0.4) - (1 - Math.abs(teamS(S, a) - s) + rr() * 0.4); });
+      var tid = ft[0], cs = J.teamCars(S, tid), num = cs.length ? cs[Math.floor(rr() * cs.length)] : '';
+      S.contracts[f.key] = { name: f.name, team: tid, car: num, through: yr + 1 + (rr() < 0.5 ? 1 : 0), base: f.base || 60, rl: f.rl || null, auto: false, pt: true, ptSet: true, signedFa: yr };
+      res.part++; res.list.push(f.name + ' (part-time, ' + S.teams[tid].name + (num ? ' #' + num : '') + ')');
+    }
+    done[f.key] = 1;
+  });
+  S.freeAgents = (S.freeAgents || []).filter(function (f) { return !done[f.key]; }); res.left = S.freeAgents.length; J.noteCars(S);
+  return res;
+};
+J.acts.faPlace = function (quiet) {
+  var tot = { full: 0, part: 0, left: 0 }; (J.ui.cmAll ? LAD : [J.S.series.id]).forEach(function (s) { var L = cur(s); if (!L || !(L.freeAgents || []).length) return; var r = J.placeFreeAgents(L); tot.full += r.full; tot.part += r.part; tot.left += r.left; dirty(L); });
+  saveAll(); if (quiet === true) return; J.toast(tot.full + ' signed full-time, ' + tot.part + ' part-time' + (tot.left ? ', ' + tot.left + ' still unsigned' : '') + '.');
+};
+J.acts.carAdd = async function (el) {
+  var S = J.S, t = S.teams[el.dataset.id]; if (!t) return;
+  var v = await J.ask('Add a car for ' + t.name, 'Car number', ''); v = (v || '').replace(/^#/, '').trim(); if (!v) return;
+  t.closed = (t.closed || []).filter(function (x) { return x !== v; }); t.cars = t.cars || []; if (t.cars.indexOf(v) < 0) t.cars.push(v); J.save();
+};
+J.acts.carClose = function (el) {
+  var S = J.S, t = S.teams[el.dataset.id], v = el.dataset.num; if (!t) return;
+  t.cars = (t.cars || []).filter(function (x) { return x !== v; }); t.closed = (t.closed || []).concat([v]); J.save();
+};
+// the dropdown for signing a free agent: every open car by team, then a part-time ride if all are full
+function signOptions(L, f) {
+  var open = J.openCars(L), by = {};
+  open.forEach(function (o) { (by[o.tid] = by[o.tid] || []).push(o); });
+  var html = '<option value="">Choose a car…</option>';
+  if (open.length) html += '<optgroup label="Open full-time cars">' + Object.keys(by).sort(function (a, b) { return L.teams[a].name.localeCompare(L.teams[b].name); }).map(function (t) { return by[t].map(function (o) { return '<option value="' + esc(o.tid + '|' + o.num) + '">' + esc(o.team) + ' #' + esc(o.num) + (o.tid === f.fromId ? ' (his old team)' : '') + '</option>'; }).join(''); }).join('') + '</optgroup>';
+  html += '<optgroup label="' + (open.length ? 'Or part-time with' : 'No open cars, part-time with') + '">' + Object.keys(L.teams || {}).sort(function (a, b) { return L.teams[a].name.localeCompare(L.teams[b].name); }).map(function (t) { return '<option value="' + esc(t + '|pt') + '">' + esc(L.teams[t].name) + ' (part-time)</option>'; }).join('') + '</optgroup>';
+  return html;
+}
+// who re-signs: the commissioner decides. "Let go" = not renewed at rollover; he joins the free agent pool and is signed by another team
 function resignPanel(S, all) {
   var rows = [];
   (all ? LAD : [S.series.id]).forEach(function (s) {
@@ -283,13 +415,20 @@ function resignPanel(S, all) {
   });
   rows.sort(function (a, b) { return LAD.indexOf(a.s) - LAD.indexOf(b.s) || a.c.name.localeCompare(b.c.name); });
   var opt = function (v, cv, label) { return '<option value="' + v + '"' + ((cv || '') === v ? ' selected' : '') + '>' + label + '</option>'; };
-  var fa = [];
-  (all ? LAD : [S.series.id]).forEach(function (s) { var L = cur(s); (L && L.freeAgents || []).forEach(function (f) { fa.push({ s: s, f: f }); }); });
-  return '<section class="panel" id="resignPanel"><h3>Contracts up: who re-signs</h3><p class="sub">Drivers whose deal ends this season. By default most re-sign on their own when you start next season. Choose <b>Let go</b> and he is not re-signed: he leaves the team and appears below as a free agent. Choose <b>Re-sign</b> to make sure he stays.</p>'
-    + (rows.length ? '<div class="tw"><table class="data"><thead><tr>' + (all ? '<th>Series</th>' : '') + '<th>Driver</th><th>Team</th><th>Through</th><th>At season end</th></tr></thead><tbody>' + rows.map(function (r) { var t = r.c.team && r.L.teams[r.c.team]; return '<tr>' + (all ? '<td>' + esc(sLabel(r.s)) + '</td>' : '') + '<td><b>' + esc(r.c.name) + '</b></td><td>' + esc(t ? t.name : '') + (r.c.car ? ' #' + esc(r.c.car) : '') + '</td><td>' + esc(r.c.through) + '</td><td><select data-rs="' + esc(r.k) + '" data-sid="' + esc(r.s) + '" aria-label="At season end for ' + esc(r.c.name) + '">' + opt('', r.c.resign, 'Automatic') + opt('yes', r.c.resign, 'Re-sign') + opt('no', r.c.resign, 'Let go') + '</select></td></tr>'; }).join('') + '</tbody></table></div>' : '<p class="dim">Nobody has a deal ending this season.</p>')
-    + (fa.length ? '<h4 style="margin:14px 0 4px">Free agents</h4><p class="sub">Drivers who were let go. Sign one to a team and he gets a new contract.</p><div class="tw"><table class="data"><thead><tr>' + (all ? '<th>Series</th>' : '') + '<th>Driver</th><th>Last team</th><th>Sign with</th></tr></thead><tbody>' + fa.map(function (x) { var L = cur(x.s); return '<tr>' + (all ? '<td>' + esc(sLabel(x.s)) + '</td>' : '') + '<td><b>' + esc(x.f.name) + '</b></td><td>' + esc(x.f.from || '') + '</td><td><select data-fa="' + esc(x.f.key) + '" data-sid="' + esc(x.s) + '" aria-label="Sign ' + esc(x.f.name) + ' with"><option value="">Choose a team…</option>' + Object.keys(L.teams || {}).map(function (t) { return '<option value="' + esc(t) + '">' + esc(L.teams[t].name) + '</option>'; }).join('') + '</select></td></tr>'; }).join('') + '</tbody></table></div>' : '')
+  return '<section class="panel" id="resignPanel"><h3>Step 2: Contracts that end this season</h3><p class="sub">Leave everyone on <b>Automatic</b> and the app decides. Pick <b>Let go</b> to make a driver a free agent when the season rolls over (he gets signed somewhere else), or <b>Re-sign</b> to make sure he stays.</p>'
+    + (rows.length ? '<div class="tw"><table class="data"><thead><tr>' + (all ? '<th>Series</th>' : '') + '<th>Driver</th><th>Team</th><th>Through</th><th>What happens</th></tr></thead><tbody>' + rows.map(function (r) { var t = r.c.team && r.L.teams[r.c.team]; return '<tr>' + (all ? '<td>' + esc(sLabel(r.s)) + '</td>' : '') + '<td><b>' + esc(r.c.name) + '</b></td><td>' + esc(t ? t.name : '') + (r.c.car ? ' #' + esc(r.c.car) : '') + '</td><td>' + esc(r.c.through) + '</td><td><select data-rs="' + esc(r.k) + '" data-sid="' + esc(r.s) + '" aria-label="What happens to ' + esc(r.c.name) + '">' + opt('', r.c.resign, 'Automatic') + opt('yes', r.c.resign, 'Re-sign') + opt('no', r.c.resign, 'Let go') + '</select></td></tr>'; }).join('') + '</tbody></table></div>' : '<p class="dim">Nobody has a deal ending this season.</p>')
     + '</section>';
 }
+// free agents: anyone without a ride. One button signs them all (full-time cars first, then part-time); or pick a car yourself.
+J.freeAgentPanel = function (S, all) {
+  var fa = [];
+  (all ? LAD : [S.series.id]).forEach(function (s) { var L = cur(s); (L && L.freeAgents || []).forEach(function (f) { fa.push({ s: s, f: f, L: L }); }); });
+  var open = 0; (all ? LAD : [S.series.id]).forEach(function (s) { var L = cur(s); if (L) open += J.openCars(L).length; });
+  return '<section class="panel" id="faPanel"><h3>Step 3: Free agents (' + fa.length + ')</h3><p class="sub">Drivers without a ride. <b>Sign them all</b> gives each one an open full-time car first (better drivers get better cars, and the very best can move up a series); if every car is full he goes part-time. Right now there ' + (open === 1 ? 'is 1 open car' : 'are ' + open + ' open cars') + '. Or pick a car for a driver yourself.</p>'
+    + (fa.length ? '<div class="row"><button class="btn sm" data-act="faPlace">Sign them all</button></div><div class="tw"><table class="data"><thead><tr>' + (all ? '<th>Series</th>' : '') + '<th>Driver</th><th>Last team</th><th>Rating</th><th>Pick a car</th></tr></thead><tbody>' + fa.map(function (x) { var cs = J.careerOf(x.f.key, x.f, x.s); return '<tr>' + (all ? '<td>' + esc(sLabel(x.s)) + '</td>' : '') + '<td><b>' + esc(x.f.name) + '</b></td><td>' + esc(x.f.from || 'no team') + '</td><td>' + Math.round(cs.s * 100) + '<small class="dim"> ' + esc(cs.note) + '</small></td><td><select data-fa="' + esc(x.f.key) + '" data-sid="' + esc(x.s) + '" aria-label="Sign ' + esc(x.f.name) + '">' + signOptions(x.L, x.f) + '</select></td></tr>'; }).join('') + '</tbody></table></div>' : '<p class="dim">No free agents right now. Drivers you let go or teams release show up here when the next season starts.</p>')
+    + (S.placed && S.placed.length ? '<details style="margin-top:10px"><summary>Signed when this season started (' + S.placed.length + ')</summary><ul class="plain">' + S.placed.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul></details>' : '')
+    + '</section>';
+};
 document.addEventListener('change', function (e) {
   var t = e.target; if (!t.dataset || !t.dataset.sid) return;
   if (t.dataset.rs != null) {
@@ -300,30 +439,37 @@ document.addEventListener('change', function (e) {
   } else if (t.dataset.fa != null && t.value) {
     var L2 = cur(t.dataset.sid); if (!L2) return;
     var fl = L2.freeAgents || [], i = -1; fl.forEach(function (f, n) { if (f.key === t.dataset.fa) i = n; }); if (i < 0) return;
-    var f = fl[i], tm = L2.teams[t.value]; if (!tm) return;
-    L2.contracts[f.key] = { name: f.name, team: t.value, car: '', through: J.seasonNum(L2) + 1 + (J.rng('fa' + f.key)() < 0.5 ? 1 : 0), base: f.base || 60, rl: f.rl || null, auto: 1 };
-    fl.splice(i, 1); L2.freeAgents = fl; dirty(L2); saveAll(); J.toast(f.name + ' signs with ' + tm.name + '. Set his car number on Teams and Contracts.'); J.render();
+    var f = fl[i], parts = t.value.split('|'), tm = L2.teams[parts[0]]; if (!tm) return;
+    var pt = parts[1] === 'pt', num = pt ? '' : parts[1];
+    if (pt) { var cs = J.teamCars(L2, parts[0]); num = cs.length ? cs[0] : ''; }
+    L2.contracts[f.key] = { name: f.name, team: parts[0], car: num, through: J.seasonNum(L2) + 1 + (J.rng('fa' + f.key)() < 0.5 ? 1 : 0), base: f.base || 60, rl: f.rl || null, auto: false, pt: pt, ptSet: true, signedFa: J.seasonNum(L2) };
+    fl.splice(i, 1); L2.freeAgents = fl; J.noteCars(L2); dirty(L2); saveAll(); J.toast(f.name + ' signs with ' + tm.name + (num ? ' (#' + num + (pt ? ', part-time' : '') + ')' : '') + '.'); J.render();
   }
 });
 J.routes.careers = function (S) {
   var sid = S.series.id, nx = J.nextRound(S), all = !!J.ui.cmAll, fall = (J.settings && J.settings.fallout) || 'normal';
   var mv = (S.moves || []).slice(); if (all) { mv = []; var seen = {}; LAD.forEach(function (s) { var L = cur(s); (L && L.moves || []).forEach(function (m) { if (!seen[m.id]) { seen[m.id] = 1; mv.push(m); } }); }); }
   var order = { fire: 0, retire: 1, demote: 2, promote: 3, move: 4, fulltime: 5, renew: 6 }; mv.sort(function (a, b) { return (a.status === 'rejected') - (b.status === 'rejected') || (order[a.kind] - order[b.kind]) || a.name.localeCompare(b.name); });
-  var out = J.phead('Career Moves', 'Drivers move between the series like real life: ARCA standouts get a few Truck starts, then a full-time ride; Truck drivers move up to the O\'Reilly series, O\'Reilly drivers to Cup. Teams can also fall out with a driver and release him, or send a struggling driver down a series. Owner-drivers and family teams are safe.');
-  // shared cars this week
-  var gs = carGroupsOf(S).filter(function (g) { return g.members.length > 1 || g.members.some(function (m) { return m.callup; }); });
-  out += '<section class="panel"><h3>Shared cars: who drives ' + (nx ? 'at ' + esc(nx.name) : 'next') + '</h3><p class="sub">NR2003 only shows one driver per car. When you import this race, the app swaps in the driver picked here for these cars (you can turn that off on the import screen). Set the same driver in NR2003 if you want the names to match in the game too.</p>'
-    + (nx && gs.length ? '<div class="tw"><table class="data cwk"><thead><tr><th>Car</th><th>Team</th><th>This week</th></tr></thead><tbody>' + gs.map(function (g) { var p = J.carPick(S, nx.id, g); return '<tr><td>' + J.carTag(g.car) + '</td><td>' + esc(g.team) + '</td><td><select data-cw="' + esc(g.key) + '" data-r="' + esc(nx.id) + '" aria-label="Driver of the #' + esc(g.car) + '">' + g.members.map(function (m) { return '<option' + (m.name === p ? ' selected' : '') + '>' + esc(m.name) + '</option>'; }).join('') + '</select></td></tr>'; }).join('') + '</tbody></table></div>' : '<p class="dim">' + (nx ? 'No shared cars in this series yet.' : 'The season is over.') + '</p>') + '</section>';
-  // call-ups
-  var cus = (S.callups || []).slice().sort(function (a, b) { return (a.status === 'rejected') - (b.status === 'rejected'); });
-  out += '<section class="panel"><h3>Call-ups this season</h3><p class="sub">Standouts from the series below get a few starts in a part-time car one series up. Approve one and that driver is put in the car for those races.</p>'
-    + (cus.length ? cus.map(function (c) { return cuRow(c, S); }).join('') : '<p class="dim">None yet.</p>') + '<div class="row"><button class="btn sm" data-act="cmCallups">Suggest call-ups</button></div></section>';
-  out += resignPanel(S, all);
-  // next season
-  out += '<section class="panel"><h3>Next season\'s moves</h3><p class="sub">Suggestions from this season\'s results, contracts, happiness and how each team sees its driver, plus real moves already announced. Nothing happens until you approve it. Approved moves take effect when you start next season on the League page (a "released now" takes effect right away).</p>'
-    + '<div class="row artopts"><label class="field" style="margin:0"><span>How often teams fall out with drivers</span><select id="falloutSel">' + [['off', 'Never'], ['rare', 'Rarely'], ['normal', 'Sometimes (like real life)'], ['wild', 'A lot (drama)']].map(function (o) { return '<option value="' + o[0] + '"' + (fall === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label><label class="chk"><input type="checkbox" id="cmAll"' + (all ? ' checked' : '') + '> Show every series</label></div>'
+  var proposed = mv.some(function (m) { return m.status === 'proposed'; }), auto = !(J.settings && J.settings.autopilot === false);
+  var out = J.phead('Career Moves', 'Who drives where next year, in three steps. Or press one button and let the app do it.');
+  out += '<section class="panel"><h3>Let the app do it</h3><p class="sub">Press the button and the app decides the whole offseason: who re-signs, who gets released, who moves up or down a series, and who signs a free agent\'s open car. It looks at every season a driver has run, not just this one. Then press <b>Finish season, start next</b> on the League page.</p>'
+    + '<div class="row"><button class="btn" data-act="cmAuto">Run the offseason for me</button><label class="chk"><input type="checkbox" id="cmAll"' + (all ? ' checked' : '') + '> Show every series</label></div>'
+    + '<label class="check"><input type="checkbox" id="apOn"' + (auto ? ' checked' : '') + '> Autopilot: when I press Finish season, approve any moves I have not decided on (moves I rejected stay rejected)</label></section>';
+  // step 1: moves
+  out += '<section class="panel"><h3>Step 1: Moves for next season</h3><p class="sub">Suggested from results, contracts, team happiness and real-life announcements. <b>Approve</b> the ones you like; they happen when the next season starts.</p>'
+    + '<div class="row artopts"><label class="field" style="margin:0"><span>How often teams fall out with drivers</span><select id="falloutSel">' + [['off', 'Never'], ['rare', 'Rarely'], ['normal', 'Sometimes (like real life)'], ['wild', 'A lot (drama)']].map(function (o) { return '<option value="' + o[0] + '"' + (fall === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label></div>'
     + (mv.length ? mv.map(function (m) { return moveRow(m, S); }).join('') : '<p class="dim">No moves yet. Click Suggest moves.</p>')
-    + '<div class="row"><button class="btn sm" data-act="cmSuggest">' + (mv.some(function (m) { return m.status === 'proposed'; }) ? 'Suggest again' : 'Suggest moves') + '</button>' + (mv.some(function (m) { return m.status === 'proposed'; }) ? '<button class="btn ghost sm" data-act="mvAll">Approve all suggestions</button>' : '') + '</div></section>';
+    + '<div class="row"><button class="btn sm" data-act="cmSuggest">' + (proposed ? 'Suggest again' : 'Suggest moves') + '</button>' + (proposed ? '<button class="btn ghost sm" data-act="mvAll">Approve all suggestions</button>' : '') + '</div></section>';
+  out += resignPanel(S, all) + J.freeAgentPanel(S, all);
+  // extras
+  var gs = carGroupsOf(S).filter(function (g) { return g.members.length > 1 || g.members.some(function (m) { return m.callup; }); });
+  var cus = (S.callups || []).slice().sort(function (a, b) { return (a.status === 'rejected') - (b.status === 'rejected'); });
+  out += '<details class="panel" style="padding:14px 18px"><summary><b>Extras: call-ups and shared cars</b></summary>'
+    + '<h3 style="margin-top:14px">Call-ups this season</h3><p class="sub">A standout from the series below gets a few starts in a part-time car. Approve one and he is put in the car for those races.</p>'
+    + (cus.length ? cus.map(function (c) { return cuRow(c, S); }).join('') : '<p class="dim">None yet.</p>') + '<div class="row"><button class="btn sm" data-act="cmCallups">Suggest call-ups</button></div>'
+    + '<h3 style="margin-top:14px">Shared cars: who drives ' + (nx ? 'at ' + esc(nx.name) : 'next') + '</h3><p class="sub">NR2003 shows one driver per car. When you import a race the app swaps in the driver picked here (you can turn that off on the import screen).</p>'
+    + (nx && gs.length ? '<div class="tw"><table class="data cwk"><thead><tr><th>Car</th><th>Team</th><th>This week</th></tr></thead><tbody>' + gs.map(function (g) { var p = J.carPick(S, nx.id, g); return '<tr><td>' + J.carTag(g.car) + '</td><td>' + esc(g.team) + '</td><td><select data-cw="' + esc(g.key) + '" data-r="' + esc(nx.id) + '" aria-label="Driver of the #' + esc(g.car) + '">' + g.members.map(function (m) { return '<option' + (m.name === p ? ' selected' : '') + '>' + esc(m.name) + '</option>'; }).join('') + '</select></td></tr>'; }).join('') + '</tbody></table></div>' : '<p class="dim">No shared cars this week.</p>')
+    + '</details>';
   return out;
 };
 J.nav.push({ id: 'careers', label: 'Career Moves', group: 'Commissioner', admin: true });
@@ -332,6 +478,20 @@ J.acts.cmSuggest = function () {
   var again = LAD.some(function (s) { var L = cur(s); return L && (L.moves || []).some(function (m) { return m.status === 'proposed'; }); });
   var n = J.suggestMoves(Date.now(), { real: !again });
   J.toast(again ? J.plural(n.length, 'move') + ' in a fresh slate (real announced moves left out; approved ones stay).' : J.plural(n.length, 'move') + ' suggested across the series.');
+};
+// one button: moves (real announced ones included the first time), everything approved
+J.autoOffseason = function () {
+  // free agents who signed in another series are moves too, but they are not a offseason slate: only suggest when nothing else is there yet
+  var any = LAD.some(function (s) { var L = cur(s); return L && (L.moves || []).some(function (m) { return !m.fa; }); });
+  if (!any) J.suggestMoves(Date.now(), { real: true });
+  var list = [], seen = {};
+  LAD.forEach(function (s) { var L = cur(s); (L && L.moves || []).forEach(function (m) { if (m.status === 'proposed' && !seen[m.id]) { seen[m.id] = 1; list.push(m); } }); });
+  list.forEach(approve); saveAll(); return list.length;
+};
+J.acts.cmAuto = function () {
+  var n = J.autoOffseason(), fa = 0; LAD.forEach(function (s) { var L = cur(s); if (L) fa += (L.freeAgents || []).length; });
+  if (fa) J.acts.faPlace(true);
+  J.toast(n + ' moves approved' + (fa ? ', free agents signed' : '') + '. When the season is over, press Finish season, start next on the League page.'); J.refresh();
 };
 J.acts.cmCallups = function () { var n = J.suggestCallups(Date.now()); J.toast(n.length ? J.plural(n.length, 'call-up') + ' suggested.' : 'No call-ups to suggest (each series needs the one below it running, and races left).', !n.length); };
 J.acts.mvOk = function (el) { var m = null; eachCopy(el.dataset.id, function (x) { m = x; }); if (m) { approve(m); saveAll(); } };
@@ -344,6 +504,7 @@ document.addEventListener('change', function (e) {
   var t = e.target, S = J.S; if (!t || !S) return;
   if (t.id === 'falloutSel') { J.settings.fallout = t.value; J.saveSettings(); return; }
   if (t.id === 'cmAll') { J.ui.cmAll = t.checked; J.refresh(); return; }
+  if (t.id === 'apOn') { J.settings.autopilot = t.checked; J.saveSettings(); J.toast(t.checked ? 'Autopilot on.' : 'Autopilot off. You approve every move yourself.'); return; }
   if (t.dataset && t.dataset.cw) { S.carWeek = S.carWeek || {}; (S.carWeek[t.dataset.r] = S.carWeek[t.dataset.r] || {})[t.dataset.cw] = t.value; J.save({ render: false }); }
 });
 })();

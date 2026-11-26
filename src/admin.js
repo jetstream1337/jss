@@ -46,7 +46,7 @@ J.acts.switchSeason = async function (id) {
 /* Electron has no prompt(), so asking for text uses this small box. Resolves with the text, or null if cancelled. */
 J.ask = function (title, label, value) {
   return new Promise(function (resolve) {
-    var d = $('dlg'), done = false, finish = function (v) { if (done) return; done = true; d.removeEventListener('close', onClose); try { if (d.close) d.close(); else d.removeAttribute('open'); } catch (e) {} resolve(v); }, onClose = function () { finish(null); };
+    var d = $('dlg'), done = false, finish = function (v) { if (done) return; done = true; d.removeEventListener('close', onClose); try { if (d.close) d.close(); else d.removeAttribute('open'); } catch (e) {} resolve(v); }, onClose = function () { if (!d.open) finish(null); }; // a close event queued by the previous box must not cancel this one
     $('dlgBody').innerHTML = '<div class="dlg-h"><h3>' + esc(title) + '</h3><button class="dlg-x" id="askX" aria-label="Close">&#10005;</button></div><div class="dlg-b"><div class="field"><label for="askIn">' + esc(label || '') + '</label><input id="askIn" value="' + esc(value || '') + '" autocomplete="off"></div><div class="row"><button class="btn" id="askOk">OK</button><button class="btn ghost" id="askNo">Cancel</button></div></div>';
     d.addEventListener('close', onClose);
     $('askOk').addEventListener('click', function () { finish($('askIn').value); });
@@ -69,12 +69,14 @@ J.acts.seasonNew = async function (el) {
   var msg = cancel ? 'Cancel the ' + year + ' ' + cur.series.label + ' season? It is kept under past seasons marked "cancelled" (you can delete it there), and a fresh ' + next + ' season starts with the same league, fans and settings.'
     : 'Finish the ' + year + ' ' + cur.series.label + ' season and start ' + next + '? ' + year + ' moves to past seasons (still on the website), and ' + next + ' starts with the same league, fans and settings.';
   if (!confirm(msg)) return;
+  // autopilot: moves nobody has decided on get approved, so the offseason happens on its own
+  if (!cancel && !(J.settings && J.settings.autopilot === false) && J.autoOffseason) { try { J.autoOffseason(); } catch (e) { console.error(e); } }
   var y = await J.ask('Year for the new season', 'Year', String(next)); if (y === null) return; y = parseInt(y, 10) || next;
   if (J.S && J.S.id === sid) await J.store.saveLeague(J.S);
   await archive(cur, cancel);
   var L = J.nextSeason(cur, { year: y }); L.id = sid; J.leagues[sid] = L; await J.store.saveLeague(L);
   J.S = L; await J.store.setActive(sid); await J.store.loadBlobs(J.S);
-  J.save(); J.toast(cancel ? 'Season cancelled. ' + y + ' is ready.' : y + ' season started. Pick a schedule in Edit Schedule.');
+  J.save(); if (J.saveDirty) J.saveDirty(); J.toast(cancel ? 'Season cancelled. ' + y + ' is ready.' : y + ' season started. Pick a schedule in Edit Schedule.');
 };
 J.acts.seasonDel = async function (el) {
   var id = el.dataset.id, L = J.leagues[id]; if (!L) return;
@@ -250,7 +252,10 @@ J.routes.league = function (S) {
     + '<section class="panel"><h3>Commissioner note</h3><p class="sub">Shows at the top of the home page.</p><textarea id="annText" placeholder="Example: Martinsville moved to Saturday night.">' + esc(S.announcement.text) + '</textarea><div class="row"><button class="btn sm" data-act="annPost">Post note</button>' + (S.announcement.text ? '<button class="btn ghost sm" data-act="annClear">Remove note</button>' : '') + '</div></section>'
     + '<section class="panel"><h3>Series and seasons</h3><p class="sub">Each series has its own schedule, standings, news and fans. Finish a season to move it to past seasons (still viewable in the app and on the website) and start the next one with the same league, fans and settings. Cancel ends a season early and keeps it marked cancelled.</p>' + leagues + '</section>'
     + '<section class="panel"><h3>Backup</h3><p class="sub">Save everything (all series, stories, fans, photos) to one file, or bring a backup back. Your AI key and GitHub token are never put in a backup.</p><div class="row"><button class="btn sm" data-act="bkDown">Download backup</button><button class="btn ghost sm" data-act="bkUp">Restore a backup</button><input type="file" id="bkFile" accept=".json,application/json" hidden></div></section>'
-    + '<section class="panel"><h3>Start over</h3><p class="sub">Only for ' + esc(S.series.label) + '. Download a backup first.</p><div class="row"><button class="btn danger sm" data-act="resetResults">Clear results only</button><button class="btn danger sm" data-act="resetSeason">New season (clear everything but the schedule)</button></div></section>';
+    + '<section class="panel"><h3>Sim, re-sim or start over</h3><p class="sub">Download a backup first. These only touch ' + esc(S.series.label) + ' unless it says all series.</p>'
+      + '<div class="row"><button class="btn sm" data-act="simRest">Sim the rest of this season</button><button class="btn sm" data-act="resimSeason">Wipe this season and re-sim it</button></div>'
+      + '<div class="row"><button class="btn danger sm" data-act="resetResults">Clear results only</button><button class="btn danger sm" data-act="resetSeason">Clear everything but the schedule</button></div>'
+      + '<div class="row"><button class="btn danger sm" data-act="restartSeries">Restart ' + esc(S.series.label) + ' from the real lineup</button><button class="btn danger sm" data-act="restartAll">Restart all series from the real lineups</button></div><p class="dim" style="margin-top:6px">Restart deletes past seasons, moves, free agents and results, then rebuilds the teams and drivers from the real lineup in the year you choose. Fans, settings, number pictures and the schedule are kept.</p></section>';
 };
 function rosterPanel(S) {
   var have = J.SERIES_ORDER.filter(function (id) { return J.ROSTERS && J.ROSTERS[id]; }), sid = S.series.id;
@@ -428,6 +433,33 @@ async function restore(f) {
     J.save(); J.toast('Backup restored.');
   } catch (e) { J.toast('That is not a backup this app can read (' + e.message + ').', true); }
 }
+// clean wipe: past seasons, results, moves and free agents are gone; teams and drivers come back from the real lineup
+J.restartLeague = async function (sid, year) {
+  var L = J.leagues[sid]; if (!L || L.archived) return false;
+  var gone = Object.keys(J.leagues).filter(function (id) { var X = J.leagues[id]; return X.archived && X.series.id === sid; });
+  for (var i = 0; i < gone.length; i++) { delete J.leagues[gone[i]]; await J.store.deleteLeague(gone[i]); }
+  var old = parseInt(J.seasonYear(L), 10) || year;
+  L.season = year; ['races', 'sessions', 'articles', 'posts', 'interviews', 'media', 'moves', 'callups', 'freeAgents', 'placed', 'silly'].forEach(function (k) { L[k] = []; });
+  L.rep = {}; L.ai = {}; L.carWeek = {}; L.removed = {}; L.teams = {}; L.contracts = {}; delete L.pinTs; delete L.ptVer; if (L.power) { if (L.power.cfg) L.power = { cfg: L.power.cfg }; else delete L.power; }
+  (L.fans || []).forEach(function (f) { if (f.stance) f.stance.seen = 0; });
+  (L.schedule || []).forEach(function (r) { r.note = ''; if (/^\d{4}-/.test(r.date || '')) r.date = String(year) + r.date.slice(4); });
+  if (J.rosterImport && J.ROSTERS && J.ROSTERS[sid]) J.rosterImport(L, sid, year >= 2027 ? 2027 : 2026, { over: true });
+  try { J.ensureContracts(L, J.rosterLookup ? J.rosterLookup(L) : null); } catch (e) { console.error(e); }
+  if (J.noteCars) J.noteCars(L);
+  await J.store.saveLeague(L); return true;
+};
+J.acts.restartSeries = async function () {
+  var S = J.S; if (!S || S.archived) { J.toast('Open the current season of this series first.', true); return; }
+  var t = await J.ask('Restart ' + S.series.label + '? Past seasons, results, moves and free agents are deleted. Type RESTART to do it.', 'Type RESTART', ''); if (t !== 'RESTART') { if (t !== null) J.toast('Nothing changed.'); return; }
+  var y = await J.ask('Which year does it start in', 'Year', '2026'); if (y === null) return; y = parseInt(y, 10) || 2026;
+  await J.restartLeague(S.series.id, y); J.S = J.leagues[S.series.id]; await J.store.setActive(J.S.id); J.save(); J.toast(S.series.label + ' restarted in ' + y + '.');
+};
+J.acts.restartAll = async function () {
+  var t = await J.ask('Restart every series? Past seasons, results, moves and free agents are deleted for all four. Type RESTART to do it.', 'Type RESTART', ''); if (t !== 'RESTART') { if (t !== null) J.toast('Nothing changed.'); return; }
+  var y = await J.ask('Which year does it start in', 'Year', '2026'); if (y === null) return; y = parseInt(y, 10) || 2026;
+  var keep = J.S && J.S.series.id, n = 0; for (var sid of Object.keys(J.leagues).filter(function (k) { return !J.leagues[k].archived; })) { if (await J.restartLeague(sid, y)) n++; }
+  J.S = J.leagues[keep] || J.leagues[Object.keys(J.leagues)[0]]; await J.store.setActive(J.S.id); J.save(); J.toast(n + ' series restarted in ' + y + '.');
+};
 J.acts.resetResults = function () { if (!confirm('Clear every race result and all points for ' + J.S.series.label + '?')) return; J.S.races = []; J.save(); J.toast('Results cleared.'); };
 J.acts.resetSeason = function () {
   var S = J.S; if (!confirm('Start a new season for ' + S.series.label + '? Results, stories, fan posts, interviews, reputations and highlights are cleared. The schedule, league settings and fan accounts stay.')) return;

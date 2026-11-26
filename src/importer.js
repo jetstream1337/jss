@@ -465,6 +465,38 @@ J.acts.autoSim = function () {
   var f = { round: nx.id, name: nx.name, track: nx.track || '', date: (/^\d{4}-\d{2}-\d{2}$/.test(nx.date || '') ? nx.date : J.todayISO()), mode: sp.template, bonus: false, custom: sp.template === 'custom' ? (S.points.table || []).join(',') : '' };
   commitRace(S, f, sim.rows, { cautions: sim.cautions, laps: sim.laps, simmed: true }, 'Auto-sim', cover, nx.name);
 };
+// sim many rounds at once (no stories from the AI; each race still gets the plain recap)
+J.simRounds = function (S, max) {
+  var n = 0, sp, nx;
+  while ((nx = J.nextRound(S)) && n < (max || 99)) {
+    var sim = J.simRace(S, nx); if (!sim) break;
+    if (J.carWeekSwap) sim.rows = J.carWeekSwap(S, nx.id, sim.rows, { dedupe: true }).rows;
+    sp = J.seasonPoints(S);
+    var f = { round: nx.id, track: nx.track || '', date: (/^\d{4}-\d{2}-\d{2}$/.test(nx.date || '') ? nx.date : J.todayISO()), mode: sp.template, bonus: false, custom: sp.template === 'custom' ? (S.points.table || []).join(',') : '' };
+    var race = { id: J.uid('r'), sid: nx.id, name: nx.name, track: String(f.track).trim(), date: f.date, mode: f.mode, bonus: f.bonus, custom: f.custom, seed: 0, meta: { source: 'Auto-sim', simmed: true, cautions: sim.cautions, laps: sim.laps, track: f.track }, rows: P.score(sim.rows, f.mode, f.bonus, f.custom) };
+    S.races.push(race); S.races.sort(function (a, b) { return String(a.date).localeCompare(String(b.date)); });
+    J.alignRound(S, race.sid);
+    var info = J.raceInfo(race); J.repApply(S, info.winner.driver, 2, 'Won ' + race.name, 'track', race.id);
+    S.articles.unshift(J.autoRecap(S, race)); n++;
+  }
+  return n;
+};
+J.acts.simRest = function () {
+  var S = J.S, left = S.schedule.filter(function (r) { return !S.races.some(function (x) { return x.sid === r.id; }); }).length;
+  if (!left) { J.toast('Every race on the schedule has been run.', true); return; }
+  if (!confirm('Auto-sim the ' + J.plural(left, 'race') + ' still left on the ' + S.series.label + ' schedule? They count in the standings like real races.')) return;
+  var n = J.simRounds(S); if (!n) { J.toast('The sim has no drivers to work with yet. Import the real roster first (League page).', true); return; }
+  J.save({ render: true }); J.toast(J.plural(n, 'race') + ' simmed.');
+};
+// wipe this season's results and sim every race again
+J.acts.resimSeason = function () {
+  var S = J.S; if (!S.schedule.length) { J.toast('Pick a schedule first (Edit Schedule).', true); return; }
+  if (!confirm('Re-sim the whole ' + J.seasonYear(S) + ' ' + S.series.label + ' season? This erases its race results, recaps, standings history and reputations, then sims every race on the schedule again. Drivers, teams and the schedule stay. Download a backup first if you want to keep the old results.')) return;
+  S.races = []; S.sessions = []; S.rep = {}; S.posts = []; S.interviews = []; S.ai = {}; S.articles = S.articles.filter(function (a) { return !a.raceId && !a.preSid; }); S.media = (S.media || []).filter(function (m) { return !m.raceId; });
+  if (S.power) { if (S.power.cfg) S.power = { cfg: S.power.cfg }; else delete S.power; }
+  S.schedule.forEach(function (r) { delete r.note; });
+  var n = J.simRounds(S); J.save({ render: true }); J.toast(n ? J.plural(n, 'race') + ' simmed from scratch.' : 'The sim has no drivers to work with yet. Import the real roster first (League page).', !n);
+};
 J.runPreseasonCoverage = async function () {
   var S = J.S, c = startRun('Preseason stories', 'preseason', ['prenews', 'fans']); if (!c) return;
   var fails = 0, step = stepFn(c);
