@@ -472,9 +472,14 @@ J.runPreseasonCoverage = async function () {
   try { var n = await J.ai.threads(S, { facts: J.ai.preseasonFacts(S), focus: [], ref: { type: 'week', id: 'preseason' }, task: 'The season has not started. Write 6 to 8 threads of preseason talk: reactions to the test session speeds, bold predictions for the season, who will win the opener, someone hyped about a new ride or a rookie, someone doubting a driver everyone else likes, a fantasy draft argument. Nobody knows any results yet.' }); step('fans', 'ok', J.plural(n, 'post')); } catch (e) { fails++; step('fans', 'err', e.message); }
   finishRun(c, fails); J.save({ render: false });
 };
+function simSel(S, key, label, tip) {
+  var v = (S.simCfg && S.simCfg[key]) || 'normal';
+  return '<div class="field" style="margin:0 14px 0 0" title="' + esc(tip) + '"><label>' + label + '</label><select data-sim="' + key + '">' + [['low', 'Low'], ['normal', 'Normal'], ['high', 'High']].map(function (o) { return '<option value="' + o[0] + '"' + (v === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></div>';
+}
+document.addEventListener('change', function (e) { var t = e.target; if (!t.dataset || !t.dataset.sim || !J.S) return; J.S.simCfg = J.S.simCfg || {}; J.S.simCfg[t.dataset.sim] = t.value; J.save({ render: false }); J.toast('Saved. The next auto-sim uses it.'); });
 J.simPanel = function (S) {
   var nx = J.nextRound(S); if (!nx) return '';
-  return '<section class="panel simp"><div><h3>Auto-sim the next race</h3><p class="sub">No time to run ' + esc(nx.name) + '? The app can race it for you from the season so far: each driver\'s form at this kind of track, practice and qualifying if you imported them, and some luck. It counts like a real race and gets full AI coverage.</p></div><button class="btn sm" data-act="autoSim">Auto-sim ' + esc(nx.name) + '</button></section>';
+  return '<section class="panel simp"><div><h3>Auto-sim the next race</h3><p class="sub">No time to run ' + esc(nx.name) + '? The app can race it for you from the season so far: each driver\'s form at this kind of track, practice and qualifying if you imported them, and some luck. It counts like a real race and gets full AI coverage.</p><div class="row" style="margin-top:8px">' + simSel(S, 'real', 'Real-life form counts', 'How long a driver\'s real-life strength and rating carry before this season\'s results take over.') + simSel(S, 'chaos', 'Randomness', 'How much luck and upsets. Each series already has its own level (Cup lowest, ARCA highest).') + '</div></div><button class="btn sm" data-act="autoSim">Auto-sim ' + esc(nx.name) + '</button></section>';
 };
 
 /* drop a file anywhere in the window */

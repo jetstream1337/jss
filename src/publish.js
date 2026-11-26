@@ -99,7 +99,8 @@ P.buildFiles = async function () {
   add('index.html', P.publicIndex(await J.readAppFile('index.html')));
   for (var i = 0, n = ['core.js', 'art.js', 'views.js', 'style.css']; i < n.length; i++) add(n[i], await J.readAppFile(n[i]));
   add('.nojekyll', '');
-  var ids = Object.keys(J.leagues).filter(function (k) { var L = J.leagues[k]; return L.races.length || L.articles.length || L.id === J.S.id; });
+  // every series that is set up goes on the site, even before its first race, so its tab is there from the start (an empty league is a bare newly made one)
+  var ids = Object.keys(J.leagues).filter(function (k) { var L = J.leagues[k]; return L.races.length || L.articles.length || L.id === J.S.id || (L.schedule && L.schedule.length) || Object.keys(L.contracts || {}).length || (L.art && (L.art.logo || Object.keys(L.art.nums || {}).length)); });
   var order = J.SERIES_ORDER; ids.sort(function (a, b) { return order.indexOf(J.leagues[a].series.id) - order.indexOf(J.leagues[b].series.id) || String(a).localeCompare(String(b)); });
   var cur = ids.filter(function (k) { return !J.leagues[k].archived; }), seasons = {};
   ids.forEach(function (k) { var L = J.leagues[k]; (seasons[L.series.id] = seasons[L.series.id] || []).push({ id: k, year: J.seasonYear(L), label: J.seasonYear(L) + (L.archived ? (L.cancelled ? ' (cancelled)' : '') : ' (current)'), current: !L.archived }); });

@@ -43,6 +43,19 @@ J.acts.switchSeason = async function (id) {
   J.S = L; await J.store.setActive(id); await J.store.loadBlobs(J.S);
   J.render(); J.toast('Opened the ' + J.seasonYear(L) + ' ' + L.series.label + ' season.');
 };
+/* Electron has no prompt(), so asking for text uses this small box. Resolves with the text, or null if cancelled. */
+J.ask = function (title, label, value) {
+  return new Promise(function (resolve) {
+    var d = $('dlg'), done = false, finish = function (v) { if (done) return; done = true; d.removeEventListener('close', onClose); try { if (d.close) d.close(); else d.removeAttribute('open'); } catch (e) {} resolve(v); }, onClose = function () { finish(null); };
+    $('dlgBody').innerHTML = '<div class="dlg-h"><h3>' + esc(title) + '</h3><button class="dlg-x" id="askX" aria-label="Close">&#10005;</button></div><div class="dlg-b"><div class="field"><label for="askIn">' + esc(label || '') + '</label><input id="askIn" value="' + esc(value || '') + '" autocomplete="off"></div><div class="row"><button class="btn" id="askOk">OK</button><button class="btn ghost" id="askNo">Cancel</button></div></div>';
+    d.addEventListener('close', onClose);
+    $('askOk').addEventListener('click', function () { finish($('askIn').value); });
+    $('askNo').addEventListener('click', function () { finish(null); }); $('askX').addEventListener('click', function () { finish(null); });
+    $('askIn').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); finish($('askIn').value); } });
+    if (d.showModal) d.showModal(); else d.setAttribute('open', '');
+    setTimeout(function () { var i = $('askIn'); if (i) { i.focus(); i.select(); } }, 30);
+  });
+};
 async function archive(L, cancelled) {
   var year = J.seasonYear(L), id = L.series.id + '-' + year, n = 2; while (J.leagues[id]) id = L.series.id + '-' + year + '-' + (n++);
   var old = L.id; L.id = id; L.archived = true; L.season = year; if (cancelled) L.cancelled = true;
@@ -56,7 +69,7 @@ J.acts.seasonNew = async function (el) {
   var msg = cancel ? 'Cancel the ' + year + ' ' + cur.series.label + ' season? It is kept under past seasons marked "cancelled" (you can delete it there), and a fresh ' + next + ' season starts with the same league, fans and settings.'
     : 'Finish the ' + year + ' ' + cur.series.label + ' season and start ' + next + '? ' + year + ' moves to past seasons (still on the website), and ' + next + ' starts with the same league, fans and settings.';
   if (!confirm(msg)) return;
-  var y = prompt('Year for the new season', String(next)); if (y === null) return; y = parseInt(y, 10) || next;
+  var y = await J.ask('Year for the new season', 'Year', String(next)); if (y === null) return; y = parseInt(y, 10) || next;
   if (J.S && J.S.id === sid) await J.store.saveLeague(J.S);
   await archive(cur, cancel);
   var L = J.nextSeason(cur, { year: y }); L.id = sid; J.leagues[sid] = L; await J.store.saveLeague(L);
@@ -201,7 +214,7 @@ J.acts.schTpl = function () {
   J.realignAll(S); J.save(); J.toast(t.label + ' loaded.');
 };
 J.acts.schTplSave = async function () {
-  var S = J.S, nm = prompt('Name for this template', J.seasonYear(S) + ' ' + S.series.label + ' (mine)'); if (!nm) return;
+  var S = J.S, nm = await J.ask('Save as a template', 'Name for this template', J.seasonYear(S) + ' ' + S.series.label + ' (mine)'); if (!nm) return;
   var t = { id: 'my-' + Date.now().toString(36), series: S.series.id, season: +J.seasonYear(S) || 0, label: nm, cut: S.chase.regularRaces, size: S.chase.size, rows: S.schedule.map(function (r) { return [r.name, r.track || '', r.city || '', r.date || '', r.time || '', [r.tv, r.stream].filter(Boolean).join(' / '), r.type]; }) };
   J.settings.schedTemplates = myTpls().concat([t]); await J.saveSettings(); J.refresh(); J.toast('Saved as a template. It is in the list for every series.');
 };
@@ -385,7 +398,7 @@ J.acts.leagueOpen = function (el) { var id = el.dataset.id; if (J.SERIES[id]) J.
 J.acts.leagueDel = async function (el) {
   var id = el.dataset.id, L = J.leagues[id]; if (!L) return;
   if (!confirm('Delete the whole ' + L.series.label + ' league? This cannot be undone. Download a backup first if you might want it.')) return;
-  if (prompt('Type DELETE to confirm') !== 'DELETE') return;
+  if ((await J.ask('Delete this league', 'Type DELETE to confirm', '')) !== 'DELETE') return;
   for (var i = 0; i < L.media.length; i++) { try { await J.store.delMedia(L.media[i].id); await J.store.delMedia(L.media[i].id + ':poster'); } catch (e) {} }
   delete J.leagues[id]; await J.store.deleteLeague(id);
   if (!Object.keys(J.leagues).length) { J.leagues.cup = J.newLeague('cup'); await J.store.saveLeague(J.leagues.cup); }
@@ -557,7 +570,7 @@ document.addEventListener('change', function (e) {
   if (t.dataset && t.dataset.ct) {
     var c = S.contracts[t.dataset.k] = S.contracts[t.dataset.k] || { base: 60, through: J.seasonNum(S) };
     var f = t.dataset.ct; c.auto = false;
-    if (f === 'team' && t.value === '__new') { var nm = prompt('New team name'); if (!nm) { t.value = c.team || ''; return; } var id = J.slug(nm); S.teams[id] = S.teams[id] || { id: id, name: nm.trim(), color: J.TEAM_COLORS[Object.keys(S.teams).length % J.TEAM_COLORS.length], base: '', mfr: '' }; c.team = id; }
+    if (f === 'team' && t.value === '__new') { J.ask('New team', 'Team name', '').then(function (nm) { if (!nm || !nm.trim()) { t.value = c.team || ''; return; } var id = J.slug(nm); S.teams[id] = S.teams[id] || { id: id, name: nm.trim(), color: J.TEAM_COLORS[Object.keys(S.teams).length % J.TEAM_COLORS.length], base: '', mfr: '' }; c.team = id; J.save(); }); return; }
     else if (f === 'pt') { c.pt = t.value === '1'; c.ptSet = true; }
     else if (f === 'owner') { if (t.value === '') delete c.owner; else c.owner = t.value === '1'; }
     else c[f] = f === 'through' || f === 'base' ? +t.value : t.value.trim();
@@ -566,7 +579,7 @@ document.addEventListener('change', function (e) {
     var tm = S.teams[t.dataset.id]; if (!tm) return; tm[t.dataset.tm] = t.value.trim(); J.save({ render: false });
   }
 });
-J.acts.teamNew = function () { var S = J.S, nm = prompt('Team name'); if (!nm) return; var id = J.slug(nm); S.teams[id] = S.teams[id] || { id: id, name: nm.trim(), color: J.TEAM_COLORS[Object.keys(S.teams).length % J.TEAM_COLORS.length], base: '', mfr: '' }; J.save(); };
+J.acts.teamNew = async function () { var S = J.S, nm = await J.ask('New team', 'Team name', ''); if (!nm || !nm.trim()) return; var id = J.slug(nm); S.teams[id] = S.teams[id] || { id: id, name: nm.trim(), color: J.TEAM_COLORS[Object.keys(S.teams).length % J.TEAM_COLORS.length], base: '', mfr: '' }; J.save(); };
 J.acts.teamDel = function (el) { var S = J.S, id = el.dataset.id, t = S.teams[id]; if (!t || !confirm('Remove ' + t.name + '? Its drivers will have no team.')) return; J.teamDrivers(S, id).forEach(function (k) { S.contracts[k].team = ''; }); delete S.teams[id]; J.save(); };
 J.acts.rosterFill = function () {
   var S = J.S, look = J.rosterLookup && J.rosterLookup(S); if (!look) return;
@@ -664,7 +677,7 @@ J.acts.saveGh = async function () {
   catch (e) { boxMsg('ghMsg', e.message, true); }
 };
 J.acts.pubNow = async function () { try { var r = await J.publisher.run(true); boxMsg('ghMsg', r || 'Published.'); } catch (e) { boxMsg('ghMsg', e.message, true); } };
-J.acts.copyUrl = function () { var u = J.publisher.publicUrl(); (navigator.clipboard ? navigator.clipboard.writeText(u) : Promise.reject()).then(function () { J.toast('Link copied.'); }, function () { prompt('Copy this link:', u); }); };
+J.acts.copyUrl = function () { var u = J.publisher.publicUrl(); (navigator.clipboard ? navigator.clipboard.writeText(u) : Promise.reject()).then(function () { J.toast('Link copied.'); }, function () { J.ask('Copy this link:', 'Link', u); }); };
 J.acts.openUrl = function () { J.openExternal(J.publisher.publicUrl()); };
 
 J.nav.push({ id: 'preview', label: 'Preview public site', group: 'Commissioner', admin: true });

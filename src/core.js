@@ -742,6 +742,28 @@ J.chasePicture = function (S) {
 
 /* ---------- outlook simulations (deterministic, seeded) ---------- */
 var K0 = 4, KT = 3;
+/* How much each series is a lottery. Cup is the deepest and most predictable; Trucks and ARCA have wider gaps between teams and more wrecks. */
+var SIM_SERIES = { cup: { sigma: 0.85, dnf: 0.9 }, xfinity: { sigma: 0.95, dnf: 1.0 }, truck: { sigma: 1.05, dnf: 1.1 }, arca: { sigma: 1.2, dnf: 1.25 } };
+// S.simCfg = { real: 'low'|'normal'|'high' (how long real-life form carries before this season's results take over), chaos: 'low'|'normal'|'high' }
+J.simCfg = function (S) {
+  var o = S.simCfg || {}, sr = SIM_SERIES[S.series.id] || SIM_SERIES.cup, real = { low: 4, normal: 9, high: 16 }[o.real || 'normal'] || 9, chaos = { low: 0.7, normal: 1, high: 1.35 }[o.chaos || 'normal'] || 1;
+  return { k: real, sigma: sr.sigma * chaos, dnf: sr.dnf * (0.8 + 0.2 * chaos) };
+};
+// where a driver is expected to run before the season says otherwise (0..1): real-life strength, the team's strength, the driver rating on the contract
+J.priorOf = function (S, key, teamRl) {
+  var c = (S.contracts || {})[key] || {}, parts = [], rl = c.rl && c.rl.s != null ? c.rl.s : null;
+  if (rl != null) parts.push([rl, 0.55]);
+  var tr = c.team && teamRl && teamRl[c.team]; if (tr != null) parts.push([tr, 0.25]);
+  if (c.base != null && isFinite(+c.base)) parts.push([Math.max(0, Math.min(1, (+c.base - 40) / 45)), 0.2]);
+  var m = 0, w = 0; parts.forEach(function (x) { m += x[0] * x[1]; w += x[1]; });
+  m = w ? m / w : (c.pt || c.extra || c.fictional ? 0.4 : 0.5);
+  if (c.pt && m > 0.5) m = 0.5; // part-timers do not start out as front runners
+  return Math.max(0.12, Math.min(0.88, 0.14 + m * 0.72));
+};
+function teamStrength(S) {
+  var t = {}, n = {}; Object.keys(S.contracts || {}).forEach(function (k) { var c = S.contracts[k]; if (!c || !c.team || c.pt || c.released || !c.rl || c.rl.s == null) return; t[c.team] = (t[c.team] || 0) + c.rl.s; n[c.team] = (n[c.team] || 0) + 1; });
+  Object.keys(t).forEach(function (k) { t[k] /= n[k]; }); return t;
+}
 var TYPE_SIGMA = { super: 1.5, inter: 0.95, short: 1.0, road: 1.1, unique: 1.0 };
 var TYPE_DNF = { super: 1.9, inter: 0.8, short: 1.0, road: 1.1, unique: 0.9 };
 function gauss(r) { var u = 1 - r(), v = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
@@ -757,18 +779,23 @@ J.ratings = function (S) {
       var b = d.byType[T] || (d.byType[T] = { n: 0, sum: 0, fin: 0 }); b.n++; b.sum += p; b.fin += r.position;
     });
   });
+  var cfg = J.simCfg(S), tRl = teamStrength(S);
+  // everyone who is a full-timer on a contract is in the field, even before the first race of a new season
+  J.powerField(S).forEach(function (r) { var rc = (S.contracts || {})[r.key] || {}; if (!D[r.key]) D[r.key] = { key: r.key, name: r.name, car: rc.car || '', n: 0, sum: 0, byType: {}, dnf: 0, finSum: 0 }; });
+  J.roster(S).forEach(function (r) { var rc = (S.contracts || {})[r.key]; if (rc && (rc.released || rc.callup)) return; if (!D[r.key]) D[r.key] = { key: r.key, name: r.name, car: r.car || '', n: 0, sum: 0, byType: {}, dnf: 0, finSum: 0 }; });
   Object.keys(D).forEach(function (k) {
-    var d = D[k]; d.overall = (d.sum + 0.5 * K0) / (d.n + K0); d.skill = {};
+    var d = D[k]; d.prior = J.priorOf(S, k, tRl); d.overall = (d.sum + d.prior * cfg.k) / (d.n + cfg.k); d.skill = {};
     J.TYPE_KEYS.forEach(function (t) { var b = d.byType[t] || { n: 0, sum: 0 }; d.skill[t] = (b.sum + d.overall * KT) / (b.n + KT); });
-    d.dnfRate = (d.dnf + 0.06 * 3) / (d.n + 3);
+    d.dnfRate = (d.dnf + 0.09 * 3) / (d.n + 3);
   });
   return D;
 };
-function simOne(arr, T, rand) {
+function simOne(arr, T, rand, cf) {
+  cf = cf || { sigma: 1, dnf: 1 };
   var sc = new Array(arr.length);
   for (var i = 0; i < arr.length; i++) {
-    var d = arr[i], z = (d.skill[T] - 0.5) * 4 + (d.boost || 0) + gauss(rand) * TYPE_SIGMA[T];
-    var dnf = rand() < d.dnfRate * TYPE_DNF[T]; if (dnf) z = -5 - rand();
+    var d = arr[i], z = (d.skill[T] - 0.5) * 4 + (d.boost || 0) + gauss(rand) * TYPE_SIGMA[T] * cf.sigma;
+    var dnf = rand() < d.dnfRate * TYPE_DNF[T] * cf.dnf; if (dnf) z = -5 - rand();
     sc[i] = { i: i, z: z, dnf: dnf };
   }
   sc.sort(function (a, b) { return b.z - a.z; });
@@ -817,7 +844,7 @@ J.simulateSeason = function (S, N) {
   for (var s = 0; s < N; s++) {
     var pts = base.map(function (b) { return b.pts; }), wins = base.map(function (b) { return b.wins; }), cs = fixedSet;
     for (var j = 0; j < remaining.length; j++) {
-      var res = simOne(arr, remaining[j].type || 'inter', rand);
+      var res = simOne(arr, remaining[j].type || 'inter', rand, J.simCfg(S));
       for (var p = 0; p < n; p++) { var o = res[p]; pts[o.i] += J.pointsFor(S, p + 1, n); acc[o.i].fin += p + 1; acc[o.i].finN++; if (p === 0) wins[o.i]++; }
       if (played + j + 1 === cutAt) cs = chaseSet(pts, wins, S.chase);
     }
@@ -855,13 +882,12 @@ J.sessionBoost = function (S, sid, T) {
 J.simRace = function (S, round, seed) {
   var T = round.type || J.guessType(round.track || round.name), D = J.ratings(S), sb = J.sessionBoost(S, round.id, T);
   var field = {}; J.sessionsFor(S, round.id).forEach(function (x) { x.rows.forEach(function (r) { field[J.driverKey(r.driver)] = r; }); });
-  J.roster(S).forEach(function (d) { if (!D[d.key]) { var sk = {}; J.TYPE_KEYS.forEach(function (t) { sk[t] = 0.42; }); D[d.key] = { key: d.key, name: d.name, car: d.car, n: 0, overall: 0.42, skill: sk, dnfRate: 0.08, byType: {} }; } });
-  var arr = Object.keys(D).map(function (k) { return D[k]; });
+    var arr = Object.keys(D).map(function (k) { return D[k]; });
   if (Object.keys(field).length >= 10) arr = arr.filter(function (d) { return field[d.key]; });
-  else { var last = S.races[S.races.length - 1], n = last ? last.rows.length : 38; arr.sort(function (a, b) { return b.n - a.n || b.overall - a.overall; }); arr = arr.slice(0, Math.max(n, Math.min(arr.length, 36))); }
+  else { var last = S.races[S.races.length - 1], n = last ? last.rows.length : 38; arr.sort(function (a, b) { return (J.isPT(S, a.key) ? 1 : 0) - (J.isPT(S, b.key) ? 1 : 0) || b.n - a.n || b.overall - a.overall; }); arr = arr.slice(0, Math.max(n, Math.min(arr.length, 36))); }
   if (arr.length < 3) return null;
   arr.forEach(function (d) { d.boost = sb.boost[d.key] || 0; var c = S.contracts && S.contracts[d.key]; if (c && c.car) d.car = c.car; });
-  var rand = J.rng('sim' + S.id + round.id + (seed || Date.now())), res = simOne(arr, T, rand);
+  var rand = J.rng('sim' + S.id + round.id + (seed || Date.now())), res = simOne(arr, T, rand, J.simCfg(S));
   var LAPS = { super: 188, inter: 200, short: 300, road: 70, unique: 200 }, sameTrack = S.races.filter(function (r) { return r.track && r.track === round.track; }).pop();
   var laps = sameTrack && sameTrack.rows[0] && sameTrack.rows[0].laps ? sameTrack.rows[0].laps : LAPS[T];
   var q = J.sessionOf(S, round.id, 'qualifying'), qpos = {}; if (q) q.rows.forEach(function (r) { qpos[J.driverKey(r.driver)] = r.position; });
@@ -893,7 +919,7 @@ J.raceOutlook = function (S) {
   var key = cacheKey(S, 'race' + nx.id) + '|' + (S.sessions || []).filter(function (x) { return x.sid === nx.id; }).map(function (x) { return x.id + x.rows.length; }).join(','); if (CACHE[key]) return CACHE[key];
   arr.forEach(function (d) { d.boost = sb.boost[d.key] || 0; });
   var N = 3000, rand = J.rng(key), acc = arr.map(function () { return { w: 0, t5: 0, t10: 0, fin: 0, dnf: 0 }; });
-  for (var s = 0; s < N; s++) { var res = simOne(arr, T, rand); res.forEach(function (o, p) { var a = acc[o.i]; if (p === 0) a.w++; if (p < 5) a.t5++; if (p < 10) a.t10++; a.fin += p + 1; if (o.dnf) a.dnf++; }); }
+  for (var s = 0; s < N; s++) { var res = simOne(arr, T, rand, J.simCfg(S)); res.forEach(function (o, p) { var a = acc[o.i]; if (p === 0) a.w++; if (p < 5) a.t5++; if (p < 10) a.t10++; a.fin += p + 1; if (o.dnf) a.dnf++; }); }
   var qpos = {}, qs = J.sessionOf(S, nx.id, 'qualifying'); if (qs) qs.rows.forEach(function (r) { qpos[J.driverKey(r.driver)] = r.position; });
   var rows = arr.map(function (d, i) {
     var a = acc[i], hist = []; S.races.forEach(function (r) { if (nx.track && r.track === nx.track) { var x = r.rows.find(function (q) { return J.driverKey(q.driver) === d.key; }); if (x) hist.push(x.position); } });
