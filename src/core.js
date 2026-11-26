@@ -192,12 +192,20 @@ J.nextSeason = function (prev, o) {
   if (prev.oddsGate) L.oddsGate = JSON.parse(JSON.stringify(prev.oddsGate));
   L.fans = prev.fans; L.rep = prev.rep; L.teams = JSON.parse(JSON.stringify(prev.teams || {})); L.contracts = JSON.parse(JSON.stringify(prev.contracts || {}));
   L.moves = (prev.moves || []).filter(function (m) { return m.status === 'approved'; }).map(function (m) { return JSON.parse(JSON.stringify(m)); });
-  var ny = parseInt(L.season, 10);
+  var ny = parseInt(L.season, 10), freed = [];
   Object.keys(L.contracts).forEach(function (k) {
     var c = L.contracts[k], rr = J.rng('resign' + k + ny);
     if (c.callup || c.released) { delete L.contracts[k]; return; } // one-off starts and released drivers do not carry over
-    if (c.through < ny) { c.through = ny + (rr() < 0.55 ? 1 : 0) + (rr() < 0.3 ? 1 : 0); c.resigned = ny; } // most expiring drivers re-sign
+    if (c.resign === 'no') { // the commissioner chose not to re-sign him: free agent, unless an approved move already takes him somewhere
+      var moved = (prev.moves || []).some(function (m) { return m.key === k && m.status === 'approved'; });
+      if (!moved && c.name) freed.push({ key: k, name: c.name, from: c.team && prev.teams[c.team] ? prev.teams[c.team].name : '', base: c.base || 60, rl: c.rl || null, year: ny });
+      if (!moved) { delete L.contracts[k]; return; }
+      delete c.resign; return;
+    }
+    if (c.through < ny || c.resign === 'yes') { c.through = ny + (rr() < 0.55 ? 1 : 0) + (rr() < 0.3 ? 1 : 0); c.resigned = ny; } // most expiring drivers re-sign
+    delete c.resign;
   });
+  L.freeAgents = (prev.freeAgents || []).concat(freed);
   if (J.applyMovesFor) J.applyMovesFor(L);
   L.silly = (prev.silly || []).filter(function (x) { return x.stage !== 'confirmed' && x.stage !== 'dead'; });
   L.schedule = o.schedule || prev.schedule.map(function (r) { var x = JSON.parse(JSON.stringify(r)); x.id = x.id; if (/^\d{4}-/.test(x.date || '')) x.date = String(L.season) + x.date.slice(4); x.note = ''; return x; });

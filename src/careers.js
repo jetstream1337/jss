@@ -27,17 +27,20 @@ function teamName(L, tid) { return tid && L.teams && L.teams[tid] ? L.teams[tid]
 function sLabel(sid) { var L = cur(sid); return L ? L.series.label : (J.SERIES[sid] || {}).label || sid; }
 
 /* ---------- next season's moves ---------- */
-J.suggestMoves = function (seed) {
-  seed = seed || Date.now();
+J.suggestMoves = function (seed, opts) {
+  seed = seed || Date.now(); opts = opts || {};
   var R = J.rng('moves' + seed), heat = J.FALLOUT[(J.settings && J.settings.fallout) || 'normal']; if (heat == null) heat = 1;
   var Ls = {}, St = {}; LAD.forEach(function (s) { var L = cur(s); if (L) { Ls[s] = L; St[s] = stats(L); } });
   var moves = [], taken = {};
   Object.keys(Ls).forEach(function (s) { (Ls[s].moves || []).forEach(function (m) { if (m.status !== 'proposed') taken[m.key] = m; }); });
+  // "Suggest again" is a fresh slate: whoever the last batch picked for a given kind of move (and was not approved) is mostly passed over this time
+  var avoid = {}; Object.keys(Ls).forEach(function (s) { (Ls[s].moves || []).forEach(function (m) { if (m.status === 'proposed' && !m.real && m.kind !== 'renew') (avoid[m.key] = avoid[m.key] || []).push(m.kind); }); });
+  var skipPrev = function (k, kind) { return avoid[k] && avoid[k].indexOf(kind) >= 0 && J.rng('avoid' + seed + k + kind)() < 0.85; };
   var yrOf = function (s) { return J.seasonNum(Ls[s]) + 1; };
   var mk = function (o) { o.id = J.uid('mv'); o.status = 'proposed'; o.made = Date.now(); o.through = o.through || o.season + 1 + (R() < 0.5 ? 1 : 0); moves.push(o); taken[o.key] = o; return o; };
   var fromInfo = function (L, k) { var c = L.contracts[k] || {}; return { fromTeamId: c.team || '', fromTeam: teamName(L, c.team), fromCar: c.car || '' }; };
   // 0. moves announced in real life (only while the league is the real 2026 season)
-  (J.MOVES_2027 || []).forEach(function (m) {
+  (opts.real === false ? [] : (J.MOVES_2027 || [])).forEach(function (m) {
     var from = m[2], to = m[3], nm = m[0].replace(/\s*\(.*\)\s*/, ''), Lf = Ls[from], Lt = Ls[to];
     if (!(Lf || Lt) || J.seasonNum(Lf || Lt) !== 2026) return;
     var key = (Lf && findKey(Lf, nm)) || (Lt && findKey(Lt, nm)) || J.driverKey(nm); if (taken[key]) return;
@@ -57,23 +60,23 @@ J.suggestMoves = function (seed) {
       if (!J.isOwnerDriver(L, k)) {
         var tv = J.teamView(L, k) || { score: 60, why: [] };
         var risk = (0.012 + Math.max(0, 45 - tv.score) / 500) * heat * Math.min(1, 0.25 + prog);
-        if (rr() < risk) {
+        if (rr() < risk && !skipPrev(k, 'fire')) {
           var now = prog > 0.15 && prog < 0.85 && rr() < 0.3;
           mk(Object.assign({ kind: 'fire', when: now ? 'now' : 'season', key: k, name: nm, from: s, to: '', season: yrOf(s), why: [FALL[Math.floor(rr() * FALL.length)]].concat(tv.why.slice(0, 2)) }, fromInfo(L, k)));
           return;
         }
         // sent down a series: a bad season on a team that should do better; rare, and only once the season has a shape
         var down = J.downOf(s);
-        if (down && x && x.rank && prog >= 0.4 && demoted < 1 && x.rank > st.n * 0.8 && tv.score < 38 && rr() < 0.3 * heat) {
+        if (down && x && x.rank && prog >= 0.4 && demoted < 1 && x.rank > st.n * 0.8 && tv.score < 38 && rr() < 0.3 * heat && !skipPrev(k, 'demote')) {
           demoted++;
           mk(Object.assign({ kind: 'demote', key: k, name: nm, from: s, to: down, season: yrOf(s), why: ['P' + x.rank + ' in points with a ' + x.avg.toFixed(1) + ' average finish'].concat(tv.why.slice(0, 1)) }, fromInfo(L, k)));
           return;
         }
       }
       // contract up: most re-sign, some test the market
-      if (c.through <= J.seasonNum(L)) {
+      if (c.through <= J.seasonNum(L) && c.resign !== 'no') {
         var p = pmap[k] ? pmap[k].p : 0.4;
-        if (rr() < p * 0.5 && !J.isOwnerDriver(L, k)) mk(Object.assign({ kind: 'move', key: k, name: nm, from: s, to: s, season: yrOf(s), why: ['contract up after ' + J.seasonNum(L)].concat(pmap[k] ? pmap[k].why.filter(function (w) { return !/contract/.test(w); }).slice(0, 1) : []), free: true }, fromInfo(L, k)));
+        if (c.resign !== 'yes' && rr() < p * 0.5 && !J.isOwnerDriver(L, k) && !skipPrev(k, 'move')) mk(Object.assign({ kind: 'move', key: k, name: nm, from: s, to: s, season: yrOf(s), why: ['contract up after ' + J.seasonNum(L)].concat(pmap[k] ? pmap[k].why.filter(function (w) { return !/contract/.test(w); }).slice(0, 1) : []), free: true }, fromInfo(L, k)));
         else mk({ kind: 'renew', key: k, name: nm, from: s, to: s, teamId: c.team, team: teamName(L, c.team), car: c.car, season: yrOf(s), through: yrOf(s) + (rr() < 0.5 ? 1 : 0) + (rr() < 0.25 ? 1 : 0), why: [pmap[k] && pmap[k].happy ? pmap[k].happy.label.toLowerCase() + ' with the team' : 'wants to stay'] });
       }
     });
@@ -94,7 +97,7 @@ J.suggestMoves = function (seed) {
         var c = Ld.contracts[k], x = sd.by[k], fa = taken[k] && taken[k].status === 'proposed' && taken[k].kind === 'move' && taken[k].free && !taken[k].team ? taken[k] : null;
         if ((taken[k] && !fa) || c.callup || !x || !x.avg || J.isOwnerDriver(Ld, k)) return;
         var good = (x.rank && x.rank <= 6) || x.d.wins >= 1 || x.avg <= sd.field * 0.3 || (c.pt && x.d.starts >= 3 && x.avg <= 9);
-        if (!good || x.d.starts < Math.max(2, sd.runs * 0.25)) return;
+        if (!good || x.d.starts < Math.max(2, sd.runs * 0.25) || skipPrev(k, 'promote')) return;
         pool.push({ key: k, name: nameOf(Ld, k), from: down, kind: 'promote', fa: fa, fromL: Ld, exp: x.avg + 6, score: (sd.field * 0.5 - x.avg) + x.d.wins * 3 + (x.rank ? Math.max(0, 8 - x.rank) : 0) + R() * 5, why: [(x.rank ? 'P' + x.rank + ' in ' + sLabel(down) + ' points, ' : 'part-time, ') + J.plural(x.d.wins, 'win') + ', ' + x.avg.toFixed(1) + ' average finish'] });
       });
     }
@@ -271,6 +274,37 @@ function cuRow(c, S) {
   return '<div class="mvrow k-callup' + (c.status === 'approved' ? ' ok' : c.status === 'rejected' ? ' no' : '') + '"><span class="mvk">' + (c.to === S.series.id ? 'Call-up in' : 'Call-up out') + '</span><div class="mvb"><b>' + esc(c.name) + '</b> <span class="dim">' + esc(J.plural(c.rounds.length, 'start') + ' in the ' + sLabel(c.to) + ' ' + c.team + ' #' + c.car) + '</span><small>' + esc(c.why.join('; ') + '. Races: ' + rn.join(', ')) + '</small></div><div class="mvact">'
     + (c.status === 'proposed' ? '<button class="btn sm" data-act="cuOk" data-id="' + esc(c.id) + '">Approve</button><button class="btn ghost sm" data-act="cuNo" data-id="' + esc(c.id) + '">Reject</button>' : '<span class="chip' + (c.status === 'approved' ? ' g' : '') + '">' + (c.status === 'approved' ? 'Approved' : 'Rejected') + '</span>') + '</div></div>';
 }
+// who re-signs: the commissioner decides. "Let go" = not renewed at rollover; the driver goes to the free agent list.
+function resignPanel(S, all) {
+  var rows = [];
+  (all ? LAD : [S.series.id]).forEach(function (s) {
+    var L = cur(s); if (!L) return; var y = J.seasonNum(L);
+    Object.keys(L.contracts || {}).forEach(function (k) { var c = L.contracts[k]; if (!c || !c.name || c.callup || c.released || !c.team) return; if (c.through <= y || c.resign) rows.push({ s: s, L: L, k: k, c: c }); });
+  });
+  rows.sort(function (a, b) { return LAD.indexOf(a.s) - LAD.indexOf(b.s) || a.c.name.localeCompare(b.c.name); });
+  var opt = function (v, cv, label) { return '<option value="' + v + '"' + ((cv || '') === v ? ' selected' : '') + '>' + label + '</option>'; };
+  var fa = [];
+  (all ? LAD : [S.series.id]).forEach(function (s) { var L = cur(s); (L && L.freeAgents || []).forEach(function (f) { fa.push({ s: s, f: f }); }); });
+  return '<section class="panel" id="resignPanel"><h3>Contracts up: who re-signs</h3><p class="sub">Drivers whose deal ends this season. By default most re-sign on their own when you start next season. Choose <b>Let go</b> and he is not re-signed: he leaves the team and appears below as a free agent. Choose <b>Re-sign</b> to make sure he stays.</p>'
+    + (rows.length ? '<div class="tw"><table class="data"><thead><tr>' + (all ? '<th>Series</th>' : '') + '<th>Driver</th><th>Team</th><th>Through</th><th>At season end</th></tr></thead><tbody>' + rows.map(function (r) { var t = r.c.team && r.L.teams[r.c.team]; return '<tr>' + (all ? '<td>' + esc(sLabel(r.s)) + '</td>' : '') + '<td><b>' + esc(r.c.name) + '</b></td><td>' + esc(t ? t.name : '') + (r.c.car ? ' #' + esc(r.c.car) : '') + '</td><td>' + esc(r.c.through) + '</td><td><select data-rs="' + esc(r.k) + '" data-sid="' + esc(r.s) + '" aria-label="At season end for ' + esc(r.c.name) + '">' + opt('', r.c.resign, 'Automatic') + opt('yes', r.c.resign, 'Re-sign') + opt('no', r.c.resign, 'Let go') + '</select></td></tr>'; }).join('') + '</tbody></table></div>' : '<p class="dim">Nobody has a deal ending this season.</p>')
+    + (fa.length ? '<h4 style="margin:14px 0 4px">Free agents</h4><p class="sub">Drivers who were let go. Sign one to a team and he gets a new contract.</p><div class="tw"><table class="data"><thead><tr>' + (all ? '<th>Series</th>' : '') + '<th>Driver</th><th>Last team</th><th>Sign with</th></tr></thead><tbody>' + fa.map(function (x) { var L = cur(x.s); return '<tr>' + (all ? '<td>' + esc(sLabel(x.s)) + '</td>' : '') + '<td><b>' + esc(x.f.name) + '</b></td><td>' + esc(x.f.from || '') + '</td><td><select data-fa="' + esc(x.f.key) + '" data-sid="' + esc(x.s) + '" aria-label="Sign ' + esc(x.f.name) + ' with"><option value="">Choose a team…</option>' + Object.keys(L.teams || {}).map(function (t) { return '<option value="' + esc(t) + '">' + esc(L.teams[t].name) + '</option>'; }).join('') + '</select></td></tr>'; }).join('') + '</tbody></table></div>' : '')
+    + '</section>';
+}
+document.addEventListener('change', function (e) {
+  var t = e.target; if (!t.dataset || !t.dataset.sid) return;
+  if (t.dataset.rs != null) {
+    var L = cur(t.dataset.sid), c = L && L.contracts[t.dataset.rs]; if (!c) return;
+    if (t.value) c.resign = t.value; else delete c.resign;
+    if (t.value === 'no') Object.keys(J.leagues || {}).forEach(function (k) { var X = J.leagues[k]; if (X.archived) return; var n = (X.moves || []).length; X.moves = (X.moves || []).filter(function (m) { return !(m.key === t.dataset.rs && m.status === 'proposed' && (m.kind === 'renew' || (m.kind === 'move' && m.free))); }); if (X.moves.length !== n) dirty(X); });
+    dirty(L); saveAll(); J.render();
+  } else if (t.dataset.fa != null && t.value) {
+    var L2 = cur(t.dataset.sid); if (!L2) return;
+    var fl = L2.freeAgents || [], i = -1; fl.forEach(function (f, n) { if (f.key === t.dataset.fa) i = n; }); if (i < 0) return;
+    var f = fl[i], tm = L2.teams[t.value]; if (!tm) return;
+    L2.contracts[f.key] = { name: f.name, team: t.value, car: '', through: J.seasonNum(L2) + 1 + (J.rng('fa' + f.key)() < 0.5 ? 1 : 0), base: f.base || 60, rl: f.rl || null, auto: 1 };
+    fl.splice(i, 1); L2.freeAgents = fl; dirty(L2); saveAll(); J.toast(f.name + ' signs with ' + tm.name + '. Set his car number on Teams and Contracts.'); J.render();
+  }
+});
 J.routes.careers = function (S) {
   var sid = S.series.id, nx = J.nextRound(S), all = !!J.ui.cmAll, fall = (J.settings && J.settings.fallout) || 'normal';
   var mv = (S.moves || []).slice(); if (all) { mv = []; var seen = {}; LAD.forEach(function (s) { var L = cur(s); (L && L.moves || []).forEach(function (m) { if (!seen[m.id]) { seen[m.id] = 1; mv.push(m); } }); }); }
@@ -284,6 +318,7 @@ J.routes.careers = function (S) {
   var cus = (S.callups || []).slice().sort(function (a, b) { return (a.status === 'rejected') - (b.status === 'rejected'); });
   out += '<section class="panel"><h3>Call-ups this season</h3><p class="sub">Standouts from the series below get a few starts in a part-time car one series up. Approve one and that driver is put in the car for those races.</p>'
     + (cus.length ? cus.map(function (c) { return cuRow(c, S); }).join('') : '<p class="dim">None yet.</p>') + '<div class="row"><button class="btn sm" data-act="cmCallups">Suggest call-ups</button></div></section>';
+  out += resignPanel(S, all);
   // next season
   out += '<section class="panel"><h3>Next season\'s moves</h3><p class="sub">Suggestions from this season\'s results, contracts, happiness and how each team sees its driver, plus real moves already announced. Nothing happens until you approve it. Approved moves take effect when you start next season on the League page (a "released now" takes effect right away).</p>'
     + '<div class="row artopts"><label class="field" style="margin:0"><span>How often teams fall out with drivers</span><select id="falloutSel">' + [['off', 'Never'], ['rare', 'Rarely'], ['normal', 'Sometimes (like real life)'], ['wild', 'A lot (drama)']].map(function (o) { return '<option value="' + o[0] + '"' + (fall === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label><label class="chk"><input type="checkbox" id="cmAll"' + (all ? ' checked' : '') + '> Show every series</label></div>'
@@ -292,7 +327,12 @@ J.routes.careers = function (S) {
   return out;
 };
 J.nav.push({ id: 'careers', label: 'Career Moves', group: 'Commissioner', admin: true });
-J.acts.cmSuggest = function () { var n = J.suggestMoves(Date.now()); J.toast(J.plural(n.length, 'move') + ' suggested across the series.'); };
+J.acts.cmSuggest = function () {
+  // the first click brings in the moves announced in real life; "Suggest again" is a new slate, so those are left out (approved ones stay)
+  var again = LAD.some(function (s) { var L = cur(s); return L && (L.moves || []).some(function (m) { return m.status === 'proposed'; }); });
+  var n = J.suggestMoves(Date.now(), { real: !again });
+  J.toast(again ? J.plural(n.length, 'move') + ' in a fresh slate (real announced moves left out; approved ones stay).' : J.plural(n.length, 'move') + ' suggested across the series.');
+};
 J.acts.cmCallups = function () { var n = J.suggestCallups(Date.now()); J.toast(n.length ? J.plural(n.length, 'call-up') + ' suggested.' : 'No call-ups to suggest (each series needs the one below it running, and races left).', !n.length); };
 J.acts.mvOk = function (el) { var m = null; eachCopy(el.dataset.id, function (x) { m = x; }); if (m) { approve(m); saveAll(); } };
 J.acts.mvNo = function (el) { eachCopy(el.dataset.id, function (x) { x.status = 'rejected'; }); saveAll(); };
