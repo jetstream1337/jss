@@ -962,3 +962,8 @@ img.sbadge{object-fit:contain;display:inline-block}
 .pwed .pwrow small{display:block;color:var(--muted);font-size:12px}
 .pwed input[type=range]{width:100%}
 .pwed .pwopts{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end}
+
+/* ratings and progression */
+.rtup{color:var(--good);font-weight:700}.rtdn{color:var(--bad,#e5484d);font-weight:700}
+.rtrow{display:grid;grid-template-columns:minmax(0,1fr) 76px 76px;gap:10px;align-items:center;padding:3px 0}
+.rtrow input{width:100%}

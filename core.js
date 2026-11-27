@@ -182,6 +182,7 @@ J.seasonsFor = function (seriesId) {
 // a new season for the same series: carries over the league, fans, reputations, open silly season stories and settings
 J.nextSeason = function (prev, o) {
   o = o || {};
+  if (!o.cancel && J.progressAuto) { try { J.progressAuto(prev); } catch (e) { console.error(e); } } // the season's results move everyone's ratings before they carry over
   var L = J.newLeague(prev.series.id, prev.league.name);
   L.season = o.year || (parseInt(J.seasonYear(prev), 10) + 1);
   L.chase = JSON.parse(JSON.stringify(prev.chase));
@@ -190,6 +191,7 @@ J.nextSeason = function (prev, o) {
   if (prev.art) L.art = JSON.parse(JSON.stringify(prev.art));
   if (prev.power && prev.power.cfg) L.power = { cfg: JSON.parse(JSON.stringify(prev.power.cfg)) };
   if (prev.oddsGate) L.oddsGate = JSON.parse(JSON.stringify(prev.oddsGate));
+  if (prev.ratings) { L.ratings = JSON.parse(JSON.stringify(prev.ratings)); L.ratings.snap = null; }
   L.fans = prev.fans; L.rep = prev.rep; L.teams = JSON.parse(JSON.stringify(prev.teams || {})); L.contracts = JSON.parse(JSON.stringify(prev.contracts || {}));
   L.moves = (prev.moves || []).filter(function (m) { return m.status === 'approved'; }).map(function (m) { return JSON.parse(JSON.stringify(m)); });
   var ny = parseInt(L.season, 10), freed = [];
@@ -197,10 +199,10 @@ J.nextSeason = function (prev, o) {
   (prev.moves || []).forEach(function (m) { if (m.status === 'approved' && m.kind === 'fire' && m.from === prev.series.id && !(m.applied && m.applied[L.id])) { var fc = L.contracts[m.key]; if (fc && fc.name && !fc.callup) { freed.push({ key: m.key, name: fc.name, from: fc.team && prev.teams[fc.team] ? prev.teams[fc.team].name : '', fromId: fc.team || '', car: fc.car || '', base: fc.base || 60, rl: fc.rl || null, year: ny }); } } });
   Object.keys(L.contracts).forEach(function (k) {
     var c = L.contracts[k], rr = J.rng('resign' + k + ny);
-    if (c.callup || c.released) { if (c.released && c.name && !c.retired && !c.callup && !c.interim && !c.extra && (prev.moves || []).some(function (m) { return m.key === k && m.status === 'approved' && m.kind === 'fire'; })) freed.push({ key: k, name: c.name, from: c.fireFrom || '', fromId: c.fireFromId || '', car: '', base: c.base || 60, rl: c.rl || null, year: ny }); delete L.contracts[k]; return; } // one-off starts and released drivers do not carry over
+    if (c.callup || c.released) { if (c.released && c.name && !c.retired && !c.callup && !c.interim && !c.extra && (prev.moves || []).some(function (m) { return m.key === k && m.status === 'approved' && m.kind === 'fire'; })) freed.push({ key: k, name: c.name, from: c.fireFrom || '', fromId: c.fireFromId || '', car: '', base: c.base || 60, rl: c.rl || null, birth: c.birth != null ? c.birth : null, fictional: !!c.fictional, year: ny }); delete L.contracts[k]; return; } // one-off starts and released drivers do not carry over
     if (c.resign === 'no') { // the commissioner chose not to re-sign him: free agent, unless an approved move already takes him somewhere
       var moved = (prev.moves || []).some(function (m) { return m.key === k && m.status === 'approved'; });
-      if (!moved && c.name) freed.push({ key: k, name: c.name, from: c.team && prev.teams[c.team] ? prev.teams[c.team].name : '', fromId: c.team || '', car: c.car || '', base: c.base || 60, rl: c.rl || null, year: ny });
+      if (!moved && c.name) freed.push({ key: k, name: c.name, from: c.team && prev.teams[c.team] ? prev.teams[c.team].name : '', fromId: c.team || '', car: c.car || '', base: c.base || 60, rl: c.rl || null, birth: c.birth != null ? c.birth : null, fictional: !!c.fictional, year: ny });
       if (!moved) { delete L.contracts[k]; return; }
       delete c.resign; return;
     }
@@ -208,9 +210,12 @@ J.nextSeason = function (prev, o) {
     delete c.resign;
   });
   var seenF = {}; L.freeAgents = (prev.freeAgents || []).concat(freed).filter(function (f) { if (seenF[f.key]) return false; seenF[f.key] = 1; return true; });
+  L.retired = JSON.parse(JSON.stringify(prev.retired || []));
   if (J.applyMovesFor) J.applyMovesFor(L);
+  // seats left open by drivers who are gone (retired, moved up, let go): new young drivers fill what free agents do not
+  var vac = 0; Object.keys(prev.contracts || {}).forEach(function (pk) { var pc = prev.contracts[pk]; if (pc && pc.team && !pc.pt && !pc.callup && !pc.released && !L.contracts[pk]) vac++; }); L.vacated = vac;
   L.freeAgents = L.freeAgents.filter(function (f) { return !L.contracts[f.key]; }); // already placed by an approved move
-  if (J.placeFreeAgents && L.freeAgents.length) { var pr = J.placeFreeAgents(L); L.placed = pr.list; }
+  if (J.placeFreeAgents && (L.freeAgents.length || L.vacated)) { var pr = J.placeFreeAgents(L); L.placed = pr.list.concat((pr.retired || []).map(function (x) { return x + ' retired'; })); }
   L.silly = (prev.silly || []).filter(function (x) { return x.stage !== 'confirmed' && x.stage !== 'dead'; });
   L.schedule = o.schedule || prev.schedule.map(function (r) { var x = JSON.parse(JSON.stringify(r)); x.id = x.id; if (/^\d{4}-/.test(x.date || '')) x.date = String(L.season) + x.date.slice(4); x.note = ''; return x; });
   return J.normalize(L);
@@ -764,9 +769,11 @@ J.simCfg = function (S) {
 // where a driver is expected to run before the season says otherwise (0..1): real-life strength, the team's strength, the driver rating on the contract
 J.priorOf = function (S, key, teamRl) {
   var c = (S.contracts || {})[key] || {}, parts = [], rl = c.rl && c.rl.s != null ? c.rl.s : null;
-  if (rl != null) parts.push([rl, 0.55]);
+  var rt = J.rtOverall && S.ratings && S.ratings.drivers && S.ratings.drivers[key]; // once a driver has ratings (they move with progression), those lead
+  if (rl != null) parts.push([rl, rt ? 0.2 : 0.55]);
   var tr = c.team && teamRl && teamRl[c.team]; if (tr != null) parts.push([tr, 0.25]);
-  if (c.base != null && isFinite(+c.base)) parts.push([Math.max(0, Math.min(1, (+c.base - 40) / 45)), 0.2]);
+  if (rt) parts.push([Math.max(0, Math.min(1, (J.rtOverall(rt) - 40) / 45)), 0.5]);
+  else if (c.base != null && isFinite(+c.base)) parts.push([Math.max(0, Math.min(1, (+c.base - 40) / 45)), 0.2]);
   var m = 0, w = 0; parts.forEach(function (x) { m += x[0] * x[1]; w += x[1]; });
   m = w ? m / w : (c.pt || c.extra || c.fictional ? 0.4 : 0.5);
   if (c.pt && m > 0.5) m = 0.5; // part-timers do not start out as front runners
@@ -799,6 +806,7 @@ J.ratings = function (S) {
     var d = D[k]; d.prior = J.priorOf(S, k, tRl); d.overall = (d.sum + d.prior * cfg.k) / (d.n + cfg.k); d.skill = {};
     J.TYPE_KEYS.forEach(function (t) { var b = d.byType[t] || { n: 0, sum: 0 }; d.skill[t] = (b.sum + d.overall * KT) / (b.n + KT); });
     d.dnfRate = (d.dnf + 0.09 * 3) / (d.n + 3);
+    var rm = J.rtMods && J.rtMods(S, k); if (rm) { J.TYPE_KEYS.forEach(function (t) { d.skill[t] += rm.type[t] || 0; }); d.dnfRate *= rm.dnf; } // track-type ratings, the car and the pit crew
   });
   return D;
 };
@@ -1145,7 +1153,7 @@ J.publicData = function (S) {
   o.media = (o.media || []).filter(function (m) { return m.published; });
   o.moves = (o.moves || []).filter(function (m) { return m.status === 'approved' || m.status === 'done'; });
   o.callups = (o.callups || []).filter(function (m) { return m.status === 'approved'; });
-  delete o.carWeek; if (o.art) delete o.art.orig;
+  delete o.carWeek; delete o.ratings; if (o.art) delete o.art.orig;
   return o;
 };
 
