@@ -182,6 +182,7 @@ J.seasonsFor = function (seriesId) {
 // a new season for the same series: carries over the league, fans, reputations, open silly season stories and settings
 J.nextSeason = function (prev, o) {
   o = o || {};
+  if (!o.cancel && J.progressAuto) { try { J.progressAuto(prev); } catch (e) { console.error(e); } } // the season's results move everyone's ratings before they carry over
   var L = J.newLeague(prev.series.id, prev.league.name);
   L.season = o.year || (parseInt(J.seasonYear(prev), 10) + 1);
   L.chase = JSON.parse(JSON.stringify(prev.chase));
@@ -190,6 +191,7 @@ J.nextSeason = function (prev, o) {
   if (prev.art) L.art = JSON.parse(JSON.stringify(prev.art));
   if (prev.power && prev.power.cfg) L.power = { cfg: JSON.parse(JSON.stringify(prev.power.cfg)) };
   if (prev.oddsGate) L.oddsGate = JSON.parse(JSON.stringify(prev.oddsGate));
+  if (prev.ratings) { L.ratings = JSON.parse(JSON.stringify(prev.ratings)); L.ratings.snap = null; }
   L.fans = prev.fans; L.rep = prev.rep; L.teams = JSON.parse(JSON.stringify(prev.teams || {})); L.contracts = JSON.parse(JSON.stringify(prev.contracts || {}));
   L.moves = (prev.moves || []).filter(function (m) { return m.status === 'approved'; }).map(function (m) { return JSON.parse(JSON.stringify(m)); });
   var ny = parseInt(L.season, 10), freed = [];
@@ -764,9 +766,11 @@ J.simCfg = function (S) {
 // where a driver is expected to run before the season says otherwise (0..1): real-life strength, the team's strength, the driver rating on the contract
 J.priorOf = function (S, key, teamRl) {
   var c = (S.contracts || {})[key] || {}, parts = [], rl = c.rl && c.rl.s != null ? c.rl.s : null;
-  if (rl != null) parts.push([rl, 0.55]);
+  var rt = J.rtOverall && S.ratings && S.ratings.drivers && S.ratings.drivers[key]; // once a driver has ratings (they move with progression), those lead
+  if (rl != null) parts.push([rl, rt ? 0.2 : 0.55]);
   var tr = c.team && teamRl && teamRl[c.team]; if (tr != null) parts.push([tr, 0.25]);
-  if (c.base != null && isFinite(+c.base)) parts.push([Math.max(0, Math.min(1, (+c.base - 40) / 45)), 0.2]);
+  if (rt) parts.push([Math.max(0, Math.min(1, (J.rtOverall(rt) - 40) / 45)), 0.5]);
+  else if (c.base != null && isFinite(+c.base)) parts.push([Math.max(0, Math.min(1, (+c.base - 40) / 45)), 0.2]);
   var m = 0, w = 0; parts.forEach(function (x) { m += x[0] * x[1]; w += x[1]; });
   m = w ? m / w : (c.pt || c.extra || c.fictional ? 0.4 : 0.5);
   if (c.pt && m > 0.5) m = 0.5; // part-timers do not start out as front runners
@@ -799,6 +803,7 @@ J.ratings = function (S) {
     var d = D[k]; d.prior = J.priorOf(S, k, tRl); d.overall = (d.sum + d.prior * cfg.k) / (d.n + cfg.k); d.skill = {};
     J.TYPE_KEYS.forEach(function (t) { var b = d.byType[t] || { n: 0, sum: 0 }; d.skill[t] = (b.sum + d.overall * KT) / (b.n + KT); });
     d.dnfRate = (d.dnf + 0.09 * 3) / (d.n + 3);
+    var rm = J.rtMods && J.rtMods(S, k); if (rm) { J.TYPE_KEYS.forEach(function (t) { d.skill[t] += rm.type[t] || 0; }); d.dnfRate *= rm.dnf; } // track-type ratings, the car and the pit crew
   });
   return D;
 };
@@ -1145,7 +1150,7 @@ J.publicData = function (S) {
   o.media = (o.media || []).filter(function (m) { return m.published; });
   o.moves = (o.moves || []).filter(function (m) { return m.status === 'approved' || m.status === 'done'; });
   o.callups = (o.callups || []).filter(function (m) { return m.status === 'approved'; });
-  delete o.carWeek; if (o.art) delete o.art.orig;
+  delete o.carWeek; delete o.ratings; if (o.art) delete o.art.orig;
   return o;
 };
 

@@ -74,7 +74,7 @@ J.acts.seasonNew = async function (el) {
   var y = await J.ask('Year for the new season', 'Year', String(next)); if (y === null) return; y = parseInt(y, 10) || next;
   if (J.S && J.S.id === sid) await J.store.saveLeague(J.S);
   await archive(cur, cancel);
-  var L = J.nextSeason(cur, { year: y }); L.id = sid; J.leagues[sid] = L; await J.store.saveLeague(L);
+  var L = J.nextSeason(cur, { year: y, cancel: cancel }); L.id = sid; J.leagues[sid] = L; await J.store.saveLeague(L);
   J.S = L; await J.store.setActive(sid); await J.store.loadBlobs(J.S);
   J.save(); if (J.saveDirty) J.saveDirty(); J.toast(cancel ? 'Season cancelled. ' + y + ' is ready.' : y + ' season started. Pick a schedule in Edit Schedule.');
 };
@@ -246,6 +246,7 @@ J.routes.league = function (S) {
     + '<div class="field"><label for="chName">Playoff name</label><input id="chName" value="' + esc(c.name) + '"></div>'
     + '<div class="field"><label for="chSize">Drivers who make it</label><input id="chSize" type="number" min="2" max="40" value="' + c.size + '"></div>'
     + '<div class="field"><label for="chCut">Field set after race</label><input id="chCut" type="number" min="1" max="60" value="' + c.regularRaces + '"></div></div>'
+    + '<div class="fgrid"><div class="field"><label for="lgYear">Season year</label><input id="lgYear" type="number" min="1990" max="2100" value="' + esc(J.seasonYear(S)) + '"></div><div class="field"><label>&nbsp;</label><button class="btn ghost sm" data-act="setYear">Change the year</button></div></div><p class="dim" style="margin:0 0 8px">Changes the year of this season only (schedule and race dates move with it). Nothing is wiped. To go back in time and start fresh, use Restart at the bottom of this page.</p>'
     + '<label class="check"><input type="checkbox" id="chWins"' + (c.winLocks ? ' checked' : '') + '> A win locks a driver in (win and you are in)</label>'
     + '<div class="row"><button class="btn sm" data-act="lgSave">Save</button></div></section>'
     + rosterPanel(S) + rosterClearPanel(S) + fictionPanel(S) + pointsPanel(S) + outletPanel(S)
@@ -390,6 +391,17 @@ J.acts.ptApply = function () {
 document.addEventListener('change', function (e) { if (e.target && e.target.name === 'ptTpl') { document.querySelectorAll('.pt').forEach(function (l) { l.classList.toggle('on', l.querySelector('input').checked); }); var c = $('ptCustom'); if (c) c.hidden = e.target.value !== 'custom'; } });
 J.afters.league = function () { var f = $('bkFile'); if (f) f.addEventListener('change', function () { restore(this.files[0]); this.value = ''; }); };
 J.nav.push({ id: 'league', label: 'League', group: 'Commissioner', admin: true });
+J.acts.setYear = function () {
+  var S = J.S, y = parseInt(($('lgYear') || {}).value, 10), old = parseInt(J.seasonYear(S), 10);
+  if (!y || y < 1990 || y > 2100) { J.toast('Enter a year like 2026.', true); return; }
+  if (y === old) { J.toast('It is already ' + y + '.'); return; }
+  if (!confirm('Change this ' + S.series.label + ' season from ' + old + ' to ' + y + '? Its schedule and race dates move to ' + y + '. Nothing else changes.')) return;
+  S.season = y;
+  var fix = function (d) { return /^\d{4}-/.test(d || '') ? String(parseInt(d.slice(0, 4), 10) + (y - old)) + d.slice(4) : d; };
+  (S.schedule || []).forEach(function (r) { r.date = fix(r.date); });
+  (S.races || []).forEach(function (r) { r.date = fix(r.date); if (r.meta && r.meta.date) r.meta.date = fix(r.meta.date); });
+  J.save(); J.toast('Season year is now ' + y + '.');
+};
 J.acts.lgSave = function () {
   var S = J.S, n = function (id, lo, hi, d) { var v = parseInt($(id).value, 10); return isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d; };
   S.league.name = $('lgName').value.trim() || S.league.name;
@@ -440,7 +452,7 @@ J.restartLeague = async function (sid, year) {
   for (var i = 0; i < gone.length; i++) { delete J.leagues[gone[i]]; await J.store.deleteLeague(gone[i]); }
   var old = parseInt(J.seasonYear(L), 10) || year;
   L.season = year; ['races', 'sessions', 'articles', 'posts', 'interviews', 'media', 'moves', 'callups', 'freeAgents', 'placed', 'silly'].forEach(function (k) { L[k] = []; });
-  L.rep = {}; L.ai = {}; L.carWeek = {}; L.removed = {}; L.teams = {}; L.contracts = {}; delete L.pinTs; delete L.ptVer; if (L.power) { if (L.power.cfg) L.power = { cfg: L.power.cfg }; else delete L.power; }
+  L.rep = {}; L.ai = {}; L.carWeek = {}; L.removed = {}; delete L.ratings; L.teams = {}; L.contracts = {}; delete L.pinTs; delete L.ptVer; if (L.power) { if (L.power.cfg) L.power = { cfg: L.power.cfg }; else delete L.power; }
   (L.fans || []).forEach(function (f) { if (f.stance) f.stance.seen = 0; });
   (L.schedule || []).forEach(function (r) { r.note = ''; if (/^\d{4}-/.test(r.date || '')) r.date = String(year) + r.date.slice(4); });
   if (J.rosterImport && J.ROSTERS && J.ROSTERS[sid]) J.rosterImport(L, sid, year >= 2027 ? 2027 : 2026, { over: true });
