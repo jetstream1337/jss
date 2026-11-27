@@ -199,10 +199,10 @@ J.nextSeason = function (prev, o) {
   (prev.moves || []).forEach(function (m) { if (m.status === 'approved' && m.kind === 'fire' && m.from === prev.series.id && !(m.applied && m.applied[L.id])) { var fc = L.contracts[m.key]; if (fc && fc.name && !fc.callup) { freed.push({ key: m.key, name: fc.name, from: fc.team && prev.teams[fc.team] ? prev.teams[fc.team].name : '', fromId: fc.team || '', car: fc.car || '', base: fc.base || 60, rl: fc.rl || null, year: ny }); } } });
   Object.keys(L.contracts).forEach(function (k) {
     var c = L.contracts[k], rr = J.rng('resign' + k + ny);
-    if (c.callup || c.released) { if (c.released && c.name && !c.retired && !c.callup && !c.interim && !c.extra && (prev.moves || []).some(function (m) { return m.key === k && m.status === 'approved' && m.kind === 'fire'; })) freed.push({ key: k, name: c.name, from: c.fireFrom || '', fromId: c.fireFromId || '', car: '', base: c.base || 60, rl: c.rl || null, year: ny }); delete L.contracts[k]; return; } // one-off starts and released drivers do not carry over
+    if (c.callup || c.released) { if (c.released && c.name && !c.retired && !c.callup && !c.interim && !c.extra && (prev.moves || []).some(function (m) { return m.key === k && m.status === 'approved' && m.kind === 'fire'; })) freed.push({ key: k, name: c.name, from: c.fireFrom || '', fromId: c.fireFromId || '', car: '', base: c.base || 60, rl: c.rl || null, birth: c.birth != null ? c.birth : null, fictional: !!c.fictional, year: ny }); delete L.contracts[k]; return; } // one-off starts and released drivers do not carry over
     if (c.resign === 'no') { // the commissioner chose not to re-sign him: free agent, unless an approved move already takes him somewhere
       var moved = (prev.moves || []).some(function (m) { return m.key === k && m.status === 'approved'; });
-      if (!moved && c.name) freed.push({ key: k, name: c.name, from: c.team && prev.teams[c.team] ? prev.teams[c.team].name : '', fromId: c.team || '', car: c.car || '', base: c.base || 60, rl: c.rl || null, year: ny });
+      if (!moved && c.name) freed.push({ key: k, name: c.name, from: c.team && prev.teams[c.team] ? prev.teams[c.team].name : '', fromId: c.team || '', car: c.car || '', base: c.base || 60, rl: c.rl || null, birth: c.birth != null ? c.birth : null, fictional: !!c.fictional, year: ny });
       if (!moved) { delete L.contracts[k]; return; }
       delete c.resign; return;
     }
@@ -210,9 +210,12 @@ J.nextSeason = function (prev, o) {
     delete c.resign;
   });
   var seenF = {}; L.freeAgents = (prev.freeAgents || []).concat(freed).filter(function (f) { if (seenF[f.key]) return false; seenF[f.key] = 1; return true; });
+  L.retired = JSON.parse(JSON.stringify(prev.retired || []));
   if (J.applyMovesFor) J.applyMovesFor(L);
+  // seats left open by drivers who are gone (retired, moved up, let go): new young drivers fill what free agents do not
+  var vac = 0; Object.keys(prev.contracts || {}).forEach(function (pk) { var pc = prev.contracts[pk]; if (pc && pc.team && !pc.pt && !pc.callup && !pc.released && !L.contracts[pk]) vac++; }); L.vacated = vac;
   L.freeAgents = L.freeAgents.filter(function (f) { return !L.contracts[f.key]; }); // already placed by an approved move
-  if (J.placeFreeAgents && L.freeAgents.length) { var pr = J.placeFreeAgents(L); L.placed = pr.list; }
+  if (J.placeFreeAgents && (L.freeAgents.length || L.vacated)) { var pr = J.placeFreeAgents(L); L.placed = pr.list.concat((pr.retired || []).map(function (x) { return x + ' retired'; })); }
   L.silly = (prev.silly || []).filter(function (x) { return x.stage !== 'confirmed' && x.stage !== 'dead'; });
   L.schedule = o.schedule || prev.schedule.map(function (r) { var x = JSON.parse(JSON.stringify(r)); x.id = x.id; if (/^\d{4}-/.test(x.date || '')) x.date = String(L.season) + x.date.slice(4); x.note = ''; return x; });
   return J.normalize(L);

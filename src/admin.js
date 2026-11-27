@@ -281,7 +281,7 @@ J.acts.rosterImportGo = function () {
 function fictionPanel(S) {
   var hasKey = J.ai.hasKey(), fict = Object.keys(S.contracts || {}).filter(function (k) { return S.contracts[k].fictional; });
   return '<section class="panel" id="fictPanel"><h3>Add fictional drivers</h3><p class="sub">Type one name per line. Each driver is added to this league and put in a random real ARCA car (a car nobody here drives yet, when there is one). Their results count like anyone else\'s once the name shows up in an import. Tick the box to have the AI write a short made-up backstory (hometown, age, how they got here). They show on the driver page.</p>'
-    + '<div class="field"><label for="fictNames">Names (one per line)</label><textarea id="fictNames" rows="4" placeholder="Cody Whitlock&#10;Maddie Rourke"></textarea></div>'
+    + '<div class="field"><label for="fictNames">Names (one per line)</label><textarea id="fictNames" rows="4" placeholder="Cody Whitlock, 24&#10;Maddie Rourke, 19&#10;Dale Pruitt"></textarea><small class="dim">Add a comma and an age to pick it (Cody Whitlock, 24). Leave it off for a random age.</small></div>'
     + '<label class="check"><input type="checkbox" id="fictBio"' + (hasKey ? ' checked' : ' disabled') + '> Write a backstory for each one' + (hasKey ? '' : ' (needs an AI key in Settings)') + '</label>'
     + '<div class="row"><button class="btn sm" data-act="fictAdd">Add the drivers</button>' + (fict.length ? '<span class="sub" style="margin:0 0 0 12px">' + J.plural(fict.length, 'fictional driver') + ' so far</span>' : '') + '</div></section>';
 }
@@ -291,7 +291,7 @@ function fictBioFor(S, keys) {
     user: 'Write a backstory for each of these made-up drivers. Each is 3 or 4 sentences: where they grew up, how they got into racing, what their path looked like, and what they are like now. Give each an age between 18 and 42 and a hometown (town and state). Reply with ONLY JSON: {"drivers":[{"name":"exact name given","age":0,"hometown":"","bio":""}]}\n\nDrivers:\n' + list.map(function (x) { return '- ' + x.name + ' (drives for ' + x.ride + ')'; }).join('\n') });
 }
 J.acts.fictAdd = async function () {
-  var S = J.S, names = ($('fictNames').value || '').split(/\n/).map(function (x) { return x.replace(/\s+/g, ' ').trim(); }).filter(Boolean), wantBio = $('fictBio') && $('fictBio').checked && !$('fictBio').disabled;
+  var S = J.S, ages = {}, names = ($('fictNames').value || '').split(/\n/).map(function (x) { x = x.replace(/\s+/g, ' ').trim(); var m = x.match(/^(.*?)\s*[,(]\s*(\d{2})\)?$/); if (m) { ages[J.driverKey(m[1])] = parseInt(m[2], 10); x = m[1]; } return x; }).filter(Boolean), wantBio = $('fictBio') && $('fictBio').checked && !$('fictBio').disabled;
   if (!names.length) { J.toast('Type at least one name.', true); return; }
   S.teams = S.teams || {}; S.contracts = S.contracts || {};
   var cars = J.rosterCars ? J.rosterCars(S, { sid: 'arca' }) : {}, ids = Object.keys(cars);
@@ -304,6 +304,7 @@ J.acts.fictAdd = async function () {
     var i = Math.floor(Math.random() * pool.length), car = cars[pool[i]]; pool.splice(i, 1); if (!pool.length) pool = ids.slice();
     var tid = J.slug(car.team); if (!S.teams[tid]) S.teams[tid] = { id: tid, name: car.team, color: car.color || '#888', base: car.base || '', mfr: car.mfr || '' };
     S.contracts[key] = { name: nm, team: tid, car: car.number, through: J.autoThrough ? J.autoThrough(S, key, car.team, null) : J.seasonNum(S) + 1, base: 50 + Math.floor(Math.random() * 20), auto: true, pt: false, fictional: true, imported: true };
+    var ag = ages[key] || 19 + Math.floor(Math.pow(Math.random(), 1.4) * 20); J.setAge(S, key, ag); if (!ages[key]) { S.contracts[key].ageSet = false; S.contracts[key].birthEst = true; }
     added.push(key);
   });
   J.save();
@@ -312,7 +313,7 @@ J.acts.fictAdd = async function () {
     J.toast(msg + ' Writing backstories...');
     try {
       var r = await fictBioFor(S, added), got = 0;
-      (r.drivers || []).forEach(function (x) { var k = J.driverKey(x.name || ''); if (S.contracts[k] && S.contracts[k].fictional && x.bio) { S.contracts[k].bio = String(x.bio).slice(0, 900); S.contracts[k].age = parseInt(x.age, 10) || null; S.contracts[k].hometown = String(x.hometown || '').slice(0, 60); got++; } });
+      (r.drivers || []).forEach(function (x) { var k = J.driverKey(x.name || ''); if (S.contracts[k] && S.contracts[k].fictional && x.bio) { S.contracts[k].bio = String(x.bio).slice(0, 900); if (!S.contracts[k].ageSet) { S.contracts[k].age = parseInt(x.age, 10) || null; S.contracts[k].birth = null; } S.contracts[k].hometown = String(x.hometown || '').slice(0, 60); got++; } });
       J.save(); J.toast(msg + ' ' + got + ' backstor' + (got === 1 ? 'y' : 'ies') + ' written.');
     } catch (e) { J.toast(msg + ' The backstories failed (' + e.message + '). Use "Write backstory" on the driver page to try again.', true); }
   } else J.toast(msg);
@@ -320,7 +321,7 @@ J.acts.fictAdd = async function () {
 };
 J.acts.fictBio = async function (el) {
   var S = J.S, k = el.dataset.key, c = S.contracts && S.contracts[k]; if (!c) return;
-  try { J.toast('Writing the backstory...'); var r = await fictBioFor(S, [k]), x = (r.drivers || [])[0]; if (!x || !x.bio) throw new Error('nothing came back'); c.bio = String(x.bio).slice(0, 900); c.age = parseInt(x.age, 10) || c.age || null; c.hometown = String(x.hometown || c.hometown || '').slice(0, 60); J.save(); J.toast('Backstory written.'); } catch (e) { J.toast('Could not write it: ' + e.message, true); }
+  try { J.toast('Writing the backstory...'); var r = await fictBioFor(S, [k]), x = (r.drivers || [])[0]; if (!x || !x.bio) throw new Error('nothing came back'); c.bio = String(x.bio).slice(0, 900); if (!c.ageSet) { c.age = parseInt(x.age, 10) || c.age || null; c.birth = null; } c.hometown = String(x.hometown || c.hometown || '').slice(0, 60); J.save(); J.toast('Backstory written.'); } catch (e) { J.toast('Could not write it: ' + e.message, true); }
 };
 /* ---------- removing drivers ---------- */
 // Drivers with race results stay (their results are part of the standings); everyone else can go. Teams left with nobody are removed too.
@@ -607,7 +608,7 @@ J.teamEditor = function (S, id, compact) {
 };
 J.driverEditor = function (S, key) {
   var c = S.contracts[key] || {};
-  return '<section class="aside-card"><h4>Commissioner</h4><div class="field"><label>Team</label><select data-ct="team" data-k="' + esc(key) + '">' + teamOpts(S, c.team) + '</select></div><div class="field"><label>Schedule</label>' + ptSel(key, c) + '</div><div class="field"><label>Owns the team (never fired or sent down)</label><select data-ct="owner" data-k="' + esc(key) + '"><option value=""' + (c.owner == null ? ' selected' : '') + '>Work it out (' + (J.isOwnerDriver(S, key) && c.owner == null ? 'yes' : 'no') + ')</option><option value="1"' + (c.owner === true ? ' selected' : '') + '>Yes, owner or family team</option><option value="0"' + (c.owner === false ? ' selected' : '') + '>No</option></select></div><div class="field"><label>Car number</label><input data-ct="car" data-k="' + esc(key) + '" value="' + esc(c.car || '') + '"></div><div class="field"><label>Signed through</label><select data-ct="through" data-k="' + esc(key) + '">' + yearOpts(S, c.through) + '</select></div><div class="field"><label>Mood baseline (how happy they are before results)</label><input type="range" min="20" max="90" data-ct="base" data-k="' + esc(key) + '" value="' + (c.base || 60) + '"></div><div class="row" style="margin-top:12px"><button class="btn danger sm" data-act="drvRemove" data-key="' + esc(key) + '">Remove from the league</button></div></section>';
+  return '<section class="aside-card"><h4>Commissioner</h4><div class="field"><label>Team</label><select data-ct="team" data-k="' + esc(key) + '">' + teamOpts(S, c.team) + '</select></div><div class="field"><label>Age' + (c.birthEst ? ' (estimated, fix it if you know)' : '') + '</label><input type="number" min="14" max="80" data-ct="age" data-k="' + esc(key) + '" value="' + esc(J.ageOf ? J.ageOf(S, key) : (c.age || '')) + '"></div><div class="field"><label>Schedule</label>' + ptSel(key, c) + '</div><div class="field"><label>Owns the team (never fired or sent down)</label><select data-ct="owner" data-k="' + esc(key) + '"><option value=""' + (c.owner == null ? ' selected' : '') + '>Work it out (' + (J.isOwnerDriver(S, key) && c.owner == null ? 'yes' : 'no') + ')</option><option value="1"' + (c.owner === true ? ' selected' : '') + '>Yes, owner or family team</option><option value="0"' + (c.owner === false ? ' selected' : '') + '>No</option></select></div><div class="field"><label>Car number</label><input data-ct="car" data-k="' + esc(key) + '" value="' + esc(c.car || '') + '"></div><div class="field"><label>Signed through</label><select data-ct="through" data-k="' + esc(key) + '">' + yearOpts(S, c.through) + '</select></div><div class="field"><label>Mood baseline (how happy they are before results)</label><input type="range" min="20" max="90" data-ct="base" data-k="' + esc(key) + '" value="' + (c.base || 60) + '"></div><div class="row" style="margin-top:12px"><button class="btn danger sm" data-act="drvRemove" data-key="' + esc(key) + '">Remove from the league</button></div></section>';
 };
 document.addEventListener('change', function (e) {
   var t = e.target, S = J.S; if (!S) return;
@@ -615,6 +616,7 @@ document.addEventListener('change', function (e) {
     var c = S.contracts[t.dataset.k] = S.contracts[t.dataset.k] || { base: 60, through: J.seasonNum(S) };
     var f = t.dataset.ct; c.auto = false;
     if (f === 'team' && t.value === '__new') { J.ask('New team', 'Team name', '').then(function (nm) { if (!nm || !nm.trim()) { t.value = c.team || ''; return; } var id = J.slug(nm); S.teams[id] = S.teams[id] || { id: id, name: nm.trim(), color: J.TEAM_COLORS[Object.keys(S.teams).length % J.TEAM_COLORS.length], base: '', mfr: '' }; c.team = id; J.save(); }); return; }
+    else if (f === 'age') { if (!J.setAge(S, t.dataset.k, parseInt(t.value, 10))) { J.toast('Enter an age between 14 and 80.', true); return; } }
     else if (f === 'pt') { c.pt = t.value === '1'; c.ptSet = true; }
     else if (f === 'owner') { if (t.value === '') delete c.owner; else c.owner = t.value === '1'; }
     else c[f] = f === 'through' || f === 'base' ? +t.value : t.value.trim();

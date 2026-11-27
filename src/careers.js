@@ -57,6 +57,12 @@ J.suggestMoves = function (seed, opts) {
     Object.keys(L.contracts).forEach(function (k) {
       var c = L.contracts[k]; if (taken[k] || c.pt || c.callup || c.released || !c.team) return;
       var x = st.by[k], nm = nameOf(L, k), rr = J.rng('fall' + seed + s + k);
+      // growing old: retirement is rare before the late 30s, considered in the 40s, and a driver racing at 50 is very uncommon
+      var rh = J.retireChance ? J.retireChance(L, k, x && { rank: x.rank, n: st.n, d: x.d }, prog) : 0;
+      if (rh > 0 && J.rng('ret' + seed + s + k)() < rh && !skipPrev(k, 'retire')) {
+        mk(Object.assign({ kind: 'retire', key: k, name: nm, from: s, to: '', season: yrOf(s), why: J.retireWhy(L, k, x && { rank: x.rank }) }, fromInfo(L, k)));
+        return;
+      }
       if (!J.isOwnerDriver(L, k)) {
         var tv = J.teamView(L, k) || { score: 60, why: [] };
         var risk = (0.012 + Math.max(0, 45 - tv.score) / 500) * heat * Math.min(1, 0.25 + prog);
@@ -154,7 +160,7 @@ function applyOne(m, L) {
   var c = L.contracts[m.key];
   if (m.kind === 'renew') { if (c) c.through = m.through; }
   else {
-    if (m.from === sid && (m.to !== sid || m.kind === 'fire' || m.kind === 'retire') && c) delete L.contracts[m.key];
+    if (m.from === sid && (m.to !== sid || m.kind === 'fire' || m.kind === 'retire') && c) { if (m.kind === 'retire' && J.noteRetired) J.noteRetired(L, m, c); delete L.contracts[m.key]; }
     if (m.to === sid && (m.team || m.teamId)) {
       var tid = ensureTeam(L, m), old = L.contracts[m.key] || {};
       Object.keys(L.contracts).forEach(function (k) { var x = L.contracts[k]; if (k !== m.key && x.team === tid && String(x.car) === String(m.car) && !x.pt) { x.pt = true; x.ptSet = true; } }); // the seat holder (if any) becomes the part-timer
@@ -344,6 +350,10 @@ J.medianS = medianS;
 J.placeFreeAgents = function (S, only) {
   var sid = S.series.id, yr = J.seasonNum(S), res = { full: 0, part: 0, left: 0, list: [] }, up = J.upOf(sid), dn = J.downOf(sid);
   var fl = (S.freeAgents || []).slice(); if (only) fl = fl.filter(function (f) { return f.key === only; });
+  // free agents who are getting on in years may simply retire instead of looking for a ride
+  if (!only && J.RETIRE) { var mul = J.RETIRE[(J.settings && J.settings.retire) || 'normal']; if (mul == null) mul = 1;
+    fl = fl.filter(function (f) { var age = J.ageOfFA(S, f), hz = age < 38 ? 0 : (age >= 52 ? 0.92 : (age >= 50 ? 0.75 : age >= 47 ? 0.45 : age >= 44 ? 0.3 : age >= 41 ? 0.15 : 0.06)) * mul * 1.3;
+      if (hz > 0 && J.rng('faret' + f.key + yr)() < Math.min(0.97, hz)) { S.retired = S.retired || []; S.retired.push({ key: f.key, name: f.name, age: age, year: yr, series: sid, team: f.from || '', car: f.car || '', base: f.base || 60, rl: f.rl || null, birth: f.birth != null ? f.birth : null, fictional: !!f.fictional }); S.freeAgents = (S.freeAgents || []).filter(function (x) { return x.key !== f.key; }); res.retired = (res.retired || []).concat(f.name + ' (' + age + ')'); return false; } return true; }); }
   fl.forEach(function (f) { f._s = J.careerOf(f.key, f, sid).s; }); fl.sort(function (a, b) { return b._s - a._s; });
   var tsC = {}, teamS = function (L, tid) {
     var ck = L.series.id + '|' + tid; if (ck in tsC) return tsC[ck];
@@ -352,7 +362,7 @@ J.placeFreeAgents = function (S, only) {
   };
   var movedIn = function (L) { return (L.moves || []).filter(function (m) { return m.status === 'approved' && m.to === L.series.id && m.kind === 'promote' && !(m.applied && m.applied[L.id]); }).length; };
   var Lu = up && cur(up), Ld = dn && cur(dn), med = {}; if (Lu) med.up = medianS(Lu);
-  var done = {};
+  var done = {}, own = 0;
   fl.forEach(function (f) {
     var rr = J.rng('place' + f.key + yr + sid), s = f._s, seats = [];
     var fit = function (L, o) { return 1 - Math.abs(teamS(L, o.tid) - s) * 1.2 + rr() * 0.4; };
@@ -363,8 +373,8 @@ J.placeFreeAgents = function (S, only) {
     if (seats.length) { seats.sort(function (a, b) { return b.sc - a.sc; }); pick = seats[0]; }
     else if (Ld) { var ds = J.openCars(Ld).map(function (o) { return { L: Ld, o: o, sc: fit(Ld, o) }; }); ds.sort(function (a, b) { return b.sc - a.sc; }); pick = ds[0] || null; }
     if (pick && pick.L === S) {
-      S.contracts[f.key] = { name: f.name, team: pick.o.tid, car: pick.o.num, through: yr + 1 + (rr() < 0.5 ? 1 : 0), base: f.base || 60, rl: f.rl || null, auto: false, pt: false, ptSet: true, signedFa: yr };
-      res.full++; res.list.push(f.name + ' (' + pick.o.team + ' #' + pick.o.num + ')');
+      S.contracts[f.key] = { name: f.name, team: pick.o.tid, car: pick.o.num, through: yr + 1 + (rr() < 0.5 ? 1 : 0), base: f.base || 60, rl: f.rl || null, auto: false, pt: false, ptSet: true, signedFa: yr, birth: f.birth != null ? f.birth : undefined, fictional: f.fictional || undefined };
+      res.full++; own++; res.list.push(f.name + ' (' + pick.o.team + ' #' + pick.o.num + ')');
     } else if (pick) { // another series: an approved move, applied there when that series starts its new season (right now if it already has)
       var T = pick.L, m = { id: J.uid('mv'), kind: LAD.indexOf(T.series.id) > LAD.indexOf(sid) ? 'promote' : 'demote', key: f.key, name: f.name, from: sid, to: T.series.id, teamId: pick.o.tid, team: pick.o.team, car: pick.o.num, season: yr, through: yr + 1 + (rr() < 0.5 ? 1 : 0), status: 'approved', fa: true, approvedAt: Date.now(), made: Date.now(), why: ['free agent, ' + Math.round(s * 100) + ' career rating, ' + J.careerOf(f.key, f, sid).note.replace(/[()]/g, '')], fromTeam: f.from || '', fromTeamId: f.fromId || '', fromCar: f.car || '', applied: {} };
       S.moves = S.moves || []; var mine = JSON.parse(JSON.stringify(m)); mine.applied[S.id] = true; S.moves.push(mine);
@@ -376,17 +386,23 @@ J.placeFreeAgents = function (S, only) {
       var ft = tids.filter(function (t) { return t !== f.fromId; }); if (!ft.length) ft = tids;
       ft.sort(function (a, b) { return (1 - Math.abs(teamS(S, b) - s) + rr() * 0.4) - (1 - Math.abs(teamS(S, a) - s) + rr() * 0.4); });
       var tid = ft[0], cs = J.teamCars(S, tid), num = cs.length ? cs[Math.floor(rr() * cs.length)] : '';
-      S.contracts[f.key] = { name: f.name, team: tid, car: num, through: yr + 1 + (rr() < 0.5 ? 1 : 0), base: f.base || 60, rl: f.rl || null, auto: false, pt: true, ptSet: true, signedFa: yr };
+      S.contracts[f.key] = { name: f.name, team: tid, car: num, through: yr + 1 + (rr() < 0.5 ? 1 : 0), base: f.base || 60, rl: f.rl || null, auto: false, pt: true, ptSet: true, signedFa: yr, birth: f.birth != null ? f.birth : undefined, fictional: f.fictional || undefined };
       res.part++; res.list.push(f.name + ' (part-time, ' + S.teams[tid].name + (num ? ' #' + num : '') + ')');
     }
     done[f.key] = 1;
   });
-  S.freeAgents = (S.freeAgents || []).filter(function (f) { return !done[f.key]; }); res.left = S.freeAgents.length; J.noteCars(S);
+  S.freeAgents = (S.freeAgents || []).filter(function (f) { return !done[f.key]; }); res.left = S.freeAgents.length;
+  // the entry-level series brings in new young drivers for seats nobody was found for (not more than there were vacancies)
+  if (!dn && !only && J.spawnRookies && !(J.settings && J.settings.rookies === false) && S.vacated > 0) {
+    var want = Math.min(S.vacated - own, 6); S.vacated = 0;
+    if (want > 0) { var made = J.spawnRookies(S, want); res.rookies = made; made.forEach(function (x) { res.list.push('Rookie ' + x); }); res.full += made.length; }
+  }
+  J.noteCars(S);
   return res;
 };
 J.acts.faPlace = function (quiet) {
-  var tot = { full: 0, part: 0, left: 0 }; (J.ui.cmAll ? LAD : [J.S.series.id]).forEach(function (s) { var L = cur(s); if (!L || !(L.freeAgents || []).length) return; var r = J.placeFreeAgents(L); tot.full += r.full; tot.part += r.part; tot.left += r.left; dirty(L); });
-  saveAll(); if (quiet === true) return; J.toast(tot.full + ' signed full-time, ' + tot.part + ' part-time' + (tot.left ? ', ' + tot.left + ' still unsigned' : '') + '.');
+  var tot = { full: 0, part: 0, left: 0, retired: 0, rookies: 0 }; (J.ui.cmAll ? LAD : [J.S.series.id]).forEach(function (s) { var L = cur(s); if (!L || !(L.freeAgents || []).length) return; var r = J.placeFreeAgents(L); tot.full += r.full; tot.part += r.part; tot.left += r.left; tot.retired += (r.retired || []).length; tot.rookies += (r.rookies || []).length; dirty(L); });
+  saveAll(); if (quiet === true) return; J.toast((tot.retired ? tot.retired + ' retired, ' : '') + (tot.rookies ? tot.rookies + ' new young drivers, ' : '') + tot.full + ' signed full-time, ' + tot.part + ' part-time' + (tot.left ? ', ' + tot.left + ' still unsigned' : '') + '.');
 };
 J.acts.carAdd = async function (el) {
   var S = J.S, t = S.teams[el.dataset.id]; if (!t) return;
@@ -442,7 +458,7 @@ document.addEventListener('change', function (e) {
     var f = fl[i], parts = t.value.split('|'), tm = L2.teams[parts[0]]; if (!tm) return;
     var pt = parts[1] === 'pt', num = pt ? '' : parts[1];
     if (pt) { var cs = J.teamCars(L2, parts[0]); num = cs.length ? cs[0] : ''; }
-    L2.contracts[f.key] = { name: f.name, team: parts[0], car: num, through: J.seasonNum(L2) + 1 + (J.rng('fa' + f.key)() < 0.5 ? 1 : 0), base: f.base || 60, rl: f.rl || null, auto: false, pt: pt, ptSet: true, signedFa: J.seasonNum(L2) };
+    L2.contracts[f.key] = { name: f.name, team: parts[0], car: num, through: J.seasonNum(L2) + 1 + (J.rng('fa' + f.key)() < 0.5 ? 1 : 0), base: f.base || 60, rl: f.rl || null, auto: false, pt: pt, ptSet: true, signedFa: J.seasonNum(L2), birth: f.birth != null ? f.birth : undefined, fictional: f.fictional || undefined };
     fl.splice(i, 1); L2.freeAgents = fl; J.noteCars(L2); dirty(L2); saveAll(); J.toast(f.name + ' signs with ' + tm.name + (num ? ' (#' + num + (pt ? ', part-time' : '') + ')' : '') + '.'); J.render();
   }
 });
@@ -457,14 +473,14 @@ J.routes.careers = function (S) {
     + '<label class="check"><input type="checkbox" id="apOn"' + (auto ? ' checked' : '') + '> Autopilot: when I press Finish season, approve any moves I have not decided on (moves I rejected stay rejected)</label></section>';
   // step 1: moves
   out += '<section class="panel"><h3>Step 1: Moves for next season</h3><p class="sub">Suggested from results, contracts, team happiness and real-life announcements. <b>Approve</b> the ones you like; they happen when the next season starts.</p>'
-    + '<div class="row artopts"><label class="field" style="margin:0"><span>How often teams fall out with drivers</span><select id="falloutSel">' + [['off', 'Never'], ['rare', 'Rarely'], ['normal', 'Sometimes (like real life)'], ['wild', 'A lot (drama)']].map(function (o) { return '<option value="' + o[0] + '"' + (fall === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label></div>'
+    + '<div class="row artopts"><label class="field" style="margin:0"><span>How often teams fall out with drivers</span><select id="falloutSel">' + [['off', 'Never'], ['rare', 'Rarely'], ['normal', 'Sometimes (like real life)'], ['wild', 'A lot (drama)']].map(function (o) { return '<option value="' + o[0] + '"' + (fall === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label><label class="field" style="margin:0"><span>Retirements</span><select id="retireSel">' + [['off', 'Nobody retires'], ['rare', 'Less often'], ['normal', 'Realistic by age'], ['more', 'More often']].map(function (o) { return '<option value="' + o[0] + '"' + (((J.settings && J.settings.retire) || 'normal') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label></div>'
     + (mv.length ? mv.map(function (m) { return moveRow(m, S); }).join('') : '<p class="dim">No moves yet. Click Suggest moves.</p>')
     + '<div class="row"><button class="btn sm" data-act="cmSuggest">' + (proposed ? 'Suggest again' : 'Suggest moves') + '</button>' + (proposed ? '<button class="btn ghost sm" data-act="mvAll">Approve all suggestions</button>' : '') + '</div></section>';
   out += resignPanel(S, all) + J.freeAgentPanel(S, all);
   // extras
   var gs = carGroupsOf(S).filter(function (g) { return g.members.length > 1 || g.members.some(function (m) { return m.callup; }); });
   var cus = (S.callups || []).slice().sort(function (a, b) { return (a.status === 'rejected') - (b.status === 'rejected'); });
-  out += '<details class="panel" style="padding:14px 18px"><summary><b>Extras: call-ups and shared cars</b></summary>'
+  out += '<details class="panel" style="padding:14px 18px"><summary><b>Extras: retired drivers, call-ups and shared cars</b></summary>' + (J.retiredPanel ? J.retiredPanel(S, all, LAD, cur, sLabel) : '')
     + '<h3 style="margin-top:14px">Call-ups this season</h3><p class="sub">A standout from the series below gets a few starts in a part-time car. Approve one and he is put in the car for those races.</p>'
     + (cus.length ? cus.map(function (c) { return cuRow(c, S); }).join('') : '<p class="dim">None yet.</p>') + '<div class="row"><button class="btn sm" data-act="cmCallups">Suggest call-ups</button></div>'
     + '<h3 style="margin-top:14px">Shared cars: who drives ' + (nx ? 'at ' + esc(nx.name) : 'next') + '</h3><p class="sub">NR2003 shows one driver per car. When you import a race the app swaps in the driver picked here (you can turn that off on the import screen).</p>'
@@ -503,6 +519,7 @@ J.acts.cuNo = function (el) { callupNo(el.dataset.id); saveAll(); };
 document.addEventListener('change', function (e) {
   var t = e.target, S = J.S; if (!t || !S) return;
   if (t.id === 'falloutSel') { J.settings.fallout = t.value; J.saveSettings(); return; }
+  if (t.id === 'retireSel') { J.settings.retire = t.value; J.saveSettings(); J.toast('Saved. Click Suggest again to see who retires.'); return; }
   if (t.id === 'cmAll') { J.ui.cmAll = t.checked; J.refresh(); return; }
   if (t.id === 'apOn') { J.settings.autopilot = t.checked; J.saveSettings(); J.toast(t.checked ? 'Autopilot on.' : 'Autopilot off. You approve every move yourself.'); return; }
   if (t.dataset && t.dataset.cw) { S.carWeek = S.carWeek || {}; (S.carWeek[t.dataset.r] = S.carWeek[t.dataset.r] || {})[t.dataset.cw] = t.value; J.save({ render: false }); }
