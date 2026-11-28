@@ -32,7 +32,7 @@ J.suggestMoves = function (seed, opts) {
   var R = J.rng('moves' + seed), heat = J.FALLOUT[(J.settings && J.settings.fallout) || 'normal']; if (heat == null) heat = 1;
   var Ls = {}, St = {}; LAD.forEach(function (s) { var L = cur(s); if (L) { Ls[s] = L; St[s] = stats(L); } });
   var moves = [], taken = {};
-  Object.keys(Ls).forEach(function (s) { (Ls[s].moves || []).forEach(function (m) { if (m.status !== 'proposed') taken[m.key] = m; }); });
+  Object.keys(Ls).forEach(function (s) { var yy = J.seasonNum(Ls[s]) + 1; (Ls[s].moves || []).forEach(function (m) { if (m.status !== 'proposed' && m.season >= yy && !(m.applied && m.applied[Ls[s].id])) taken[m.key] = m; }); }); // only decisions for THIS offseason block a driver; last year's are history
   // "Suggest again" is a fresh slate: whoever the last batch picked for a given kind of move (and was not approved) is mostly passed over this time
   var avoid = {}; Object.keys(Ls).forEach(function (s) { (Ls[s].moves || []).forEach(function (m) { if (m.status === 'proposed' && !m.real && m.kind !== 'renew') (avoid[m.key] = avoid[m.key] || []).push(m.kind); }); });
   var skipPrev = function (k, kind) { return avoid[k] && avoid[k].indexOf(kind) >= 0 && J.rng('avoid' + seed + k + kind)() < 0.85; };
@@ -48,6 +48,15 @@ J.suggestMoves = function (seed, opts) {
     var kind = m[1] === 'retirement' ? 'retire' : from && to && LAD.indexOf(to) > LAD.indexOf(from) ? 'promote' : from && to && LAD.indexOf(to) < LAD.indexOf(from) ? 'demote' : 'move';
     if (Lf && Lf.contracts[key] && Lf.contracts[key].pt && from === to) kind = 'fulltime';
     mk(Object.assign({ kind: kind, key: key, name: nm, from: from || '', to: to || '', team: m[4] || '', car: m[5] && m[5] !== 'unconfirmed' ? m[5] : '', season: 2027, through: 2028, real: true, why: ['announced for 2027 in real life' + (m[7] ? ' (not fully confirmed)' : '')] }, Lf ? fromInfo(Lf, key) : {}));
+  });
+  // a real-life announcement does not beat the simulated season: if the driver is a mid-pack finisher here while the points leaders of his series
+  // are staying put, the announcement is dropped and the ride goes on results
+  if (opts.performance !== false) moves = moves.filter(function (m) {
+    if (!m.real || m.kind !== 'promote' || !Ls[m.from]) return true;
+    var sd = St[m.from], x = sd.by[m.key]; if (!x || !x.rank || sd.runs / sd.total < 0.5 || x.rank <= 6) return true;
+    var top = Object.keys(sd.by).filter(function (k) { return sd.by[k].rank && sd.by[k].rank <= 3 && !J.isOwnerDriver(Ls[m.from], k) && !moves.some(function (o) { return o.key === k && (o.kind === 'promote' || o.kind === 'retire'); }); });
+    if (top.length < 2) return true;
+    delete taken[m.key]; return false;
   });
   // 1. fallouts, firings, demotions. Owner-drivers and family teams are safe.
   var seats = {}; LAD.forEach(function (s) { seats[s] = []; });
@@ -91,24 +100,44 @@ J.suggestMoves = function (seed, opts) {
   moves.forEach(function (m) { if (m.from && Ls[m.from] && m.fromTeamId && !m.free && m.kind !== 'renew' && !(m.to === m.from && m.kind !== 'move')) seats[m.from].push(seatOf(m.from, m)); });
   // part-time cars a team could run full-time next year
   Object.keys(Ls).forEach(function (s) { J.openSeats(Ls[s], []).filter(function (x) { return x.ptcar; }).forEach(function (x) { if (R() < 0.35) seats[s].push({ teamId: x.teamId, team: x.team, car: x.car, from: '', q: x.q, ptcar: true }); }); });
+  // who in the series below has earned a step up: season results decide it (points rank, wins, top 5s, average finish);
+  // career history across seasons is only a small nudge, so a champion is never kept down by his name or his real-life resume
+  var promoPool = function (s) {
+    var L = Ls[s], down = J.downOf(s), out = [], Ld = Ls[down], sd = St[down]; if (!Ld) return out;
+    Object.keys(Ld.contracts).forEach(function (k) {
+      var c = Ld.contracts[k], x = sd.by[k], fa = taken[k] && taken[k].status === 'proposed' && taken[k].kind === 'move' && taken[k].free && !taken[k].team ? taken[k] : null;
+      // a plain re-signing is only a placeholder: it must never keep a points leader from moving up
+      var rn = taken[k] && taken[k].status === 'proposed' && taken[k].kind === 'renew' && moves.indexOf(taken[k]) >= 0 ? taken[k] : null;
+      if ((taken[k] && !fa && !rn) || c.callup || !x || !x.avg || J.isOwnerDriver(Ld, k)) return;
+      var good = (x.rank && x.rank <= Math.max(6, Math.round(sd.n * 0.2))) || x.d.wins >= 1 || x.avg <= sd.field * 0.3 || (c.pt && x.d.starts >= 3 && x.avg <= 9);
+      if (!good || x.d.starts < Math.max(2, sd.runs * 0.25) || skipPrev(k, 'promote')) return;
+      var cr = J.careerOf(k, c, down).s, upMed = J.medianS(L), nudge = Math.max(-4, Math.min(4, (cr - upMed * 0.8) * 10));
+      var perf = (x.rank ? (1 - (x.rank - 1) / Math.max(1, sd.n - 1)) * 40 : 12) + x.d.wins * 4 + (x.d.t5 / Math.max(1, x.d.starts)) * 12 + (sd.field * 0.5 - x.avg) * 0.8;
+      out.push({ key: k, name: nameOf(Ld, k), from: down, kind: 'promote', fa: fa, rn: rn, fromL: Ld, exp: x.avg + 6, perf: perf, rank: x.rank, score: perf + nudge + R() * 1.5, why: [(x.rank ? 'P' + x.rank + ' in ' + sLabel(down) + ' points, ' : 'part-time, ') + J.plural(x.d.wins, 'win') + ', ' + x.avg.toFixed(1) + ' average finish'] });
+    });
+    return out;
+  };
+  // earned a ride but no seat is open: the weakest full-timers one series up make room (sent down a series)
+  if (opts.performance !== false) ['cup', 'xfinity', 'truck'].forEach(function (s) {
+    var L = Ls[s], down = J.downOf(s); if (!L || !down || !Ls[down]) return;
+    var st = St[s], prog = st.runs / st.total; if (prog < 0.5) return;
+    var best = promoPool(s).filter(function (p) { return p.rank && (p.rank <= 3 || (p.rank <= 5 && St[down].by[p.key].d.wins >= 2)); }).sort(function (a, b) { return b.perf - a.perf; });
+    var open = seats[s].length, want = Math.min(best.length, 2) - open;
+    if (want <= 0) return;
+    var weak = Object.keys(L.contracts).map(function (k) { return { k: k, c: L.contracts[k], x: st.by[k] }; }).filter(function (o) { return o.x && o.x.rank && !taken[o.k] && !o.c.pt && !o.c.callup && o.c.team && !J.isOwnerDriver(L, o.k) && o.x.rank > st.n * 0.65 && o.x.d.starts >= Math.max(3, st.runs * 0.5) && o.x.d.wins === 0; }).sort(function (a, b) { return b.x.rank - a.x.rank; });
+    for (var i = 0; i < want && i < weak.length; i++) {
+      var o = weak[i], bt = best[i]; if (!bt || bt.perf < 28) break;
+      var m = mk(Object.assign({ kind: 'demote', key: o.k, name: nameOf(L, o.k), from: s, to: down, season: yrOf(s), why: ['P' + o.x.rank + ' in ' + sLabel(s) + ' points with a ' + o.x.avg.toFixed(1) + ' average finish; ' + bt.name + ' earned the ride'] }, fromInfo(L, o.k)));
+      seats[s].push(seatOf(s, m));
+    }
+  });
   // 2. fill seats from the top down, so a promotion opens a seat in the series below. A few rookies a year, not a flood.
   var CAP = { cup: 3, xfinity: 3, truck: 3, arca: 0 }, claimed = {}, ck = function (team, car) { return String(team || '').toLowerCase() + '#' + String(car || ''); };
   moves.forEach(function (m) { if (m.to && m.team) claimed[ck(m.team, m.car)] = 1; if (m.kind === 'promote' && m.to) CAP[m.to] = Math.max(0, (CAP[m.to] || 0) - 1); });
   ['cup', 'xfinity', 'truck', 'arca'].forEach(function (s) {
     var L = Ls[s]; if (!L) return;
     var st = St[s], down = J.downOf(s), pool = [], promoted = 0;
-    if (down && Ls[down]) {
-      var sd = St[down], Ld = Ls[down];
-      Object.keys(Ld.contracts).forEach(function (k) {
-        var c = Ld.contracts[k], x = sd.by[k], fa = taken[k] && taken[k].status === 'proposed' && taken[k].kind === 'move' && taken[k].free && !taken[k].team ? taken[k] : null;
-        if ((taken[k] && !fa) || c.callup || !x || !x.avg || J.isOwnerDriver(Ld, k)) return;
-        var good = (x.rank && x.rank <= 6) || x.d.wins >= 1 || x.avg <= sd.field * 0.3 || (c.pt && x.d.starts >= 3 && x.avg <= 9);
-        if (!good || x.d.starts < Math.max(2, sd.runs * 0.25) || skipPrev(k, 'promote')) return;
-        // results across every season he has driven count: a one-year hot streak is not enough to move up, a long strong record is
-        var cr = J.careerOf(k, c, down).s, upMed = J.medianS(L); if (x.d.wins < 2 && cr < upMed * 0.85) return;
-        pool.push({ key: k, name: nameOf(Ld, k), from: down, kind: 'promote', fa: fa, fromL: Ld, exp: x.avg + 6, score: (sd.field * 0.5 - x.avg) + x.d.wins * 3 + (x.rank ? Math.max(0, 8 - x.rank) : 0) + (cr - upMed) * 14 + R() * 5, why: [(x.rank ? 'P' + x.rank + ' in ' + sLabel(down) + ' points, ' : 'part-time, ') + J.plural(x.d.wins, 'win') + ', ' + x.avg.toFixed(1) + ' average finish'] });
-      });
-    }
+    if (down && Ls[down]) promoPool(s).forEach(function (p) { pool.push(p); });
     moves.forEach(function (m) { if (m.status === 'proposed' && m.kind === 'demote' && m.to === s && !m.team) pool.push({ key: m.key, name: m.name, kind: 'demote', exp: 8, score: 4 + R() * 4, move: m }); });
     moves.forEach(function (m) { if (m.status === 'proposed' && m.kind === 'move' && m.free && m.from === s && !m.team) { var x = st.by[m.key]; pool.push({ key: m.key, name: m.name, kind: 'move', exp: x && x.avg ? x.avg : st.field * 0.5, score: (x && x.avg ? st.field * 0.5 - x.avg : 0) + 1 + R() * 4, move: m, fromL: L }); } });
     Object.keys(L.contracts).forEach(function (k) { var c = L.contracts[k], x = st.by[k]; if (!c.pt || c.callup || taken[k] || !x || x.d.starts < 3 || x.avg > st.field * 0.4 || J.isOwnerDriver(L, k)) return; pool.push({ key: k, name: nameOf(L, k), kind: 'fulltime', exp: x.avg + 2, score: st.field * 0.5 - x.avg + R() * 4, why: ['part-time, ' + x.avg.toFixed(1) + ' average finish in ' + J.plural(x.d.starts, 'start')] }); });
@@ -120,6 +149,7 @@ J.suggestMoves = function (seed, opts) {
       var pick = pool.find(function (p) { return !used[p.key] && !(p.kind === 'promote' && promoted >= CAP[s]) && !(p.move && p.move.fromTeamId === seat.teamId && String(p.move.fromCar) === String(seat.car)) && p.exp <= seat.q + 10; });
       if (!pick) continue;
       claimed[ck(seat.team, seat.car)] = 1;
+      if (pick.rn) { var ri = moves.indexOf(pick.rn); if (ri >= 0) moves.splice(ri, 1); pick.rn = null; delete taken[pick.key]; }
       used[pick.key] = 1; if (pick.kind === 'promote') promoted++;
       var dest = { to: s, teamId: seat.teamId, team: seat.team, car: seat.car, season: yrOf(s) };
       if (pick.fa) { pick.move = pick.fa; pick.move.kind = 'promote'; pick.move.free = false; pick.move.why = (pick.why || []).concat(pick.move.why.slice(0, 1)); }
@@ -169,6 +199,18 @@ function applyOne(m, L) {
   }
   m.applied[L.id] = true;
 }
+// a clean slate: last offseason's moves are history once their season has started. Applied ones are noted in a short log, the rest dropped
+J.cleanMoves = function (L) {
+  if (!L || L.archived) return 0;
+  var y = J.seasonNum(L), n = 0; J.applyMovesFor(L);
+  var keep = [], log = L.moveLog && L.moveLog.season === y ? L.moveLog.list : [];
+  (L.moves || []).forEach(function (m) {
+    if (m.season > y && !(m.applied && m.applied[L.id])) { keep.push(m); return; }
+    n++; if (m.status === 'approved' && m.kind !== 'renew' && !log.some(function (x) { return x.id === m.id; })) log.push({ id: m.id, kind: m.kind, name: m.name, from: m.from, to: m.to, team: m.team, fromTeam: m.fromTeam, car: m.car, season: m.season });
+  });
+  L.moves = keep; if (log.length) L.moveLog = { season: y, list: log };
+  return n;
+};
 J.applyMovesFor = function (L) {
   var y = J.seasonNum(L);
   (L.moves || []).forEach(function (m) { if (m.status === 'approved' && m.season <= y) applyOne(m, L); });
@@ -463,6 +505,7 @@ document.addEventListener('change', function (e) {
   }
 });
 J.routes.careers = function (S) {
+  var cleaned = 0; LAD.forEach(function (s) { var L = cur(s); if (L) { var n = J.cleanMoves(L); if (n) { cleaned += n; dirty(L); } } }); if (cleaned) saveAll(); // old seasons' moves never sit on this screen
   var sid = S.series.id, nx = J.nextRound(S), all = !!J.ui.cmAll, fall = (J.settings && J.settings.fallout) || 'normal';
   var mv = (S.moves || []).slice(); if (all) { mv = []; var seen = {}; LAD.forEach(function (s) { var L = cur(s); (L && L.moves || []).forEach(function (m) { if (!seen[m.id]) { seen[m.id] = 1; mv.push(m); } }); }); }
   var order = { fire: 0, retire: 1, demote: 2, promote: 3, move: 4, fulltime: 5, renew: 6 }; mv.sort(function (a, b) { return (a.status === 'rejected') - (b.status === 'rejected') || (order[a.kind] - order[b.kind]) || a.name.localeCompare(b.name); });
@@ -480,6 +523,9 @@ J.routes.careers = function (S) {
   // extras
   var gs = carGroupsOf(S).filter(function (g) { return g.members.length > 1 || g.members.some(function (m) { return m.callup; }); });
   var cus = (S.callups || []).slice().sort(function (a, b) { return (a.status === 'rejected') - (b.status === 'rejected'); });
+  var lg = S.moveLog && S.moveLog.list || [];
+  out += '<details class="panel" style="padding:14px 18px"><summary><b>Last offseason' + (lg.length ? ' (' + lg.length + ' moves)' : '') + '</b></summary><p class="sub">What happened going into ' + esc(String(S.moveLog ? S.moveLog.season : '')) + '. Just a record; it does not stop anyone from moving this year.</p>'
+    + (lg.length ? '<ul class="dim">' + lg.map(function (m) { return '<li>' + esc(m.name) + ': ' + esc(m.kind) + (m.to ? ' to ' + esc(sLabel(m.to)) : '') + (m.team ? ', ' + esc(m.team) + (m.car ? ' #' + esc(m.car) : '') : '') + '</li>'; }).join('') + '</ul>' : '<p class="dim">Nothing logged yet.</p>') + '</details>';
   out += '<details class="panel" style="padding:14px 18px"><summary><b>Extras: retired drivers, call-ups and shared cars</b></summary>' + (J.retiredPanel ? J.retiredPanel(S, all, LAD, cur, sLabel) : '')
     + '<h3 style="margin-top:14px">Call-ups this season</h3><p class="sub">A standout from the series below gets a few starts in a part-time car. Approve one and he is put in the car for those races.</p>'
     + (cus.length ? cus.map(function (c) { return cuRow(c, S); }).join('') : '<p class="dim">None yet.</p>') + '<div class="row"><button class="btn sm" data-act="cmCallups">Suggest call-ups</button></div>'

@@ -7,10 +7,13 @@ J.settings = J.settings || {};
 /* ---------- network (Electron bridge when present, plain fetch otherwise) ---------- */
 J.http = function (url, opts) {
   opts = opts || {};
-  if (window.jssNative && window.jssNative.http) return window.jssNative.http({ url: url, method: opts.method || 'GET', headers: opts.headers || {}, body: opts.body, timeoutMs: opts.timeoutMs });
+  if (window.jssNative && window.jssNative.http) return window.jssNative.http({ url: url, method: opts.method || 'GET', headers: opts.headers || {}, body: opts.body, timeoutMs: opts.timeoutMs, binary: !!opts.binary });
   var ctl = window.AbortController ? new AbortController() : null, t = ctl ? setTimeout(function () { ctl.abort(); }, opts.timeoutMs || 180000) : null;
   return fetch(url, { method: opts.method || 'GET', headers: opts.headers, body: opts.body, signal: ctl ? ctl.signal : undefined })
-    .then(function (r) { return r.text().then(function (x) { clearTimeout(t); return { status: r.status, text: x }; }); })
+    .then(function (r) {
+      if (opts.binary) return r.blob().then(function (b) { clearTimeout(t); return new Promise(function (ok) { var fr = new FileReader(); fr.onload = function () { ok({ status: r.status, text: '', b64: String(fr.result).split(',')[1] || '', type: b.type }); }; fr.readAsDataURL(b); }); });
+      return r.text().then(function (x) { clearTimeout(t); return { status: r.status, text: x }; });
+    })
     .catch(function (e) { clearTimeout(t); return { status: 0, text: JSON.stringify({ message: 'Network error (' + (e && e.name === 'AbortError' ? 'timed out' : (e && e.message) || e) + ')' }) }; });
 };
 /* one automatic retry when the connection itself fails (not when the server answers with an error) */
@@ -277,7 +280,7 @@ AI.regenFans = function (S, reroll) {
 };
 AI.ensureFans = function (S) {
   var ds = J.roster(S); if (!ds.length) return false;
-  var target = Math.min(170, Math.max(140, ds.length + 100)), rand = J.rng('fans2' + S.id + S.fans.length + ':' + S.races.length), used = {};
+  var target = Math.min(420, Math.max(260, ds.length * 7)), rand = J.rng('fans2' + S.id + S.fans.length + ':' + S.races.length), used = {};
   S.fans.forEach(function (f) { if (f.v === 3) used[String(f.handle).toLowerCase()] = 1; });
   S.fans.forEach(function (f) { if (f.v !== 3) makeFan(S, ds, rand, used, f); }); // older accounts get real-world style handles, names and profiles (same id and stance)
   S.fans.forEach(function (f) { if (f.qv !== 2 && QUIRKS[f.age]) { f.quirks = J.shuffle(QUIRKS[f.age], rand).slice(0, 2).join('; '); f.qv = 2; } }); // quirks used to name catchphrases, which got repeated
@@ -746,6 +749,22 @@ AI.chatter = async function (S, o) {
   return AI.threads(S, { facts: facts, focus: [], at: o.at, ref: { type: 'week', id: race ? race.id : nx.id }, task: pre ? 'The next race has NOT been run yet. Write 5 to 7 threads of pre-race chatter: practice and qualifying takes, predictions, fantasy picks, hype, someone worried about their driver, a rumor. Never say who won the next race.' : 'It is the middle of the week between races. Write 5 to 7 threads of the usual chatter for this point of the season: takes about the last race and the standings, predictions for the next race, someone still mad about last week, a fantasy lineup argument, a rumor, one person asking a dumb question and getting roasted. Not everything is about the last race.' });
 };
 // Fans after practice / qualifying / happy hour
+
+/* ---------- offseason coverage: after a new season starts, the AI writes what happened in the silly season and the fans react ---------- */
+AI.offseasonFacts = function (S) {
+  var y = J.seasonNum(S), lg = (S.moveLog && S.moveLog.list) || [], lines = [];
+  lg.forEach(function (m) { lines.push(m.name + ': ' + (m.kind === 'promote' ? 'moves up to ' + J.SERIES[m.to].label : m.kind === 'demote' ? 'drops down to ' + J.SERIES[m.to].label : m.kind === 'retire' ? 'retires' : m.kind === 'fire' ? 'let go' : m.kind) + (m.team ? ', ' + m.team + (m.car ? ' #' + m.car : '') : '') + (m.fromTeam ? ' (was with ' + m.fromTeam + ')' : '')); });
+  (S.retired || []).filter(function (r) { return r.year === y || r.year === y - 1; }).forEach(function (r) { if (!lines.some(function (l) { return l.indexOf(r.name) === 0; })) lines.push(r.name + ': retires at ' + r.age + (r.team ? ' after driving for ' + r.team : '')); });
+  (S.placed || []).slice(0, 14).forEach(function (t) { lines.push(String(t)); });
+  return lines.slice(0, 40).join('\n');
+};
+AI.offseasonCoverage = async function (S) {
+  var facts = AI.offseasonFacts(S); if (!facts) return 0;
+  var n = 0;
+  try { await AI.article(S, { outlet: 'silly', headline: 'The ' + S.series.label + ' silly season: who is going where in ' + J.seasonYear(S), notes: 'The offseason just finished and the ' + J.seasonYear(S) + ' season is about to start. These are the moves that happened (use only these, do not invent others):\n' + facts, interviews: false }); n++; } catch (e) { console.error(e); }
+  try { n += await AI.threads(S, { facts: 'OFFSEASON MOVES:\n' + facts, focus: [], ref: { type: 'week', id: 'offseason-' + J.seasonYear(S) }, task: 'The offseason just ended. Write 6 to 8 threads of fans reacting to the driver moves, retirements and rides listed in the facts: celebrating, grieving a retirement, mad their driver got let go, arguing over who deserved the promotion. Only use drivers and moves from the facts.' }) || 0; } catch (e) { console.error(e); }
+  return n;
+};
 AI.sessionHype = function (S, sess, at) {
   var top = sess.rows.slice(0, 3).map(function (r) { return r.driver; });
   return AI.threads(S, { facts: AI.sessionFacts(S, sess.sid), focus: top, ref: { type: 'session', id: sess.id }, at: at, task: 'The race has NOT happened yet. ' + J.SESSIONS[sess.type] + ' just finished. Write 5 to 7 threads of pre-race talk: reactions to who was fast and who was slow, hype and predictions for the race, someone mad about where their driver ended up, a fantasy or betting pick, a "practice speed means nothing" argument, a media figure with an observation. Never say who won the race.' });

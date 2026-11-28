@@ -14,7 +14,7 @@ const MEDIA = () => path.join(DATA(), 'media');
 const STATE = () => path.join(DATA(), 'state.json');
 const SETTINGS = () => path.join(DATA(), 'settings.json');
 const SECRET_KEYS = ['apiKey', 'geminiKey', 'ghToken'];
-const ALLOWED_HOSTS = ['api.anthropic.com', 'api.github.com', 'generativelanguage.googleapis.com'];
+const ALLOWED_HOSTS = ['api.anthropic.com', 'api.github.com', 'generativelanguage.googleapis.com', 'diecastcharv.com', 'www.diecastcharv.com', 'i0.wp.com', 'i1.wp.com', 'i2.wp.com']; // the last ones: the number-card pages and their picture host
 
 function ensureDirs() { [LEAGUES(), MEDIA()].forEach((d) => fs.mkdirSync(d, { recursive: true })); }
 function safeName(s) { return String(s).replace(/[^a-zA-Z0-9_:-]/g, '').replace(/:/g, '__'); }
@@ -25,9 +25,9 @@ function readJson(file, fallback) { try { return JSON.parse(fs.readFileSync(file
 // Uses Electron's net.fetch first: it goes through the same network stack as Chrome on this PC, so Windows proxy,
 // VPN and antivirus certificate settings work. Falls back to Node's fetch. Times out after 3 minutes with a clear message.
 function withTimeout(ms) { const c = new AbortController(); const t = setTimeout(() => c.abort(), ms); return { signal: c.signal, done: () => clearTimeout(t) }; }
-async function tryFetch(fn, url, opts, ms) {
+async function tryFetch(fn, url, opts, ms, bin) {
   const to = withTimeout(ms);
-  try { const r = await fn(url, Object.assign({}, opts, { signal: to.signal })); const text = await r.text(); return { status: r.status, text }; }
+  try { const r = await fn(url, Object.assign({}, opts, { signal: to.signal })); if (bin) { const buf = Buffer.from(await r.arrayBuffer()); return { status: r.status, text: '', b64: buf.toString('base64'), type: r.headers.get('content-type') || '' }; } const text = await r.text(); return { status: r.status, text }; }
   finally { to.done(); }
 }
 ipcMain.handle('http', async (_e, req) => {
@@ -36,6 +36,7 @@ ipcMain.handle('http', async (_e, req) => {
   const headers = Object.assign({}, req.headers || {});
   delete headers['anthropic-dangerous-direct-browser-access'];
   if (u.hostname === 'api.github.com') headers['User-Agent'] = 'JSS-Commissioner';
+  if (/diecastcharv\.com$|\.wp\.com$/.test(u.hostname)) { headers['User-Agent'] = headers['User-Agent'] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) JSS-Commissioner'; headers['Accept'] = headers['Accept'] || (req.binary ? 'image/*,*/*' : 'text/html,*/*'); }
   const opts = { method: req.method || 'GET', headers, body: req.body };
   const ms = Math.min(Math.max(Number(req.timeoutMs) || 180000, 5000), 300000);
   const errs = [];
@@ -43,7 +44,7 @@ ipcMain.handle('http', async (_e, req) => {
   if (net && typeof net.fetch === 'function') tries.push(['chrome', (url, o) => net.fetch(url, o)]);
   if (typeof fetch === 'function') tries.push(['node', (url, o) => fetch(url, o)]);
   for (const [name, fn] of tries) {
-    try { return await tryFetch(fn, req.url, opts, ms); }
+    try { return await tryFetch(fn, req.url, opts, ms, !!req.binary); }
     catch (e) {
       const msg = e && e.name === 'AbortError' ? 'timed out after ' + Math.round(ms / 1000) + ' seconds' : ((e && e.cause && (e.cause.code || e.cause.message)) || (e && e.message) || String(e));
       errs.push(name + ': ' + msg);

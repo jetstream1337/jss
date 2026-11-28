@@ -62,6 +62,7 @@ async function archive(L, cancelled) {
   delete J.leagues[old]; await J.store.deleteLeague(old);
   J.leagues[id] = L; await J.store.saveLeague(L); return L;
 }
+J.archiveSeason = archive;
 // Finish (or cancel) the current season of this series and start the next one
 J.acts.seasonNew = async function (el) {
   var sid = el.dataset.id, cur = J.leagues[sid], cancel = el.dataset.mode === 'cancel'; if (!cur) return;
@@ -76,6 +77,7 @@ J.acts.seasonNew = async function (el) {
   await archive(cur, cancel);
   var L = J.nextSeason(cur, { year: y, cancel: cancel }); L.id = sid; J.leagues[sid] = L; await J.store.saveLeague(L);
   J.S = L; await J.store.setActive(sid); await J.store.loadBlobs(J.S);
+  if (!cancel && J.ai && J.ai.hasKey() && J.settings.autoCoverage !== false) setTimeout(function () { J.ai.offseasonCoverage(L).then(function () { if (J.S === L) J.save({ render: true }); }).catch(function (e) { console.error(e); }); }, 200);
   J.save(); if (J.saveDirty) J.saveDirty(); J.toast(cancel ? 'Season cancelled. ' + y + ' is ready.' : y + ' season started. Pick a schedule in Edit Schedule.');
 };
 J.acts.seasonDel = async function (el) {
@@ -843,6 +845,10 @@ J.artCleanAll = async function (force, only) {
 };
 // "24.png", "#9 Kyle.jpg", "car-00.webp" -> the car number
 J.artNumFromName = function (name) { var base = String(name || '').replace(/\.[a-z0-9]+$/i, ''), m = base.match(/(?:^|[^0-9])(\d{1,3})(?![0-9])/); return m ? m[1] : ''; };
+function cardsPanel(S) {
+  var pg = J.CARD_PAGES && J.CARD_PAGES[S.series.id];
+  return '<div class="row" style="margin:6px 0 12px;align-items:center">' + (pg ? '<button class="btn sm" data-act="cardsFetch">Get the ' + esc(pg.label) + ' cards from DiecastCharv</button><span class="dim">Pulls this series\' own number cards from its page and matches each one to its number.</span>' : '<span class="dim">There is no DiecastCharv page for ' + esc(S.series.label) + ' yet: drop your own pictures below.</span>') + '</div>';
+}
 function artNumbers(S) {
   var by = {}, add = function (n, who) { n = String(n == null ? '' : n).trim(); if (!n || n === '?' || n === '-') return; by[n] = by[n] || []; if (who && by[n].indexOf(who) < 0) by[n].push(who); };
   J.allDrivers(S).forEach(function (d) { var c = (S.contracts || {})[d.key]; add((c && c.car) || d.car, J.lastName(d.name)); });
@@ -855,7 +861,8 @@ J.routes.artwork = function (S) {
   var out = J.phead('Logos and Numbers', 'Use your own pictures for car numbers and series logos. They replace the built-in ones everywhere: standings, results, driver and team pages, silly season, The Garage, the series tabs, and on the website after it publishes.');
   out += '<section class="panel"><h3>Car numbers: ' + esc(S.series.label) + '</h3><p class="sub">Each series keeps its own number pictures (the #1 truck and the #1 Cup car can look different). ' + J.plural(n0, 'number') + ' set so far.</p>'
     + '<div class="row artopts"><label class="field" style="margin:0"><span>Background</span><select id="artBg" aria-label="Background">' + [['auto', 'Remove the background automatically (recommended)'], ['white', 'Remove a white background'], ['black', 'Remove a black background'], ['keep', 'Keep the background as it is']].map(function (o) { return '<option value="' + o[0] + '"' + (bg === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label></div>'
-    + '<div class="drop" id="artDrop"><strong>Drop number pictures here</strong><p>JPEG, PNG, WebP or SVG. Name each file after its car number, like <b>24.jpg</b>, <b>#9.png</b> or <b>00-haas.png</b>, and drop as many as you want at once: each one goes to its number by itself. Empty edges are trimmed.</p><div class="row" style="justify-content:center"><button class="btn" data-act="artPick">Choose pictures</button></div><input type="file" id="artFiles" accept="image/*" multiple hidden></div>'
+    + cardsPanel(S)
+    + '<div class="drop" id="artDrop"><strong>Drop number pictures here</strong><p>JPEG, PNG, WebP or SVG, as many as you want. No renaming needed: the app reads the car number from each picture (with your AI key), or from the file name, and asks you only about the ones it cannot tell. Empty edges are trimmed.</p><div class="row" style="justify-content:center"><button class="btn" data-act="artPick">Choose pictures</button></div><input type="file" id="artFiles" accept="image/*" multiple hidden></div>'
     + '<div id="artMsg" class="msg" hidden></div>'
     + '<div class="artgrid">' + nums.map(function (x) {
       var on = !!have[x.n];
@@ -873,15 +880,24 @@ J.nav.push({ id: 'artwork', label: 'Logos and Numbers', group: 'Commissioner', a
 function artMsg(text, bad) { var m = $('artMsg'); if (!m) { J.toast(text, bad); return; } m.hidden = false; m.className = 'msg' + (bad ? ' err' : ' ok'); m.textContent = text; }
 async function artAdd(files, forced) {
   var S = J.S; S.art = S.art || {}; S.art.nums = S.art.nums || {};
-  var done = [], skipped = [], bad = [];
+  var done = [], skipped = [], bad = [], unknown = [];
   for (var i = 0; i < files.length; i++) {
     var f = files[i], n = forced != null ? forced : J.artNumFromName(f.name);
+    if (forced == null && /^(img|image|photo|pic|picture|screenshot|screen shot|download|dsc|file|untitled|unnamed|capture|scan|whatsapp|received|signal)/i.test(f.name)) n = '';
     if (!/^image\//.test(f.type || '') && !/\.(jpe?g|png|webp|gif|svg|bmp)$/i.test(f.name)) { bad.push(f.name + ' (not a picture)'); continue; }
-    if (!n) { skipped.push(f.name); continue; }
+    if (!n) { unknown.push(f); continue; }
     try { var sn = {}; S.art.nums[n] = await J.artImage(f, { bg: J.ui.artBg || 'auto', height: 140, snap: sn }); S.art.orig = S.art.orig || {}; if (sn.v) S.art.orig[n] = sn.v; S.art.clean = 1; done.push('#' + n); } catch (e) { bad.push(f.name + ' (' + e.message + ')'); }
   }
+  if (unknown.length && J.artIdentify) {
+    artMsg('Looking at ' + J.plural(unknown.length, 'picture') + ' to find the numbers...');
+    var ids = await J.artIdentify(unknown), got = {}; ids.forEach(function (x) { got[x.file.name + x.file.size] = x.num; });
+    for (var u = 0; u < unknown.length; u++) {
+      var uf = unknown[u], un = got[uf.name + uf.size]; if (!un) { skipped.push(uf.name); continue; }
+      try { var sn2 = {}; S.art.nums[un] = await J.artImage(uf, { bg: J.ui.artBg || 'auto', height: 140, snap: sn2 }); S.art.orig = S.art.orig || {}; if (sn2.v) S.art.orig[un] = sn2.v; S.art.clean = 1; done.push('#' + un); } catch (e) { bad.push(uf.name + ' (' + e.message + ')'); }
+    }
+  }
   if (done.length) J.save();
-  var t = (done.length ? 'Added ' + J.plural(done.length, 'number picture') + ': ' + done.join(', ') + '.' : 'No pictures added.') + (skipped.length ? ' No car number in the file name of: ' + skipped.join(', ') + ' (rename them like 24.png, or use the button on a number).' : '') + (bad.length ? ' Could not use: ' + bad.join(', ') + '.' : '');
+  var t = (done.length ? 'Added ' + J.plural(done.length, 'number picture') + ': ' + done.join(', ') + '.' : 'No pictures added.') + (skipped.length ? ' Skipped (no number given): ' + skipped.join(', ') + '.' : '') + (bad.length ? ' Could not use: ' + bad.join(', ') + '.' : '');
   artMsg(t, !done.length);
 }
 J.acts.artPick = function () { $('artFiles').click(); };
