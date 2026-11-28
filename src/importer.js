@@ -357,7 +357,7 @@ function renderPreview0() {
       + '<div class="field"><label for="impDate">Date</label><input id="impDate" type="date" value="' + esc(f.date) + '"></div></div>'
       + warns.map(function (w) { return '<div class="warn">' + esc(w) + '</div>'; }).join('')
       + '<div class="row"><button class="btn" data-act="impConfirm">Save test (' + rows.length + ' drivers)</button><button class="btn ghost" data-act="impCancel">Cancel</button>'
-      + (hasKey ? '<label class="check" style="margin:0 0 0 6px"><input type="checkbox" id="impCover" checked> Write preseason stories and fan posts</label>' : '') + '</div></section>'
+      + (hasKey ? '<label class="check" style="margin:0 0 0 6px"><input type="checkbox" id="impCover" checked> Write preseason stories and fan posts</label>' : '') + '</div><label class="check"><input type="checkbox" id="impReplace" checked> Replace the roster with the drivers in this test (drivers who are not in it come off the roster; nothing is stacked on top)</label></section>'
       + '<div class="card"><div class="tw"><table class="data"><thead><tr><th>Pos</th><th>Car</th><th>Driver</th><th>Time</th></tr></thead><tbody>' + rows.map(function (r) { return '<tr><td class="rank">' + r.position + '</td><td>' + J.carTag(r.car || '-') + '</td><td>' + nameCell(r) + '</td><td>' + esc(r.time || r.speed || '-') + '</td></tr>'; }).join('') + '</tbody></table></div></div>';
     return;
   }
@@ -409,6 +409,24 @@ function saveSession(S, type, sid, rows, meta, source, date) {
   S.sessions.push(sess);
   return sess;
 }
+// the test shows who is really in the field: make the roster match it instead of stacking the test's drivers on top of the old list
+J.acclimateRoster = function (S, rows) {
+  var want = {}, had = Object.assign({}, S.contracts || {});
+  rows.forEach(function (r) { var k = J.driverKey(r.driver); if (k) want[k] = r; });
+  Object.keys(want).forEach(function (k) { if (S.removed && S.removed[k]) delete S.removed[k]; });
+  S.contracts = S.contracts || {};
+  J.ensureContracts(S, J.rosterLookup ? J.rosterLookup(S) : null);
+  Object.keys(want).forEach(function (k) {
+    var c = S.contracts[k]; if (!c) return; c.released = false; delete c.callup;
+    var car = String(want[k].car || '').replace(/^#/, ''); if (car && car !== '-') c.car = car;
+    c.pt = false; c.ptSet = true; // he is in the test: he is in the field
+  });
+  var drop = Object.keys(S.contracts).filter(function (k) { return !want[k]; });
+  var r = J.removeDrivers(S, drop);
+  var kept = Object.keys(S.contracts).filter(function (k) { return want[k]; }).length;
+  if (J.noteCars) J.noteCars(S);
+  return { kept: kept, gone: r.gone, added: Object.keys(want).filter(function (k) { return !had[k] && S.contracts[k]; }).length };
+};
 J.acts.impConfirm = function () {
   var S = J.S; if (!imp) return; readForm();
   var t = J.importType, f = imp.form, rows = rowsNow().map(cleanRow), meta = metaNow();
@@ -416,7 +434,9 @@ J.acts.impConfirm = function () {
   if (!rows.length) return;
   if (t === 'test') {
     S.preseason = { name: String(f.name || 'Preseason test').trim(), track: String(f.track || '').trim(), date: f.date || J.todayISO(), rows: rows.map(function (r) { return { position: r.position, car: r.car || '', driver: r.driver, time: r.time || '', speed: r.speed || '' }; }), ts: Date.now() };
-    imp = null; J.save({ render: true }); J.toast('Preseason test saved. It does not count in the standings.');
+    var swap = $('impReplace') ? $('impReplace').checked : true, rep = null;
+    if (swap) { try { rep = J.acclimateRoster(S, S.preseason.rows); } catch (e) { console.error(e); } }
+    imp = null; J.save({ render: true }); J.toast('Preseason test saved. It does not count in the standings.' + (rep ? ' The roster now matches the test: ' + J.plural(rep.kept, 'driver') + (rep.added ? ' (' + rep.added + ' new)' : '') + (rep.gone ? ', ' + rep.gone + ' not in the test removed' : '') + '.' : ''));
     if (cover && J.ai && J.ai.hasKey()) J.runPreseasonCoverage();
     return;
   }
