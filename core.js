@@ -182,6 +182,7 @@ J.seasonsFor = function (seriesId) {
 // a new season for the same series: carries over the league, fans, reputations, open silly season stories and settings
 J.nextSeason = function (prev, o) {
   o = o || {};
+  if (!o.cancel && J.repSeason) { try { J.repSeason(prev); } catch (e) { console.error(e); } } // champion and podium finishers are loved more; everyone drifts back toward neutral for the new year
   if (!o.cancel && J.progressAuto) { try { J.progressAuto(prev); } catch (e) { console.error(e); } } // the season's results move everyone's ratings before they carry over
   var L = J.newLeague(prev.series.id, prev.league.name);
   L.season = o.year || (parseInt(J.seasonYear(prev), 10) + 1);
@@ -212,6 +213,7 @@ J.nextSeason = function (prev, o) {
   var seenF = {}; L.freeAgents = (prev.freeAgents || []).concat(freed).filter(function (f) { if (seenF[f.key]) return false; seenF[f.key] = 1; return true; });
   L.retired = JSON.parse(JSON.stringify(prev.retired || []));
   if (J.applyMovesFor) J.applyMovesFor(L);
+  if (J.cleanMoves) J.cleanMoves(L); // fresh slate: last offseason's moves are history now (a short log is kept)
   // seats left open by drivers who are gone (retired, moved up, let go): new young drivers fill what free agents do not
   var vac = 0; Object.keys(prev.contracts || {}).forEach(function (pk) { var pc = prev.contracts[pk]; if (pc && pc.team && !pc.pt && !pc.callup && !pc.released && !L.contracts[pk]) vac++; }); L.vacated = vac;
   L.freeAgents = L.freeAgents.filter(function (f) { return !L.contracts[f.key]; }); // already placed by an approved move
@@ -984,7 +986,7 @@ J.repApply = function (S, name, delta, why, src, refId) {
   var r = S.rep[d.key] || (S.rep[d.key] = { score: 50, events: [] });
   r.score = Math.max(0, Math.min(100, r.score + delta));
   r.events.unshift({ t: Date.now(), delta: delta, why: String(why || '').slice(0, 220), src: src || 'track', ref: refId || '' });
-  r.events = r.events.slice(0, 30);
+  r.events = r.events.slice(0, 60);
   return true;
 };
 var LV = [-2, -1, 1, 2];
